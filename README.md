@@ -57,7 +57,39 @@ llama-server 是一个高性能推理服务端，针对昇腾环境进行了特�
 <img src="./assets/qrcode.png" alt="qrcode" width="200" margin="10px"></img>
 </div>
 
+## ✨ 贡献者
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/514flowey"><img src="https://avatars.githubusercontent.com/u/67944899?v=4?s=50" width="50px;" alt="Zikai Xiao"/><br /><sub><b>Zikai Xiao</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=514flowey" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/uyzhang"><img src="https://avatars.githubusercontent.com/u/26193836?v=4?s=50" width="50px;" alt="Yi Zhang"/><br /><sub><b>Yi Zhang</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=uyzhang" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/LDYang694"><img src="https://avatars.githubusercontent.com/u/62846124?v=4?s=50" width="50px;" alt="DongYang Li"/><br /><sub><b>DongYang Li</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=LDYang694" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/zjp-shadow"><img src="https://avatars.githubusercontent.com/u/46623500?v=4?s=50" width="50px;" alt="Jiapeng Zhang"/><br /><sub><b>Jiapeng Zhang</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=zjp-shadow" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dengyx21"><img src="https://avatars.githubusercontent.com/u/92988275?v=4?s=50" width="50px;" alt="dengyx21"/><br /><sub><b>dengyx21</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=dengyx21" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Hanyx2021"><img src="https://avatars.githubusercontent.com/u/101802620?v=4?s=50" width="50px;" alt="Yuxuan Han"/><br /><sub><b>Yuxuan Han</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=Hanyx2021" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/CoderOJ"><img src="https://avatars.githubusercontent.com/u/42932660?v=4?s=50" width="50px;" alt="Yang Zhang"/><br /><sub><b>Yang Zhang</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=CoderOJ" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://menghaoguo.github.io/"><img src="https://avatars.githubusercontent.com/u/38318671?v=4?s=50" width="50px;" alt="MenghaoGuo"/><br /><sub><b>MenghaoGuo</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=MenghaoGuo" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/nkufree"><img src="https://avatars.githubusercontent.com/u/120734145?v=4?s=50" width="50px;" alt="nkufree"/><br /><sub><b>nkufree</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=nkufree" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/1592063346"><img src="https://avatars.githubusercontent.com/u/39879513?v=4?s=50" width="50px;" alt="Imagine076"/><br /><sub><b>Imagine076</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=1592063346" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://www.tsinghua.edu.cn/"><img src="https://avatars.githubusercontent.com/u/59163199?v=4?s=50" width="50px;" alt="Shuhong Huang"/><br /><sub><b>Shuhong Huang</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=deathwings602" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/yangyuqi22"><img src="https://avatars.githubusercontent.com/u/152586375?v=4?s=50" width="50px;" alt="Yang Yuqing"/><br /><sub><b>Yang Yuqing</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=yangyuqi22" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jiabo-chen"><img src="https://avatars.githubusercontent.com/u/180372033?v=4?s=50" width="50px;" alt="Jiabo Chen"/><br /><sub><b>Jiabo Chen</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=jiabo-chen" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/VictorJiao"><img src="https://avatars.githubusercontent.com/u/23722010?v=4?s=50" width="50px;" alt="VisJiao"/><br /><sub><b>VisJiao</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=VictorJiao" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Tgotp"><img src="https://avatars.githubusercontent.com/u/45836005?v=4?s=50" width="50px;" alt="Tgotp"/><br /><sub><b>Tgotp</b></sub></a><br /><a href="https://github.com/Jittor/JittorInfer/commits?author=Tgotp" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
 
 ## 💖 致谢
 `JittorInfer` 的开发借鉴了以下优秀开源项目的思想和代码：[llama.cpp](https://github.com/ggml-org/llama.cpp)，[ggml](https://github.com/ggml-org/ggml)，[torchair](https://github.com/Ascend/torchair)
-

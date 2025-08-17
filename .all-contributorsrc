@@ -1,0 +1,151 @@
+{
+  "projectName": "JittorInfer",
+  "projectOwner": "Jittor",
+  "repoType": "github",
+  "repoHost": "https://github.com",
+  "files": [
+    "README.md"
+  ],
+  "imageSize": 50,
+  "commit": true,
+  "commitConvention": "angular",
+  "contributors": [
+    {
+      "login": "514flowey",
+      "name": "Zikai Xiao",
+      "avatar_url": "https://avatars.githubusercontent.com/u/67944899?v=4",
+      "profile": "https://github.com/514flowey",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "uyzhang",
+      "name": "Yi Zhang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/26193836?v=4",
+      "profile": "https://github.com/uyzhang",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "LDYang694",
+      "name": "DongYang Li",
+      "avatar_url": "https://avatars.githubusercontent.com/u/62846124?v=4",
+      "profile": "https://github.com/LDYang694",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "zjp-shadow",
+      "name": "Jiapeng Zhang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/46623500?v=4",
+      "profile": "https://github.com/zjp-shadow",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "dengyx21",
+      "name": "dengyx21",
+      "avatar_url": "https://avatars.githubusercontent.com/u/92988275?v=4",
+      "profile": "https://github.com/dengyx21",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "Hanyx2021",
+      "name": "Yuxuan Han",
+      "avatar_url": "https://avatars.githubusercontent.com/u/101802620?v=4",
+      "profile": "https://github.com/Hanyx2021",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "CoderOJ",
+      "name": "Yang Zhang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/42932660?v=4",
+      "profile": "https://github.com/CoderOJ",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "MenghaoGuo",
+      "name": "MenghaoGuo",
+      "avatar_url": "https://avatars.githubusercontent.com/u/38318671?v=4",
+      "profile": "https://menghaoguo.github.io/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "nkufree",
+      "name": "nkufree",
+      "avatar_url": "https://avatars.githubusercontent.com/u/120734145?v=4",
+      "profile": "https://github.com/nkufree",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "1592063346",
+      "name": "Imagine076",
+      "avatar_url": "https://avatars.githubusercontent.com/u/39879513?v=4",
+      "profile": "https://github.com/1592063346",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "deathwings602",
+      "name": "Shuhong Huang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/59163199?v=4",
+      "profile": "https://www.tsinghua.edu.cn/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "yangyuqi22",
+      "name": "Yang Yuqing",
+      "avatar_url": "https://avatars.githubusercontent.com/u/152586375?v=4",
+      "profile": "https://github.com/yangyuqi22",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "jiabo-chen",
+      "name": "Jiabo Chen",
+      "avatar_url": "https://avatars.githubusercontent.com/u/180372033?v=4",
+      "profile": "https://github.com/jiabo-chen",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "VictorJiao",
+      "name": "VisJiao",
+      "avatar_url": "https://avatars.githubusercontent.com/u/23722010?v=4",
+      "profile": "https://github.com/VictorJiao",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "Tgotp",
+      "name": "Tgotp",
+      "avatar_url": "https://avatars.githubusercontent.com/u/45836005?v=4",
+      "profile": "https://github.com/Tgotp",
+      "contributions": [
+        "code"
+      ]
+    }
+  ],
+  "contributorsPerLine": 7,
+  "linkToUsage": true
+}
