@@ -36,12 +36,13 @@
 #include "ggml-cann/ascend_graph_ops.h"
 // #include "ggml-cann/common.h"
 #include <acl/acl_rt.h>
+#include "common.h"
 
 using namespace ge;
 using std::string;
 using std::vector;
 
-ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
+ge::Graph build_ascend_graph(ggml_cgraph* cgraph, ggml_backend_cann_context& cann_ctx,
                              std::vector<gert::Tensor>& input_init,
                              std::vector<gert::Tensor>& output_init);
 

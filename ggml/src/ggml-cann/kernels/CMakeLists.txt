@@ -8,6 +8,7 @@ file(GLOB SRC_FILES
     quantize_float_to_q4_0.cpp
     dup.cpp
     custom_rope_ext.cpp
+    custom_rope_cache_ext.cpp
 )
 
 set(ASCEND_CANN_PACKAGE_PATH ${CANN_INSTALL_DIR})

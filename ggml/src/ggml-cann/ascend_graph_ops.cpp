@@ -13,6 +13,7 @@
 #include "ascend_graph_ops_create.h"
 #include "ggml-impl.h"
 #include "op_proto.h"
+#include "rope_cache.h"
 
 /**
  * @brief 构建输出形状向量，从张量维度提取
@@ -1511,7 +1512,7 @@ ge::Operator handle_rms_norm_op(
 ge::Operator handle_rope_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
-    int op_index) {
+    int op_index, ggml_backend_cann_context& cann_ctx) {
     // 获取源张量
     struct ggml_tensor *src0 = node->src[0];  // 输入张量
     struct ggml_tensor *src1 = node->src[1];  // 位置索引张量
@@ -1519,8 +1520,8 @@ ge::Operator handle_rope_op(
     auto dst = node;
     GGML_TENSOR_UNARY_OP_LOCALS  // 使用GGML宏获取输入张量的维度
 
-    // 检查算子映射中是否存在输入
-    ge::Operator op_x0;
+        // 检查算子映射中是否存在输入
+        ge::Operator op_x0;
     ge::Operator op_x1;
 
     // 获取src0（主输入）操作符
@@ -1678,32 +1679,60 @@ ge::Operator handle_rope_op(
     graph.AddOp(perm_x_op);
 
     // 第三步：执行RoPE操作
-    std::string name_rope = "rope_rope_" + std::to_string(op_index);
-    ge::op::RopeExtCustom rope_op(name_rope);
+    // TODO: 在同一个模型中多个RoPE也可能共享一个sin、cos缓存
+    std::string curr_suffix = "_" + std::to_string(op_index);
+    RopeCache rope_cache(cann_ctx, dst);
+    ge::Operator rope_sin_cache = rope_cache.GetSinOp(graph, "rope_sin_tensor" + curr_suffix);
+    ge::Operator rope_cos_cache = rope_cache.GetCosOp(graph, "rope_cos_tensor" + curr_suffix);
 
-    // 设置RoPE操作的输入
-    rope_op.set_input_x(perm_x_op);  // 转置后的输入
-    rope_op.set_input_pos(op_x1);    // 位置索引
+    ge::Operator op_x1_squeeze = create_squeeze_op(graph, "rope_squeeze_x1_", curr_suffix, op_x1, {0, 1, 2});
+
+    ge::Operator gather_sin_cache = create_gather_op(graph, "rope_gather_sin_cache_", curr_suffix, rope_sin_cache, op_x1_squeeze, 1);
+    ge::Operator gather_cos_cache = create_gather_op(graph, "rope_gather_cos_cache_", curr_suffix, rope_cos_cache, op_x1_squeeze, 1);
+    std::string name_rope = "rope_rope" + curr_suffix;
+    ge::op::RopeExtCustomV2 rope_op(name_rope.c_str());
+
+    // // 设置RoPE操作的输入
+    rope_op.set_input_x(perm_x_op);     // 主输入
+    rope_op.set_input_cos(gather_cos_cache);      // 预先计算好的cos输入
+    rope_op.set_input_sin(gather_sin_cache);      // 预先计算好的sin输入
 
     // 设置RoPE操作的输出描述
     ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
-                                 get_data_type(node->type));
+                                get_data_type(node->type));
     rope_op.update_output_desc_dst(desc_out_rope);
 
-    // 设置RoPE操作的各种属性参数
+    // 只设置3个属性
     rope_op.set_attr_ne0(ne0);
     rope_op.set_attr_ne1(ne1);
-    rope_op.set_attr_s1(s01);
-    rope_op.set_attr_s2(s02);
-    rope_op.set_attr_n_dims(n_dims);
-    rope_op.set_attr_freq_scale(freq_scale);
-    rope_op.set_attr_theta_scale(theta_scale);
-    rope_op.set_attr_ext_factor(ext_factor);
-    rope_op.set_attr_attn_factor(attn_factor);
-    rope_op.set_attr_corr_dims_v_0(corr_dims[0]);
-    rope_op.set_attr_corr_dims_v_1(corr_dims[1]);
-    rope_op.set_attr_logf_1_freq_scale(logf_1_freq_scale);
-    rope_op.set_attr_pos_len(pos_len);
+    rope_op.set_attr_pos_len(src0->ne[2]);
+
+    // std::string name_rope = "rope_rope_" + std::to_string(op_index);
+    // ge::op::RopeExtCustom rope_op(name_rope);
+
+    // // 设置RoPE操作的输入
+    // rope_op.set_input_x(perm_x_op);  // 转置后的输入
+    // rope_op.set_input_pos(op_x1);    // 位置索引
+
+    // // 设置RoPE操作的输出描述
+    // ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
+    //                              get_data_type(node->type));
+    // rope_op.update_output_desc_dst(desc_out_rope);
+
+    // // 设置RoPE操作的各种属性参数
+    // rope_op.set_attr_ne0(ne0);
+    // rope_op.set_attr_ne1(ne1);
+    // rope_op.set_attr_s1(s01);
+    // rope_op.set_attr_s2(s02);
+    // rope_op.set_attr_n_dims(n_dims);
+    // rope_op.set_attr_freq_scale(freq_scale);
+    // rope_op.set_attr_theta_scale(theta_scale);
+    // rope_op.set_attr_ext_factor(ext_factor);
+    // rope_op.set_attr_attn_factor(attn_factor);
+    // rope_op.set_attr_corr_dims_v_0(corr_dims[0]);
+    // rope_op.set_attr_corr_dims_v_1(corr_dims[1]);
+    // rope_op.set_attr_logf_1_freq_scale(logf_1_freq_scale);
+    // rope_op.set_attr_pos_len(pos_len);
 
     // 添加RoPE操作到图中
     graph.AddOp(rope_op);

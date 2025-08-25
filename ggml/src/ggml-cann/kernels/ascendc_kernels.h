@@ -15,5 +15,6 @@
 #include "aclrtlaunch_ascendc_quantize_f16_to_q4_0.h"
 #include "aclrtlaunch_ascendc_quantize_f32_q8_0.h"
 #include "aclrtlaunch_ascendc_quantize_f32_to_q4_0.h"
+#include "aclrtlaunch_ascendc_custom_rope_cache_ext.h"
 
 #endif  // ASCENDC_KERNELS_H

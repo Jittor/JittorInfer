@@ -275,7 +275,7 @@ struct ggml_cgraph * llm_build_deepseek2_ge(llama_context & lctx, std::vector<ui
     llm.init();
 
     result = llm.build_deepseek2_ge();
-
+    ggml_graph_set_n_ctx(result, lctx.cparams.n_ctx);
     // add on pooling layer
     GGML_ASSERT(!lctx.cparams.embeddings);
 
