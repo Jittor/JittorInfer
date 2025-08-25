@@ -1,0 +1,40 @@
+# Server configuration parameters
+main_gpu: 1
+n_gpu_layers: 99
+split_mode: LLAMA_SPLIT_MODE_LAYER  # how to split the model across GPUs
+tensor_split: [0]  # how split tensors should be distributed across GPUs
+use_mmap: true     # use mmap for faster loads
+use_mlock: false   # use mlock to keep model in memory
+check_tensors: false  # validate tensor data
+n_threads: 128      # number of threads to use for computation
+n_threads_batch: 128 # number of threads to use for batch processing
+defrag_thold: 0.05   # defragmentation threshold
+no_perf: false      # disable performance metrics
+enable_mla: true        # use mla for deepseek
+enable_fused_moe: true  # use fused moe for deepseek
+offload_input: true # offload input to GPU
+enable_ge: false # enable ge for deepseek
+display_chat: true # display chat info to console
+presample_count: 64 # presample on npu, -1 for disable
+enable_cann_flash_attention: false # disable cann flash attention
+
+# Generation parameters
+n_ctx: 1024  # context size (1024 * 16 * 16)
+n_batch: 1024 # logical batch size for prompt processing
+n_parallel: 8  # number of parallel sequences to decode (must < 32 now)
+
+# Model parameters
+model: "/root/data/qwen2-7b-instruct-fp16.gguf"  # model path
+model_alias: ""  # model alias
+
+# Server parameters
+special: false       # enable special token output
+cont_batching: true  # insert new sequences for decoding on-the-fly
+reranking: false     # enable reranking support on server
+port: 8080           # server listens on this network port
+n_threads_http: -1   # number of threads to process HTTP requests
+hostname: "127.0.0.1"  # server hostname
+chat_template: ""    # chat template
+
+# Reasoning format
+reasoning_format: COMMON_REASONING_FORMAT_DEEPSEEK

@@ -13,6 +13,7 @@
 #include "llama-context.h"
 #include "llama-graph-deepseek2.h"
 #include "llama-graph-deepseek2ge.h"
+#include "llama-graph-qwen2.h"
 #include "llama-graph-defrag.h"
 #include "llama-graph-utils.h"
 #include "llama-impl.h"
@@ -101,6 +102,9 @@ struct ggml_cgraph * llama_graph_builder::llama_build_graph(llama_context &     
     switch (model.arch) {
         case LLM_ARCH_DEEPSEEK2:
             return llm_build_deepseek2(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
+        
+        case LLM_ARCH_QWEN2:
+            return llm_build_qwen2(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
         default:
             GGML_ABORT("Unsupported model architecture");
     }

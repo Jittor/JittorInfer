@@ -89,6 +89,14 @@ struct llm_tokenizer_bpe : llm_tokenizer {
                     "\\p{N}+",
                 };
                 break;
+            
+            case LLAMA_VOCAB_PRE_TYPE_QWEN2:
+                regex_exprs = {
+                    // original regex from tokenizer.json
+                    // "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"
+                    "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+                };
+                break;
             default:
                 GGML_ABORT("unknown pre-tokenization type");
         }
@@ -480,9 +488,15 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
         {
             add_space_prefix = false;
             clean_spaces     = true;
-            GGML_ASSERT(tokenizer_pre == "deepseek-llm");
+            
+            if(tokenizer_pre == "deepseek-llm")
             {
-                pre_type     = LLAMA_VOCAB_PRE_TYPE_DEEPSEEK_LLM;
+                pre_type = LLAMA_VOCAB_PRE_TYPE_DEEPSEEK_LLM;
+                clean_spaces = false;
+            }else if (
+                    tokenizer_pre == "qwen2" ||
+                    tokenizer_pre == "deepseek-r1-qwen") {
+                pre_type = LLAMA_VOCAB_PRE_TYPE_QWEN2;
                 clean_spaces = false;
             }
         }
@@ -858,7 +872,7 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
 
         ml.get_key(LLM_KV_GENERAL_NAME, model_name, false);
         ml.get_key(LLM_KV_TOKENIZER_PRE, tokenizer_pre, false);
-        GGML_ASSERT(tokenizer_pre == "deepseek-llm");
+        // GGML_ASSERT(tokenizer_pre == "deepseek-llm");
 
         // model name to lowercase
         std::transform(model_name.begin(), model_name.end(), model_name.begin(),
