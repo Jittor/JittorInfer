@@ -1,27 +1,24 @@
 #include "kernel_operator.h"
-#include "math.h"
 constexpr int32_t BUFFER_NUM = 2;
-// constexpr int32_t CUDA_ROPE_BLOCK_SIZE = 256;  // 类似CUDA的块大小设置
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 using namespace AscendC;
-template <typename T>
-class KernelRope {
-   public:
-    __aicore__ inline KernelRope() {}
 
-    __aicore__ inline void Init(GM_ADDR x, GM_ADDR pos, GM_ADDR dst,
+template <typename T>
+class KernelRopeCache {
+public:
+    __aicore__ inline KernelRopeCache() {}
+
+    __aicore__ inline void Init(GM_ADDR dst_cos, GM_ADDR dst_sin,
                                 int32_t ne0, int32_t ne1, int32_t s1,
                                 int32_t s2, int32_t n_dims, float freq_scale,
                                 float theta_scale, float ext_factor,
                                 float attn_factor, float corr_dims_v_0,
                                 float corr_dims_v_1, float logf_1_freq_scale,
-                                int64_t pos_len) {
+                                int64_t offset) {
         // 计算当前块的工作范围
         int64_t blockNum = AscendC::GetBlockNum();
         int64_t blockIndex = AscendC::GetBlockIdx();
-        // 将pos_len对齐到8的倍数 32字节对齐
-        pos_len = (pos_len + 7) & ~7;
 
         // 设置参数
         this->ne0 = ne0;        // 向量维度
@@ -32,32 +29,25 @@ class KernelRope {
         this->freq_scale = freq_scale;
         this->ext_factor = ext_factor;
         this->attn_factor = attn_factor;
-        // this->theta_scale = pow( freq_base ,(-2.0f / n_dims));
         this->theta_scale = theta_scale;
-        // this->corr_dims = *corr_dims_ptr;
         this->corr_dims_v_0 = corr_dims_v_0;
         this->corr_dims_v_1 = corr_dims_v_1;
         this->logf_1_freq_scale = logf_1_freq_scale;
 
         this->blockLength = ne0 / 2;
         this->tileNum = 1;
-        this->pos_len = pos_len;
+        this->offset = offset;
 
-        xGm.SetGlobalBuffer((__gm__ T *)x + blockIndex * this->ne0, this->ne0);
-        dstGm.SetGlobalBuffer((__gm__ T *)dst + blockIndex * this->ne0,
-                              this->ne0);
-        posGm.SetGlobalBuffer((__gm__ int32_t *)pos, this->pos_len);
+        cosGm.SetGlobalBuffer((__gm__ float *)dst_cos + blockIndex * this->blockLength, this->blockLength);
+        sinGm.SetGlobalBuffer((__gm__ float *)dst_sin + blockIndex * this->blockLength, this->blockLength);
 
-        pipe.InitBuffer(inQueueX, BUFFER_NUM, this->ne0 * sizeof(T));
-        pipe.InitBuffer(inQueuePos, BUFFER_NUM, 1 * sizeof(int32_t));
-        pipe.InitBuffer(outQueueDst, BUFFER_NUM, this->ne0 * sizeof(T));
+        pipe.InitBuffer(outQueueDstCos, BUFFER_NUM, this->blockLength * sizeof(T));
+        pipe.InitBuffer(outQueueDstSin, BUFFER_NUM, this->blockLength * sizeof(T));
         pipe.InitBuffer(tmpBuf_i0_2_float, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_theta_base, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_theta_interp, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_cos_theta, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_sin_theta, this->blockLength * sizeof(float));
-        pipe.InitBuffer(tmpBuf_x0, this->blockLength * sizeof(float));
-        pipe.InitBuffer(tmpBuf_x1, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_tmp0, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_tmp1, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_y, this->blockLength * sizeof(float));
@@ -73,39 +63,19 @@ class KernelRope {
 
    private:
     __aicore__ inline void CopyIn(int32_t row) {
-        AscendC::LocalTensor<T> xLocal = inQueueX.AllocTensor<T>();
-        AscendC::LocalTensor<int32_t> posLocal =
-            inQueuePos.AllocTensor<int32_t>();
 
         // 复制输入数据到UB
-        AscendC::DataCopy(posLocal, posGm, this->pos_len);
-        AscendC::DataCopy(xLocal, xGm, this->ne0);
-
-        inQueueX.EnQue(xLocal);
-        inQueuePos.EnQue(posLocal);
     }
 
     __aicore__ inline void ComputeRope(int32_t row) {
         // Assume the block vector is already aligned.
-        AscendC::LocalTensor<T> xLocal =
-            inQueueX.DeQue<T>();  // xLocal: input tensor from queue
-        AscendC::LocalTensor<int32_t> posLocal =
-            inQueuePos
-                .DeQue<int32_t>();  // posLocal: position tensor from queue
-        AscendC::LocalTensor<T> dstLocal =
-            outQueueDst
-                .AllocTensor<T>();  // dstLocal: destination tensor for output
-
+        AscendC::LocalTensor<T> dstCosLocal = outQueueDstCos.AllocTensor<T>();
+        AscendC::LocalTensor<T> dstSinLocal = outQueueDstSin.AllocTensor<T>();
         uint32_t blockN = this->blockLength;  // blockN = blockLength = ne0 / 2
         auto row_dst = GetBlockIdx();         // row_dst: current block index
+        int32_t pos_val = offset + row_dst;
 
-        const int channel_x =
-            row_dst / ne1;  // channel_x = floor(row_dst / ne1)
-        int32_t pos_val =
-            posLocal.GetValue(channel_x);  // pos_val = posLocal[channel_x]
-
-        // Generate arithmetic progression: i0_2_float[i] = i, for i in [0,
-        // blockN - 1]
+        // Generate arithmetic progression: i0_2_float[i] = i, for i in [0, blockN - 1]
         LocalTensor<float> /* i0_2_float */ tmp0 =
             tmpBuf_i0_2_float.Get<float>();
         AscendC::ArithProgression<float>(
@@ -193,89 +163,40 @@ class KernelRope {
         Sin(sin_theta, theta_interp, blockN);  // sin_theta = sin(theta_interp)
         // Scale both by attn_factor: cos_theta = cos_theta * attn_factor,
         // similarly for sin_theta
-        Muls(cos_theta, cos_theta, attn_factor,
+        Muls(dstCosLocal, cos_theta, attn_factor,
              blockN);  // cos_theta = cos_theta * attn_factor
-        Muls(sin_theta, sin_theta, attn_factor,
+        Muls(dstSinLocal, sin_theta, attn_factor,
              blockN);  // sin_theta = sin_theta * attn_factor
-
-        // Split input tensor xLocal into two halves: x0 and x1 (each of length
-        // blockN)
-        LocalTensor<float> x0 = tmpBuf_x0.Get<float>();
-        LocalTensor<float> x1 = tmpBuf_x1.Get<float>();
-        if constexpr (std::is_same<T, float>::value) {
-            DataCopy(x0, xLocal,
-                     blockN);  // x0 = first blockN elements of xLocal
-            DataCopy(x1, xLocal[blockN],
-                     blockN);  // x1 = second blockN elements of xLocal
-        } else {
-            // For half precision, cast xLocal to float before copying.
-            Cast(x0, xLocal, AscendC::RoundMode::CAST_NONE,
-                 blockN);  // x0 = cast(xLocal) for first blockN elements
-            Cast(x1, xLocal[blockN], AscendC::RoundMode::CAST_NONE,
-                 blockN);  // x1 = cast(xLocal) for second blockN elements
-        }
-
-        // Compute first output half:
-        // tmp0 = x0 * cos_theta and tmp1 = x1 * sin_theta, then tmp0 = tmp0 -
-        // tmp1
-        Mul(tmp0, x0, cos_theta, blockN);  // tmp0 = x0 * cos(theta_interp)
-        Mul(tmp1, x1, sin_theta, blockN);  // tmp1 = x1 * sin(theta_interp)
-        Sub(tmp0, tmp0, tmp1,
-            blockN);  // tmp0 = (x0 * cos_theta) - (x1 * sin_theta)
-
-        if constexpr (std::is_same<T, float>::value)
-            DataCopy(dstLocal, tmp0,
-                     blockN);  // dstLocal[0:blockN] = tmp0 (first half)
-        else
-            Cast(dstLocal, tmp0, AscendC::RoundMode::CAST_NONE,
-                 blockN);  // For half precision, cast result
-
-        // Compute second output half:
-        // tmp0 = x0 * sin_theta and tmp1 = x1 * cos_theta, then tmp0 = tmp0 +
-        // tmp1
-        Mul(tmp0, x0, sin_theta, blockN);  // tmp0 = x0 * sin(theta_interp)
-        Mul(tmp1, x1, cos_theta, blockN);  // tmp1 = x1 * cos(theta_interp)
-        Add(tmp0, tmp0, tmp1,
-            blockN);  // tmp0 = (x0 * sin_theta) + (x1 * cos_theta)
-
-        if constexpr (std::is_same<T, float>::value)
-            DataCopy(dstLocal[blockN], tmp0,
-                     blockN);  // dstLocal[blockN:2*blockN] = tmp0 (second half)
-        else
-            Cast(dstLocal[blockN], tmp0, AscendC::RoundMode::CAST_NONE,
-                 blockN);  // For half precision, cast result
-
-        // Enqueue the result tensor and free local buffers
-        outQueueDst.EnQue(dstLocal);
-        inQueueX.FreeTensor(xLocal);
-        inQueuePos.FreeTensor(posLocal);
+        outQueueDstCos.EnQue(dstCosLocal);
+        outQueueDstSin.EnQue(dstSinLocal);
     }
 
     __aicore__ inline void CopyOut(int32_t row) {
-        AscendC::LocalTensor<T> dstLocal = outQueueDst.DeQue<T>();
-        DataCopy(dstGm, dstLocal, this->ne0);
-        outQueueDst.FreeTensor(dstLocal);
+        AscendC::LocalTensor<T> dstCosLocal = outQueueDstCos.DeQue<T>();
+        AscendC::LocalTensor<T> dstSinLocal = outQueueDstSin.DeQue<T>();
+        DataCopy(cosGm, dstCosLocal, this->blockLength);  // 输出cos_theta
+        DataCopy(sinGm, dstSinLocal, this->blockLength);  // 输出sin_theta
+        outQueueDstCos.FreeTensor(dstCosLocal);
+        outQueueDstSin.FreeTensor(dstSinLocal);
     }
 
-   private:
+private:
     AscendC::TPipe pipe;
-    AscendC::TQue<AscendC::QuePosition::VECIN, BUFFER_NUM> inQueueX;
-    AscendC::TQue<AscendC::QuePosition::VECIN, BUFFER_NUM> inQueuePos;
-    AscendC::TQue<AscendC::QuePosition::VECOUT, BUFFER_NUM> outQueueDst;
-    AscendC::GlobalTensor<T> xGm;
+    AscendC::TQue<AscendC::QuePosition::VECOUT, BUFFER_NUM> outQueueDstCos;
+    AscendC::TQue<AscendC::QuePosition::VECOUT, BUFFER_NUM> outQueueDstSin;
     AscendC::GlobalTensor<int32_t> posGm;
-    AscendC::GlobalTensor<T> dstGm;
+    AscendC::GlobalTensor<float> cosGm;
+    AscendC::GlobalTensor<float> sinGm;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_i0_2_float;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_theta_base;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_theta_interp;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_cos_theta;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_sin_theta;
-    TBuf<AscendC::TPosition::VECCALC> tmpBuf_x0;
-    TBuf<AscendC::TPosition::VECCALC> tmpBuf_x1;
+    TBuf<AscendC::TPosition::VECCALC> tmpBuf_theta_extrap;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_tmp0;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_tmp1;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_y;
-    TBuf<AscendC::TPosition::VECCALC> tmpBuf_theta_extrap;
+
 
     uint32_t blockLength;
     uint32_t tileNum;
@@ -289,37 +210,23 @@ class KernelRope {
     float ext_factor;   // 外推因子
     float attn_factor;  // 注意力因子
     float theta_scale;  // theta缩放因子
-    // rope_corr_dims corr_dims; // YaRN修正维度
     float corr_dims_v_0;  // YaRN修正维度0
     float corr_dims_v_1;  // YaRN修正维度1
     float logf_1_freq_scale;
-    int64_t pos_len;
+    int64_t offset;
 };
 
-// 入口函数-float版本
-extern "C" __global__ __aicore__ void ascendc_custom_rope_f32(
-    GM_ADDR x, GM_ADDR pos, GM_ADDR dst, int32_t ne0, int32_t ne1, int32_t s1,
+extern "C" __global__ __aicore__ void ascendc_custom_rope_cache_ext(GM_ADDR dst_cos, GM_ADDR dst_sin, int32_t ne0, int32_t ne1, int32_t s1,
     int32_t s2, int32_t n_dims, float freq_scale, float theta_scale,
     float ext_factor, float attn_factor, float corr_dims_v_0,
-    float corr_dims_v_1, float logf_1_freq_scale, int64_t pos_len) {
-    KernelRope<float> op;
+    float corr_dims_v_1, float logf_1_freq_scale, int64_t offset) {
+    KernelRopeCache<float> op;
 
-    op.Init(x, pos, dst, ne0, ne1, s1, s2, n_dims, freq_scale, theta_scale,
-            ext_factor, attn_factor, corr_dims_v_0, corr_dims_v_1,
-            logf_1_freq_scale, pos_len);
-    op.Process();
-}
-
-// 入口函数-half版本
-extern "C" __global__ __aicore__ void ascendc_custom_rope_f16(
-    GM_ADDR x, GM_ADDR pos, GM_ADDR dst, int32_t ne0, int32_t ne1, int32_t s1,
-    int32_t s2, int32_t n_dims, float freq_scale, float theta_scale,
-    float ext_factor, float attn_factor, float corr_dims_v_0,
-    float corr_dims_v_1, float logf_1_freq_scale, int64_t pos_len) {
-    KernelRope<half> op;
-
-    op.Init(x, pos, dst, ne0, ne1, s1, s2, n_dims, freq_scale, theta_scale,
-            ext_factor, attn_factor, corr_dims_v_0, corr_dims_v_1,
-            logf_1_freq_scale, pos_len);
+    op.Init(dst_cos, dst_sin, ne0, ne1, s1,
+            s2, n_dims, freq_scale,
+            theta_scale, ext_factor,
+            attn_factor, corr_dims_v_0,
+            corr_dims_v_1, logf_1_freq_scale,
+            offset);
     op.Process();
 }

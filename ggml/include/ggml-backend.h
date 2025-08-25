@@ -363,7 +363,7 @@ typedef bool (*ggml_backend_eval_callback)(int node_index, struct ggml_tensor * 
 // Compare the output of two backends
 GGML_API bool ggml_backend_compare_graph_backend(ggml_backend_t backend1, ggml_backend_t backend2,
                                                  struct ggml_cgraph * graph, ggml_backend_eval_callback callback,
-                                                 void * user_data);
+                                                 void * user_data, bool only_last_node);
 
 // Tensor initialization
 GGML_API enum ggml_status ggml_backend_tensor_alloc(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor,

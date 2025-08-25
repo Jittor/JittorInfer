@@ -42,7 +42,11 @@
 
 #include "../include/ggml-cann.h"
 #include "../include/ggml.h"
-#include "ascend_graph.h"
+// #include "ascend_graph.h"
+#include "ge_api.h"
+#include "ge_api_types.h"
+#include "ge_error_codes.h"
+#include "graph.h"
 
 #define MATRIX_ROW_PADDING 512
 #define GGML_CANN_MAX_STREAMS 8
@@ -273,6 +277,7 @@ struct ggml_backend_cann_context {
     std::string name;                /**< Name of the device. */
     std::string description;         /**< Description of the device. */
     aclrtEvent copy_event = nullptr; /**< Event for managing copy operations. */
+    int64_t n_ctx = 4096;
 
     aclrtStream streams[GGML_CANN_MAX_STREAMS] = {
         nullptr}; /**< Array of streams for the device. */

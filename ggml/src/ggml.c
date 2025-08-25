@@ -5596,6 +5596,7 @@ struct ggml_cgraph ggml_graph_view(struct ggml_cgraph * cgraph0, int i0, int i1)
         /*.order            =*/
         cgraph0->order,
         /*.graph_name_by_time =*/cgraph0->graph_name_by_time,
+        /*.n_ctx            =*/ cgraph0->n_ctx,
     };
 
     return cgraph;
@@ -5609,6 +5610,7 @@ void ggml_graph_cpy(struct ggml_cgraph * src, struct ggml_cgraph * dst) {
     dst->n_leafs = src->n_leafs;
     dst->n_nodes = src->n_nodes;
     dst->order   = src->order;
+    dst->n_ctx   = src->n_ctx;
 
     for (int i = 0; i < src->n_leafs; ++i) {
         dst->leafs[i] = src->leafs[i];
@@ -5645,6 +5647,11 @@ void ggml_graph_cpy(struct ggml_cgraph * src, struct ggml_cgraph * dst) {
             dst->grad_accs[igrad_dst] = src->grad_accs[igrad_src];
         }
     }
+}
+
+void ggml_graph_set_n_ctx(struct ggml_cgraph * cgraph, int n_ctx)
+{
+    cgraph->n_ctx = n_ctx;
 }
 
 struct ggml_cgraph * ggml_graph_dup(struct ggml_context * ctx, struct ggml_cgraph * cgraph) {

@@ -7,6 +7,7 @@
 #include "all_ops.h"
 #include "ggml.h"
 #include "graph/graph.h"
+#include "common.h"
 
 ge::DataType get_data_type(enum ggml_type type);
 /**
@@ -103,7 +104,7 @@ ge::Operator handle_rms_norm_op(
 ge::Operator handle_rope_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
-    int op_index);
+    int op_index, ggml_backend_cann_context& cann_ctx);
 ge::Operator handle_moe_fused_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,

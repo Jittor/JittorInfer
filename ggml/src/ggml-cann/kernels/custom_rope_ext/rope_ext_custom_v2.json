@@ -1,0 +1,74 @@
+[
+    {
+        "op": "RopeExtCustomV2",
+        "input_desc": [
+            {
+                "name": "x",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "float"
+                ]
+            },
+            {
+                "name": "cos",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float",
+                    "float"
+                ]
+            },
+            {
+                "name": "sin",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float",
+                    "float"
+                ]
+            }
+        ],
+        "output_desc": [
+            {
+                "name": "dst",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "float"
+                ]
+            }
+        ],
+        "attr": [
+            {
+                "name": "ne0",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "ne1",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "pos_len",
+                "param_type": "required",
+                "type": "int"
+            }
+        ]
+    }
+]
