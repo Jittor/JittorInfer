@@ -3184,13 +3184,14 @@ void ggml_cann_rms_norm(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyTensor(acl_rstd));
 }
 
-void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx,
+                              ggml_tensor* dst) {
     ggml_tensor* src = dst->src[0];
     ggml_tensor* gamma = dst->src[1];
-    
 
     aclTensor* acl_src = ggml_cann_create_tensor(src);
-    aclTensor* acl_gamma = ggml_cann_create_tensor(gamma,gamma->ne,gamma->nb,1);
+    aclTensor* acl_gamma =
+        ggml_cann_create_tensor(gamma, gamma->ne, gamma->nb, 1);
     aclTensor* acl_dst = ggml_cann_create_tensor(dst);
 
     float eps;
@@ -3201,7 +3202,7 @@ void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx, ggml_tensor* dst) 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor;
     void* workspaceAddr = nullptr;
-    
+
     size_t zero_tensor_n_bytes =
         src->ne[1] * src->ne[2] * src->ne[3] * ggml_element_size(src);
     ggml_cann_pool_alloc zero_tensor_allocator(ctx.pool(), zero_tensor_n_bytes);
@@ -3225,7 +3226,6 @@ void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx, ggml_tensor* dst) 
     ACL_CHECK(aclDestroyTensor(acl_dst));
     ACL_CHECK(aclDestroyTensor(acl_gamma));
     ACL_CHECK(aclDestroyTensor(acl_rstd));
-
 }
 // TODO: performace is low.
 void ggml_cann_diag_mask(ggml_backend_cann_context& ctx, ggml_tensor* dst,
@@ -5623,7 +5623,7 @@ void ggml_cann_flash_attn_prompt(ggml_backend_cann_context& ctx,
 
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
 void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
-                                 ggml_tensor* dst) {
+                                    ggml_tensor* dst) {
     ggml_tensor* query = dst->src[0];
     ggml_tensor* key = dst->src[1];
     ggml_tensor* value = dst->src[2];
@@ -5660,8 +5660,9 @@ void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
     strcpy(layerOut, sLayerOut.c_str());
     int64_t preTokens = 2147483647;
     int64_t nextTokens = 0;
-    int64_t sparseMode = 1;    // 拦截，非量化情况不考虑
-    int64_t innerPrecise = sequence_lenth_q > 1 ? 2 : 0;  // 高精度模式，开启行无效修正。
+    int64_t sparseMode = 1;  // 拦截，非量化情况不考虑
+    int64_t innerPrecise =
+        sequence_lenth_q > 1 ? 2 : 0;  // 高精度模式，开启行无效修正。
 
     aclTensor* acl_query_tensor = ggml_cann_create_tensor(query);
     aclTensor* acl_key_tensor = ggml_cann_create_tensor(key);
@@ -5683,16 +5684,15 @@ void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
     ACL_CHECK(aclnnJittorInferFlashAttentionV4GetWorkspaceSize(
         acl_query_tensor, acl_key_tensor, acl_value_tensor, nullptr,
         acl_attn_mask_tensor, actualSeqLengthsq, actualSeqLengthskv, nullptr,
-        nullptr, nullptr, nullptr, nullptr,
-        num_heads, scaleValue, preTokens, nextTokens, layerOut,
-        numKeyValueHeads, sparseMode, innerPrecise, acl_dst_tensor,
-        &workspaceSize, &executor));
+        nullptr, nullptr, nullptr, nullptr, num_heads, scaleValue, preTokens,
+        nextTokens, layerOut, numKeyValueHeads, sparseMode, innerPrecise,
+        acl_dst_tensor, &workspaceSize, &executor));
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
     ACL_CHECK(aclnnJittorInferFlashAttentionV4(workspaceAddr, workspaceSize,
-                                           executor, ctx.stream()));
+                                               executor, ctx.stream()));
     ACL_CHECK(aclDestroyTensor(acl_query_tensor));
     ACL_CHECK(aclDestroyTensor(acl_key_tensor));
     ACL_CHECK(aclDestroyTensor(acl_value_tensor));

@@ -469,7 +469,7 @@ static common_chat_params common_chat_templates_apply_jinja(const struct common_
 
 common_chat_params common_chat_templates_apply(const struct common_chat_templates *        tmpls,
                                                const struct common_chat_templates_inputs & inputs) {
- //   GGML_ASSERT(tmpls != nullptr);
+    //   GGML_ASSERT(tmpls != nullptr);
     return common_chat_templates_apply_jinja(tmpls, inputs);
 }
 

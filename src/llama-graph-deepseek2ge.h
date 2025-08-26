@@ -16,7 +16,8 @@ class llm_deepseek2_context_ge : public llm_deepseek2_context {
 };
 
 struct ggml_cgraph * llm_build_deepseek2_ge(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
-                                            const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case, int print_layer = -1);
+                                            const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case,
+                                            int print_layer = -1);
 
 void llm_update_deepseek2_ge(llama_context & lctx);
 

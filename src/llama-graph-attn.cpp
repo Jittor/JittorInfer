@@ -357,7 +357,7 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
     const int64_t n_head_kv     = hparams.n_head_kv(il);
     const int64_t n_head        = hparams.n_head(il);
     const int64_t n_ctx         = cparams.n_ctx;
-    
+
     // TODO(hsh): remove pad op here, need to modify kv cache initialization
     // pad qkv
     const int64_t        pad_n_embd = GGML_PAD(std::max(n_embd_head_k, n_embd_head_v), 64);

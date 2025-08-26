@@ -16,7 +16,8 @@ struct ggml_tensor * llm_build_inp_embd(struct ggml_context * ctx, struct llama_
         cb(lctx.inp_tokens, "inp_tokens", -1);
         ggml_set_input(lctx.inp_tokens);
 
-        inpL = enable_fp16 ? ggml_get_rows_fp16(ctx, tok_embd, lctx.inp_tokens) : ggml_get_rows(ctx, tok_embd, lctx.inp_tokens);
+        inpL = enable_fp16 ? ggml_get_rows_fp16(ctx, tok_embd, lctx.inp_tokens) :
+                             ggml_get_rows(ctx, tok_embd, lctx.inp_tokens);
 
         // apply lora for embedding tokens if needed
         GGML_ASSERT(lctx.lora.empty());
@@ -91,7 +92,7 @@ struct ggml_tensor * llm_build_norm(struct ggml_context * ctx, struct ggml_tenso
 
     if (mw) {
         // cast mw to fp16
-        mw = ggml_cast(ctx, mw, GGML_TYPE_F16);
+        mw  = ggml_cast(ctx, mw, GGML_TYPE_F16);
         cur = ggml_mul(ctx, cur, mw);
         if (mb) {
             cb(cur, "norm_w", il);

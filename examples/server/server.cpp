@@ -89,11 +89,11 @@ struct server_task {
         params.post_sampling_probs = json_value(data, "post_sampling_probs", defaults.post_sampling_probs);
         params.n_keep              = json_value(data, "n_keep", defaults.n_keep);
 
-        params.sampling.top_k      = json_value(data, "top_k", defaults.sampling.top_k);
-        params.sampling.top_p      = json_value(data, "top_p", defaults.sampling.top_p);
-        params.sampling.min_p      = json_value(data, "min_p", defaults.sampling.min_p);
-        params.sampling.temp       = json_value(data, "temperature", defaults.sampling.temp);
-        params.sampling.n_probs    = json_value(data, "n_probs", defaults.sampling.n_probs);
+        params.sampling.top_k   = json_value(data, "top_k", defaults.sampling.top_k);
+        params.sampling.top_p   = json_value(data, "top_p", defaults.sampling.top_p);
+        params.sampling.min_p   = json_value(data, "min_p", defaults.sampling.min_p);
+        params.sampling.temp    = json_value(data, "temperature", defaults.sampling.temp);
+        params.sampling.n_probs = json_value(data, "n_probs", defaults.sampling.n_probs);
 
         std::string model_name = params_base.model_alias.empty() ? DEFAULT_OAICOMPAT_MODEL : params_base.model_alias;
         return params;
@@ -877,14 +877,12 @@ struct server_response {
         std::unordered_set<int> id_tasks = { id_task };
         return recv(id_tasks);
     }
-    
+
     std::vector<server_task_result_ptr> send_buffer;
 
     // Send a new result to a waiting id_task
-    void send(server_task_result_ptr && result) {
-        send_buffer.emplace_back(std::move(result));
-    }
-    
+    void send(server_task_result_ptr && result) { send_buffer.emplace_back(std::move(result)); }
+
     void send_commit() {
         std::unique_lock<std::mutex> lock(mutex_results);
         for (auto & result : send_buffer) {

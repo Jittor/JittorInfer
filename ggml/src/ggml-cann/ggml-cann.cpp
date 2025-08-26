@@ -1898,8 +1898,8 @@ static enum ggml_status ggml_backend_cann_graph_compute(ggml_backend_t backend,
             (uint32_t)cann_ctx->ascend_graph->processed_graphs.size() + 1;
 
         // 构建Ascend图，同时初始化输入输出Tensor
-        auto new_graph = build_ascend_graph(cgraph, *cann_ctx, cann_ctx->input_init,
-                                            cann_ctx->output_init);
+        auto new_graph = build_ascend_graph(
+            cgraph, *cann_ctx, cann_ctx->input_init, cann_ctx->output_init);
 
         // 缓存新构建的图，记录其地址和索引的映射关系
         cann_ctx->ascend_graph->processed_graphs[graph_key] = graph_idx;

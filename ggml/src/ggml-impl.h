@@ -300,7 +300,7 @@ struct ggml_cgraph {
     enum ggml_cgraph_eval_order order;
 
     char * graph_name_by_time;
-    int n_ctx;
+    int    n_ctx;
 };
 
 // returns a slice of cgraph with nodes [i0, i1)

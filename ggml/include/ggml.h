@@ -544,7 +544,6 @@ enum ggml_op {
     GGML_OP_SCATTER_UPDATE,
     GGML_OP_RMS_NORM_FUSED,
 
-
     GGML_OP_COUNT,
 };
 
@@ -935,7 +934,8 @@ GGML_API struct ggml_tensor * ggml_rms_norm(struct ggml_context * ctx, struct gg
 
 GGML_API struct ggml_tensor * ggml_rms_norm_inplace(struct ggml_context * ctx, struct ggml_tensor * a, float eps);
 
-GGML_API struct ggml_tensor * ggml_rms_norm_fused(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * w, float eps);
+GGML_API struct ggml_tensor * ggml_rms_norm_fused(struct ggml_context * ctx, struct ggml_tensor * a,
+                                                  struct ggml_tensor * w, float eps);
 
 // group normalize along ne0*ne1*n_groups
 // used in stable-diffusion
@@ -955,10 +955,11 @@ GGML_API struct ggml_tensor * ggml_rms_norm_back(struct ggml_context * ctx, stru
 // result is n columns, m rows => [ne03 * x, ne02 * y, m, n]
 GGML_API struct ggml_tensor * ggml_mul_mat(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b);
 // ggml_mul_mat with f16 precision
-GGML_API struct ggml_tensor * ggml_mul_mat_fp16(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b);
+GGML_API struct ggml_tensor * ggml_mul_mat_fp16(struct ggml_context * ctx, struct ggml_tensor * a,
+                                                struct ggml_tensor * b);
 // change the precision of a matrix multiplication
 // set to GGML_PREC_F32 for higher precision (useful for phi-2)
-GGML_API void ggml_mul_mat_set_prec(struct ggml_tensor * a, enum ggml_prec prec);
+GGML_API void                 ggml_mul_mat_set_prec(struct ggml_tensor * a, enum ggml_prec prec);
 
 // indirect matrix multiplication
 GGML_API struct ggml_tensor * ggml_mul_mat_id(struct ggml_context * ctx, struct ggml_tensor * as,
@@ -977,10 +978,10 @@ GGML_API struct ggml_tensor * ggml_moe_fused(struct ggml_context * ctx, struct g
                                              struct ggml_tensor * expert_gate_weights,
                                              struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx);
 
-GGML_API struct ggml_tensor * ggml_moe_fused_fp16(struct ggml_context * ctx, struct ggml_tensor * input, struct ggml_tensor * ids,
-                                    struct ggml_tensor * topk_weights, struct ggml_tensor * expert_up_weights,
-                                    struct ggml_tensor * expert_down_weights, struct ggml_tensor * expert_gate_weights,
-                                    struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx);
+GGML_API struct ggml_tensor * ggml_moe_fused_fp16(
+    struct ggml_context * ctx, struct ggml_tensor * input, struct ggml_tensor * ids, struct ggml_tensor * topk_weights,
+    struct ggml_tensor * expert_up_weights, struct ggml_tensor * expert_down_weights,
+    struct ggml_tensor * expert_gate_weights, struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx);
 
 GGML_API struct ggml_tensor * ggml_moe_fused_cpu(struct ggml_context * ctx, struct ggml_tensor * input);
 GGML_API struct ggml_tensor * ggml_flash_attn_prompt_cpu(struct ggml_context * ctx, struct ggml_tensor * input);
@@ -993,14 +994,13 @@ GGML_API struct ggml_tensor * ggml_flash_attn_prompt(struct ggml_context * ctx, 
                                                      int32_t sequence_lenth_kv, struct ggml_tensor * length_q_tensor,
                                                      struct ggml_tensor * length_kv_tensor, float scaleValue);
 
-GGML_API struct ggml_tensor * ggml_flash_attn_jittor_v1(
-    struct ggml_context * ctx, struct ggml_tensor * query,
-    struct ggml_tensor * key, struct ggml_tensor * value,
-    struct ggml_tensor * attn_mask, int32_t batch_size,
-    int32_t num_heads, int32_t head_dim_kq,int32_t head_dim_v, int32_t key_num_heads,
-    int32_t sequence_lenth_q, int32_t sequence_lenth_kv,
-    struct ggml_tensor * length_q_tensor, struct ggml_tensor * length_kv_tensor,
-    float scaleValue);
+GGML_API struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct ggml_tensor * query,
+                                                        struct ggml_tensor * key, struct ggml_tensor * value,
+                                                        struct ggml_tensor * attn_mask, int32_t batch_size,
+                                                        int32_t num_heads, int32_t head_dim_kq, int32_t head_dim_v,
+                                                        int32_t key_num_heads, int32_t sequence_lenth_q,
+                                                        int32_t sequence_lenth_kv, struct ggml_tensor * length_q_tensor,
+                                                        struct ggml_tensor * length_kv_tensor, float scaleValue);
 
 // fused moe for deepseek v2
 GGML_API struct ggml_tensor * ggml_to_zero(struct ggml_context * ctx, struct ggml_tensor * a);
@@ -1122,8 +1122,8 @@ GGML_API struct ggml_tensor * ggml_get_rows(struct ggml_context * ctx,
                                             struct ggml_tensor *  b);  // row indices
 
 GGML_API struct ggml_tensor * ggml_get_rows_fp16(struct ggml_context * ctx,
-                                            struct ggml_tensor *  a,  // data
-                                            struct ggml_tensor *  b);  // row indices
+                                                 struct ggml_tensor *  a,  // data
+                                                 struct ggml_tensor *  b);  // row indices
 
 GGML_API struct ggml_tensor * ggml_get_rows_back(
     struct ggml_context * ctx,
@@ -1584,7 +1584,7 @@ GGML_API struct ggml_cgraph * ggml_new_graph_custom(struct ggml_context * ctx, s
 GGML_API void                 ggml_graph_set_flags(struct ggml_cgraph * cgraph, int flags);
 GGML_API struct ggml_cgraph * ggml_graph_dup(struct ggml_context * ctx, struct ggml_cgraph * cgraph);
 GGML_API void                 ggml_graph_cpy(struct ggml_cgraph * src, struct ggml_cgraph * dst);
-GGML_API void ggml_graph_set_n_ctx(struct ggml_cgraph * cgraph, int n_ctx);
+GGML_API void                 ggml_graph_set_n_ctx(struct ggml_cgraph * cgraph, int n_ctx);
 GGML_API void                 ggml_graph_reset(
                     struct ggml_cgraph * cgraph);  // set regular grads + optimizer momenta to 0, set loss grad to 1
 GGML_API void ggml_graph_clear(struct ggml_cgraph * cgraph);

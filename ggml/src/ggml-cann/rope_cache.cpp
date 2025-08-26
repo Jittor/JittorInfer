@@ -1,17 +1,18 @@
-#include "kernels/ascendc_kernels.h"
-#include <float.h>
-#include "all_ops.h"
-#include <vector>
 #include "rope_cache.h"
-#include "op_proto.h"
-#include <algorithm>
-#include <cstring>
-#include <cmath>
-#include <numeric>
 
+#include <float.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <numeric>
+#include <vector>
+
+#include "all_ops.h"
+#include "kernels/ascendc_kernels.h"
+#include "op_proto.h"
 
 static const int64_t MAX_KERNELS = 4096;
-
 
 RopeCache::RopeCache(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* src0 = dst->src[0];  // input
@@ -52,34 +53,40 @@ RopeCache::RopeCache(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     const float logf_1_freq_scale = logf(1.0f / freq_scale);
 
     ggml_cann_pool_alloc sin_final_allocator(
-        ctx.pool(), src0->ne[0] / 2 * ctx.n_ctx *
-        ggml_type_size(ggml_type::GGML_TYPE_F32));
+        ctx.pool(),
+        src0->ne[0] / 2 * ctx.n_ctx * ggml_type_size(ggml_type::GGML_TYPE_F32));
     ggml_cann_pool_alloc cos_final_allocator(
-        ctx.pool(), src0->ne[0] / 2 * ctx.n_ctx *
-        ggml_type_size(ggml_type::GGML_TYPE_F32));
+        ctx.pool(),
+        src0->ne[0] / 2 * ctx.n_ctx * ggml_type_size(ggml_type::GGML_TYPE_F32));
     void* device_sin_final_buffer = sin_final_allocator.get();
     void* device_cos_final_buffer = cos_final_allocator.get();
 
     ggml_cann_set_device(ctx.device);
-    for(int64_t i = 0; i < ctx.n_ctx; i+=MAX_KERNELS)
-    {
-        ACLRT_LAUNCH_KERNEL(ascendc_custom_rope_cache_ext)(
-            std::min(MAX_KERNELS, ctx.n_ctx - i), ctx.stream(), (float*)device_cos_final_buffer + i * src0->ne[0] / 2, (float*)device_sin_final_buffer + i * src0->ne[0] / 2,
-            ne0, ne1, s01, s02, n_dims, freq_scale, theta_scale, ext_factor,
-            attn_factor, corr_dims[0], corr_dims[1], logf_1_freq_scale,
-            i);
+    for (int64_t i = 0; i < ctx.n_ctx; i += MAX_KERNELS) {
+        ACLRT_LAUNCH_KERNEL(ascendc_custom_rope_cache_ext)
+        (std::min(MAX_KERNELS, ctx.n_ctx - i), ctx.stream(),
+         (float*)device_cos_final_buffer + i * src0->ne[0] / 2,
+         (float*)device_sin_final_buffer + i * src0->ne[0] / 2, ne0, ne1, s01,
+         s02, n_dims, freq_scale, theta_scale, ext_factor, attn_factor,
+         corr_dims[0], corr_dims[1], logf_1_freq_scale, i);
     }
     ACL_CHECK(aclrtSynchronizeStream(ctx.stream()));
     final_shape = {1, ctx.n_ctx, 1, src0->ne[0] / 2};
-    final_size = std::accumulate(final_shape.begin(), final_shape.end(), 1, std::multiplies<int64_t>()) * ggml_type_size(ggml_type::GGML_TYPE_F32);
+    final_size = std::accumulate(final_shape.begin(), final_shape.end(), 1,
+                                 std::multiplies<int64_t>()) *
+                 ggml_type_size(ggml_type::GGML_TYPE_F32);
     ACL_CHECK(aclrtMallocHost(&sin_final_buffer, final_size));
     ACL_CHECK(aclrtMallocHost(&cos_final_buffer, final_size));
-    ACL_CHECK(aclrtMemcpy((void*)sin_final_buffer, final_size, (void*)device_sin_final_buffer, final_size, ACL_MEMCPY_DEVICE_TO_HOST));
-    ACL_CHECK(aclrtMemcpy((void*)cos_final_buffer, final_size, (void*)device_cos_final_buffer, final_size, ACL_MEMCPY_DEVICE_TO_HOST));
+    ACL_CHECK(aclrtMemcpy((void*)sin_final_buffer, final_size,
+                          (void*)device_sin_final_buffer, final_size,
+                          ACL_MEMCPY_DEVICE_TO_HOST));
+    ACL_CHECK(aclrtMemcpy((void*)cos_final_buffer, final_size,
+                          (void*)device_cos_final_buffer, final_size,
+                          ACL_MEMCPY_DEVICE_TO_HOST));
 }
 
-ge::Operator RopeCache::GetCosOp(ge::Graph& graph, const std::string& name) const
-{
+ge::Operator RopeCache::GetCosOp(ge::Graph& graph,
+                                 const std::string& name) const {
     std::vector<int64_t> shape(final_shape.begin(), final_shape.end());
     ge::TensorDesc tensor_desc(ge::Shape(shape), ge::FORMAT_ND, ge::DT_FLOAT);
     ge::Tensor tensor_ge(tensor_desc, (uint8_t*)cos_final_buffer, final_size);
@@ -89,8 +96,8 @@ ge::Operator RopeCache::GetCosOp(ge::Graph& graph, const std::string& name) cons
     return const_op;
 }
 
-ge::Operator RopeCache::GetSinOp(ge::Graph& graph, const std::string& name) const
-{
+ge::Operator RopeCache::GetSinOp(ge::Graph& graph,
+                                 const std::string& name) const {
     std::vector<int64_t> shape(final_shape.begin(), final_shape.end());
     ge::TensorDesc tensor_desc(ge::Shape(shape), ge::FORMAT_ND, ge::DT_FLOAT);
     ge::Tensor tensor_ge(tensor_desc, (uint8_t*)sin_final_buffer, final_size);

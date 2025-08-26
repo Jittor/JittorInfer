@@ -151,12 +151,13 @@ struct llama_context * llama_init_from_model(struct llama_model * model, struct 
                 ggml_backend_sched_reset(ctx->sched_decode.get());
                 ggml_backend_sched_set_eval_callback(ctx->sched_decode.get(), ctx->cparams.cb_eval,
                                                      ctx->cparams.cb_eval_user_data);
-                const char *print_layer_env = std::getenv("LLAMA_PRINT_LAYER");
+                const char * print_layer_env = std::getenv("LLAMA_PRINT_LAYER");
                 if (print_layer_env) {
-                    int print_layer = std::atoi(print_layer_env);
-                    std::string graph_name = "llama_graph_deepseek2_ge_" + std::to_string(print_layer) + ".dot";
+                    int         print_layer = std::atoi(print_layer_env);
+                    std::string graph_name  = "llama_graph_deepseek2_ge_" + std::to_string(print_layer) + ".dot";
                     LLAMA_LOG_INFO("llama_graph_deepseek2_ge: print layer %d to %s\n", print_layer, graph_name.c_str());
-                    auto *graph_for_print = llama_graph_builder::llama_build_graph(*ctx, ctx->buf_compute_meta_decode, ubatch_pp, true, print_layer);
+                    auto * graph_for_print = llama_graph_builder::llama_build_graph(*ctx, ctx->buf_compute_meta_decode,
+                                                                                    ubatch_pp, true, print_layer);
                     ggml_graph_print(graph_for_print);
                     ggml_graph_dump_dot(graph_for_print, nullptr, graph_name.c_str());
                 }

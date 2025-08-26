@@ -22,8 +22,6 @@ class KernelRope {
         // 将pos_len对齐到8的倍数 32字节对齐
         pos_len = (pos_len + 7) & ~7;
 
-     
-
         // 设置参数
         this->ne0 = ne0;        // 向量维度
         this->ne1 = ne1;        // 行数
@@ -43,9 +41,10 @@ class KernelRope {
         this->blockLength = ne0 / 2;
         this->tileNum = 1;
         this->pos_len = pos_len;
-       
+
         xGm.SetGlobalBuffer((__gm__ T *)x + blockIndex * this->ne0, this->ne0);
-        dstGm.SetGlobalBuffer((__gm__ T *)dst + blockIndex * this->ne0, this->ne0);
+        dstGm.SetGlobalBuffer((__gm__ T *)dst + blockIndex * this->ne0,
+                              this->ne0);
         posGm.SetGlobalBuffer((__gm__ int32_t *)pos, this->pos_len);
 
         pipe.InitBuffer(inQueueX, BUFFER_NUM, this->ne0 * sizeof(T));
@@ -74,7 +73,8 @@ class KernelRope {
    private:
     __aicore__ inline void CopyIn(int32_t row) {
         AscendC::LocalTensor<T> xLocal = inQueueX.AllocTensor<T>();
-        AscendC::LocalTensor<int32_t> posLocal = inQueuePos.AllocTensor<int32_t>();
+        AscendC::LocalTensor<int32_t> posLocal =
+            inQueuePos.AllocTensor<int32_t>();
 
         // 复制输入数据到UB
         AscendC::DataCopy(posLocal, posGm, this->pos_len);
@@ -276,7 +276,6 @@ class KernelRope {
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_y;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_theta_extrap;
 
-
     uint32_t blockLength;
     uint32_t tileNum;
 
@@ -294,10 +293,12 @@ class KernelRope {
     float corr_dims_v_1;  // YaRN修正维度1
     float logf_1_freq_scale;
     int64_t pos_len;
-
 };
 
-extern "C" __global__ __aicore__ void rope_ext_custom(GM_ADDR x, GM_ADDR pos, GM_ADDR dst, GM_ADDR workspace, GM_ADDR tiling) {
+extern "C" __global__ __aicore__ void rope_ext_custom(GM_ADDR x, GM_ADDR pos,
+                                                      GM_ADDR dst,
+                                                      GM_ADDR workspace,
+                                                      GM_ADDR tiling) {
     GET_TILING_DATA(tiling_data, tiling);
     // TODO: user kernel impl
     KernelRope<half> op;

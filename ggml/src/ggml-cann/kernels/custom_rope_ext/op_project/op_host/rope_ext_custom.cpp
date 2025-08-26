@@ -8,24 +8,22 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context) {
     uint32_t shape0 = context->GetInputShape(0)->GetOriginShape().GetDim(0);
     uint32_t shape1 = context->GetInputShape(0)->GetOriginShape().GetDim(1);
     uint32_t shape2 = context->GetInputShape(0)->GetOriginShape().GetDim(2);
-    context->SetBlockDim(shape0*shape1*shape2);
+    context->SetBlockDim(shape0 * shape1 * shape2);
     const gert::RuntimeAttrs* attrs = context->GetAttrs();
-  
- 
-    const int32_t * ne0 = attrs->GetAttrPointer<int32_t>(0);
-    const int32_t * ne1 = attrs->GetAttrPointer<int32_t>(1);
-    const int32_t * s1 = attrs->GetAttrPointer<int32_t>(2);
-    const int32_t * s2 = attrs->GetAttrPointer<int32_t>(3);
-    const int32_t * n_dims = attrs->GetAttrPointer<int32_t>(4);
-    const float * freq_scale = attrs->GetAttrPointer<float>(5);
-    const float * theta_scale = attrs->GetAttrPointer<float>(6);
-    const float * ext_factor = attrs->GetAttrPointer<float>(7);
-    const float * attn_factor = attrs->GetAttrPointer<float>(8);
-    const float * corr_dims_v_0 = attrs->GetAttrPointer<float>(9);
-    const float * corr_dims_v_1 = attrs->GetAttrPointer<float>(10);
-    const float * logf_1_freq_scale = attrs->GetAttrPointer<float>(11);
-    const int32_t * pos_len = attrs->GetAttrPointer<int32_t>(12);
 
+    const int32_t* ne0 = attrs->GetAttrPointer<int32_t>(0);
+    const int32_t* ne1 = attrs->GetAttrPointer<int32_t>(1);
+    const int32_t* s1 = attrs->GetAttrPointer<int32_t>(2);
+    const int32_t* s2 = attrs->GetAttrPointer<int32_t>(3);
+    const int32_t* n_dims = attrs->GetAttrPointer<int32_t>(4);
+    const float* freq_scale = attrs->GetAttrPointer<float>(5);
+    const float* theta_scale = attrs->GetAttrPointer<float>(6);
+    const float* ext_factor = attrs->GetAttrPointer<float>(7);
+    const float* attn_factor = attrs->GetAttrPointer<float>(8);
+    const float* corr_dims_v_0 = attrs->GetAttrPointer<float>(9);
+    const float* corr_dims_v_1 = attrs->GetAttrPointer<float>(10);
+    const float* logf_1_freq_scale = attrs->GetAttrPointer<float>(11);
+    const int32_t* pos_len = attrs->GetAttrPointer<int32_t>(12);
 
     tiling.set_ne0(*ne0);
     tiling.set_ne1(*ne1);
@@ -46,7 +44,6 @@ static ge::graphStatus TilingFunc(gert::TilingContext* context) {
     context->GetRawTilingData()->SetDataSize(tiling.GetDataSize());
 
     return ge::GRAPH_SUCCESS;
-  
 }
 }  // namespace optiling
 

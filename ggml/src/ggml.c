@@ -902,222 +902,146 @@ struct ggml_context_container {
 static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "NONE",
 
-    "DUP",
-    "ADD",
-    "ADD1",
-    "ACC",
-    "SUB",
-    "MUL",
-    "DIV",
-    "SQR",
-    "SQRT",
-    "LOG",
-    "SIN",
-    "COS",
-    "SUM",
-    "SUM_ROWS",
-    "MEAN",
-    "ARGMAX",
-    "COUNT_EQUAL",
-    "REPEAT",
-    "REPEAT_BACK",
-    "CONCAT",
-    "SILU_BACK",
-    "NORM",
-    "RMS_NORM",
-    "RMS_NORM_BACK",
+    "DUP", "ADD", "ADD1", "ACC", "SUB", "MUL", "DIV", "SQR", "SQRT", "LOG", "SIN", "COS", "SUM", "SUM_ROWS", "MEAN",
+    "ARGMAX", "COUNT_EQUAL", "REPEAT", "REPEAT_BACK", "CONCAT", "SILU_BACK", "NORM", "RMS_NORM", "RMS_NORM_BACK",
     "GROUP_NORM",
 
-    "MUL_MAT",
-    "MUL_MAT_ID",
-    "OUT_PROD",
+    "MUL_MAT", "MUL_MAT_ID", "OUT_PROD",
 
-    "SCALE",
-    "SET",
-    "CPY",
-    "CONT",
-    "RESHAPE",
-    "VIEW",
-    "PERMUTE",
-    "TRANSPOSE",
-    "GET_ROWS",
-    "GET_ROWS_BACK",
-    "DIAG",
-    "DIAG_MASK_INF",
-    "DIAG_MASK_ZERO",
-    "SOFT_MAX",
-    "SOFT_MAX_BACK",
-    "ROPE",
-    "ROPE_BACK",
-    "CLAMP",
-    "CONV_TRANSPOSE_1D",
-    "IM2COL",
-    "IM2COL_BACK",
-    "CONV_TRANSPOSE_2D",
-    "POOL_1D",
-    "POOL_2D",
-    "POOL_2D_BACK",
-    "UPSCALE",
-    "PAD",
-    "PAD_REFLECT_1D",
-    "ARANGE",
-    "TIMESTEP_EMBEDDING",
-    "ARGSORT",
-    "LEAKY_RELU",
+    "SCALE", "SET", "CPY", "CONT", "RESHAPE", "VIEW", "PERMUTE", "TRANSPOSE", "GET_ROWS", "GET_ROWS_BACK", "DIAG",
+    "DIAG_MASK_INF", "DIAG_MASK_ZERO", "SOFT_MAX", "SOFT_MAX_BACK", "ROPE", "ROPE_BACK", "CLAMP", "CONV_TRANSPOSE_1D",
+    "IM2COL", "IM2COL_BACK", "CONV_TRANSPOSE_2D", "POOL_1D", "POOL_2D", "POOL_2D_BACK", "UPSCALE", "PAD",
+    "PAD_REFLECT_1D", "ARANGE", "TIMESTEP_EMBEDDING", "ARGSORT", "LEAKY_RELU",
 
-    "FLASH_ATTN_EXT",
-    "FLASH_ATTN_BACK",
-    "SSM_CONV",
-    "SSM_SCAN",
-    "WIN_PART",
-    "WIN_UNPART",
-    "GET_REL_POS",
-    "ADD_REL_POS",
-    "RWKV_WKV6",
-    "GATED_LINEAR_ATTN",
+    "FLASH_ATTN_EXT", "FLASH_ATTN_BACK", "SSM_CONV", "SSM_SCAN", "WIN_PART", "WIN_UNPART", "GET_REL_POS", "ADD_REL_POS",
+    "RWKV_WKV6", "GATED_LINEAR_ATTN",
 
     "UNARY",
 
-    "MAP_UNARY",
-    "MAP_BINARY",
+    "MAP_UNARY", "MAP_BINARY",
 
-    "MAP_CUSTOM1_F32",
-    "MAP_CUSTOM2_F32",
-    "MAP_CUSTOM3_F32",
+    "MAP_CUSTOM1_F32", "MAP_CUSTOM2_F32", "MAP_CUSTOM3_F32",
 
-    "MAP_CUSTOM1",
-    "MAP_CUSTOM2",
-    "MAP_CUSTOM3",
+    "MAP_CUSTOM1", "MAP_CUSTOM2", "MAP_CUSTOM3",
 
-    "CROSS_ENTROPY_LOSS",
-    "CROSS_ENTROPY_LOSS_BACK",
-    "OPT_STEP_ADAMW",
+    "CROSS_ENTROPY_LOSS", "CROSS_ENTROPY_LOSS_BACK", "OPT_STEP_ADAMW",
 
     // commute
     "GGML_OP_ALL_REDUCE_SUM",
 
     // helper
-    "GGML_OP_DPSKV2_FUSED_MOE",
-    "GGML_OP_TO_ZERO",
-    "GGML_OP_MOE_FUSED",
-    "GGML_OP_MOE_FUSED_CPU",
-    "GGML_OP_FLASH_ATTN_PROMPT",
-    "GGML_OP_FLASH_ATTN_PROMPT_CPU",
-    "GGML_OP_FLASH_ATTN_JITTOR_V1",
-    "GGML_OP_GET_SLICE",
-    "GGML_OP_SCATTER_UPDATE",
-    "GGML_OP_RMS_NORM_FUSED"
+    "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
+    "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_GET_SLICE",
+    "GGML_OP_SCATTER_UPDATE", "GGML_OP_RMS_NORM_FUSED"
 };
 
 static_assert(GGML_OP_COUNT == 94, "GGML_OP_COUNT != 94");
 
-static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
-    "none",
+static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
-    "x",
-    "x+y",
-    "x+y",
-    "view(x,nb,offset)+=y->x",
-    "x-y",
-    "x*y",
-    "x/y",
-    "x^2",
-    "√x",
-    "log(x)",
-    "sin(x)",
-    "cos(x)",
-    "Σx",
-    "Σx_k",
-    "Σx/n",
-    "argmax(x)",
-    "count_equal(x)",
-    "repeat(x)",
-    "repeat_back(x)",
-    "concat(x, y)",
-    "silu_back(x)",
-    "norm(x)",
-    "rms_norm(x)",
-    "rms_norm_back(x)",
-    "group_norm(x)",
+                                                      "x",
+                                                      "x+y",
+                                                      "x+y",
+                                                      "view(x,nb,offset)+=y->x",
+                                                      "x-y",
+                                                      "x*y",
+                                                      "x/y",
+                                                      "x^2",
+                                                      "√x",
+                                                      "log(x)",
+                                                      "sin(x)",
+                                                      "cos(x)",
+                                                      "Σx",
+                                                      "Σx_k",
+                                                      "Σx/n",
+                                                      "argmax(x)",
+                                                      "count_equal(x)",
+                                                      "repeat(x)",
+                                                      "repeat_back(x)",
+                                                      "concat(x, y)",
+                                                      "silu_back(x)",
+                                                      "norm(x)",
+                                                      "rms_norm(x)",
+                                                      "rms_norm_back(x)",
+                                                      "group_norm(x)",
 
-    "X*Y",
-    "X[i]*Y",
-    "X*Y",
+                                                      "X*Y",
+                                                      "X[i]*Y",
+                                                      "X*Y",
 
-    "x*v",
-    "y-\\>view(x)",
-    "x-\\>y",
-    "cont(x)",
-    "reshape(x)",
-    "view(x)",
-    "permute(x)",
-    "transpose(x)",
-    "get_rows(x)",
-    "get_rows_back(x)",
-    "diag(x)",
-    "diag_mask_inf(x)",
-    "diag_mask_zero(x)",
-    "soft_max(x)",
-    "soft_max_back(x)",
-    "rope(x)",
-    "rope_back(x)",
-    "clamp(x)",
-    "conv_transpose_1d(x)",
-    "im2col(x)",
-    "im2col_back(x)",
-    "conv_transpose_2d(x)",
-    "pool_1d(x)",
-    "pool_2d(x)",
-    "pool_2d_back(x)",
-    "upscale(x)",
-    "pad(x)",
-    "pad_reflect_1d(x)",
-    "arange(start, stop, step)",
-    "timestep_embedding(timesteps, dim, max_period)",
-    "argsort(x)",
-    "leaky_relu(x)",
+                                                      "x*v",
+                                                      "y-\\>view(x)",
+                                                      "x-\\>y",
+                                                      "cont(x)",
+                                                      "reshape(x)",
+                                                      "view(x)",
+                                                      "permute(x)",
+                                                      "transpose(x)",
+                                                      "get_rows(x)",
+                                                      "get_rows_back(x)",
+                                                      "diag(x)",
+                                                      "diag_mask_inf(x)",
+                                                      "diag_mask_zero(x)",
+                                                      "soft_max(x)",
+                                                      "soft_max_back(x)",
+                                                      "rope(x)",
+                                                      "rope_back(x)",
+                                                      "clamp(x)",
+                                                      "conv_transpose_1d(x)",
+                                                      "im2col(x)",
+                                                      "im2col_back(x)",
+                                                      "conv_transpose_2d(x)",
+                                                      "pool_1d(x)",
+                                                      "pool_2d(x)",
+                                                      "pool_2d_back(x)",
+                                                      "upscale(x)",
+                                                      "pad(x)",
+                                                      "pad_reflect_1d(x)",
+                                                      "arange(start, stop, step)",
+                                                      "timestep_embedding(timesteps, dim, max_period)",
+                                                      "argsort(x)",
+                                                      "leaky_relu(x)",
 
-    "flash_attn_ext(x)",
-    "flash_attn_back(x)",
-    "ssm_conv(x)",
-    "ssm_scan(x)",
-    "win_part(x)",
-    "win_unpart(x)",
-    "get_rel_pos(x)",
-    "add_rel_pos(x)",
-    "rwkv_wkv6(k, v, r, tf, td, s)",
-    "gated_linear_attn(k, v, q, gate, s)",
+                                                      "flash_attn_ext(x)",
+                                                      "flash_attn_back(x)",
+                                                      "ssm_conv(x)",
+                                                      "ssm_scan(x)",
+                                                      "win_part(x)",
+                                                      "win_unpart(x)",
+                                                      "get_rel_pos(x)",
+                                                      "add_rel_pos(x)",
+                                                      "rwkv_wkv6(k, v, r, tf, td, s)",
+                                                      "gated_linear_attn(k, v, q, gate, s)",
 
-    "unary(x)",
+                                                      "unary(x)",
 
-    "f(x)",
-    "f(x,y)",
+                                                      "f(x)",
+                                                      "f(x,y)",
 
-    "custom_f32(x)",
-    "custom_f32(x,y)",
-    "custom_f32(x,y,z)",
+                                                      "custom_f32(x)",
+                                                      "custom_f32(x,y)",
+                                                      "custom_f32(x,y,z)",
 
-    "custom(x)",
-    "custom(x,y)",
-    "custom(x,y,z)",
+                                                      "custom(x)",
+                                                      "custom(x,y)",
+                                                      "custom(x,y,z)",
 
-    "cross_entropy_loss(x,y)",
-    "cross_entropy_loss_back(x,y)",
-    "adamw(x)",
+                                                      "cross_entropy_loss(x,y)",
+                                                      "cross_entropy_loss_back(x,y)",
+                                                      "adamw(x)",
 
-    "all_reduce_sum(x)",
+                                                      "all_reduce_sum(x)",
 
-    "dpskv2_fused_moe(x, y, z)",
-    "to_zero(x)",
-    "moe_fused(x, y, z)",
-    "moe_fused_cpu(x, y, z)",
-    "flash_attn_prompt(q, k, v)",
-    "flash_attn_prompt_cpu(q, k, v)",
-    "flash_attn_jittor_v1(q, k, v)",
-    "get_slice(x, i)",
-    "scatter_update(x, y, i)",
-    "rms_norm(x, w)"
-};
+                                                      "dpskv2_fused_moe(x, y, z)",
+                                                      "to_zero(x)",
+                                                      "moe_fused(x, y, z)",
+                                                      "moe_fused_cpu(x, y, z)",
+                                                      "flash_attn_prompt(q, k, v)",
+                                                      "flash_attn_prompt_cpu(q, k, v)",
+                                                      "flash_attn_jittor_v1(q, k, v)",
+                                                      "get_slice(x, i)",
+                                                      "scatter_update(x, y, i)",
+                                                      "rms_norm(x, w)" };
 
 static_assert(GGML_OP_COUNT == 94, "GGML_OP_COUNT != 94");
 
@@ -2449,7 +2373,8 @@ struct ggml_tensor * ggml_rms_norm_inplace(struct ggml_context * ctx, struct ggm
     return ggml_rms_norm_impl(ctx, a, eps, true);
 }
 
-struct ggml_tensor * ggml_rms_norm_fused(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * w, float eps) {
+struct ggml_tensor * ggml_rms_norm_fused(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * w,
+                                         float eps) {
     struct ggml_tensor * result = ggml_dup_tensor(ctx, a);
 
     ggml_set_op_params(result, &eps, sizeof(eps));
@@ -2523,14 +2448,11 @@ struct ggml_tensor * ggml_mul_mat(struct ggml_context * ctx, struct ggml_tensor 
     return result;
 }
 
-struct ggml_tensor * ggml_mul_mat_fp16(
-        struct ggml_context * ctx,
-        struct ggml_tensor  * a,
-        struct ggml_tensor  * b) {
+struct ggml_tensor * ggml_mul_mat_fp16(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b) {
     GGML_ASSERT(ggml_can_mul_mat(a, b));
     GGML_ASSERT(!ggml_is_transposed(a));
 
-    const int64_t ne[4] = { a->ne[1], b->ne[1], b->ne[2], b->ne[3] };
+    const int64_t        ne[4]  = { a->ne[1], b->ne[1], b->ne[2], b->ne[3] };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 4, ne);
 
     result->op     = GGML_OP_MUL_MAT;
@@ -2540,9 +2462,7 @@ struct ggml_tensor * ggml_mul_mat_fp16(
     return result;
 }
 
-void ggml_mul_mat_set_prec(
-        struct ggml_tensor * a,
-        enum ggml_prec       prec) {
+void ggml_mul_mat_set_prec(struct ggml_tensor * a, enum ggml_prec prec) {
     GGML_ASSERT(a->op == GGML_OP_MUL_MAT);
 
     const int32_t prec_i32 = (int32_t) prec;
@@ -2643,10 +2563,12 @@ struct ggml_tensor * ggml_moe_fused(struct ggml_context * ctx, struct ggml_tenso
     return result;
 }
 
-struct ggml_tensor * ggml_moe_fused_fp16(struct ggml_context * ctx, struct ggml_tensor * input, struct ggml_tensor * ids,
-                                    struct ggml_tensor * topk_weights, struct ggml_tensor * expert_up_weights,
-                                    struct ggml_tensor * expert_down_weights, struct ggml_tensor * expert_gate_weights,
-                                    struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx) {
+struct ggml_tensor * ggml_moe_fused_fp16(struct ggml_context * ctx, struct ggml_tensor * input,
+                                         struct ggml_tensor * ids, struct ggml_tensor * topk_weights,
+                                         struct ggml_tensor * expert_up_weights,
+                                         struct ggml_tensor * expert_down_weights,
+                                         struct ggml_tensor * expert_gate_weights, struct ggml_tensor * row_idx_permute,
+                                         int32_t start_idx, int32_t end_idx) {
     const int64_t        ne[4]  = { input->ne[0], ids->ne[1], 1, 1 };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 4, ne);
     result->op                  = GGML_OP_MOE_FUSED;
@@ -2737,13 +2659,13 @@ struct ggml_tensor * ggml_flash_attn_prompt(struct ggml_context * ctx, struct gg
 }
 
 struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct ggml_tensor * query,
-    struct ggml_tensor * key, struct ggml_tensor * value,
-    struct ggml_tensor * attn_mask, int32_t batch_size,
-    int32_t num_heads, int32_t head_dim_kq,int32_t head_dim_v, int32_t key_num_heads,
-    int32_t sequence_lenth_q, int32_t sequence_lenth_kv,
-    struct ggml_tensor * length_q_tensor, struct ggml_tensor * length_kv_tensor,
-    float scaleValue) {
-    const int64_t ne[4]  = { head_dim_v, sequence_lenth_q, num_heads, batch_size };
+                                               struct ggml_tensor * key, struct ggml_tensor * value,
+                                               struct ggml_tensor * attn_mask, int32_t batch_size, int32_t num_heads,
+                                               int32_t head_dim_kq, int32_t head_dim_v, int32_t key_num_heads,
+                                               int32_t sequence_lenth_q, int32_t sequence_lenth_kv,
+                                               struct ggml_tensor * length_q_tensor,
+                                               struct ggml_tensor * length_kv_tensor, float scaleValue) {
+    const int64_t        ne[4]  = { head_dim_v, sequence_lenth_q, num_heads, batch_size };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 4, ne);
     result->op                  = GGML_OP_FLASH_ATTN_JITTOR_V1;
     result->src[0]              = query;
@@ -2754,35 +2676,35 @@ struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct
     // for other cases, these tensors will be ignored.
     result->src[4]              = length_q_tensor;
     result->src[5]              = length_kv_tensor;
+
     struct {
-        int batch_size;
-        int num_heads;
-        int head_dim_kq;
-        int head_dim_v;
-        int key_num_heads;
-        int sequence_lenth_q;
+        int     batch_size;
+        int     num_heads;
+        int     head_dim_kq;
+        int     head_dim_v;
+        int     key_num_heads;
+        int     sequence_lenth_q;
         int64_t sequence_lenth_kv;
-        float scaleValue;
+        float   scaleValue;
     } params;
-    params.batch_size = batch_size;
-    params.num_heads = num_heads;
-    params.head_dim_kq = head_dim_kq;
-    params.head_dim_v = head_dim_v;
-    params.key_num_heads = key_num_heads;
+
+    params.batch_size        = batch_size;
+    params.num_heads         = num_heads;
+    params.head_dim_kq       = head_dim_kq;
+    params.head_dim_v        = head_dim_v;
+    params.key_num_heads     = key_num_heads;
     // Because the precision mode of flash attention depends on the sequence length q,
     // the sequence length q is still required for ge.
     // For ge, it only works for initialize,
     // and the following compute will depend on the tensor length_q_tensor.
-    params.sequence_lenth_q = sequence_lenth_q;
+    params.sequence_lenth_q  = sequence_lenth_q;
     params.sequence_lenth_kv = sequence_lenth_kv;
-    params.scaleValue = scaleValue;
+    params.scaleValue        = scaleValue;
     memcpy(result->op_params, &params, sizeof(params));
     return result;
 }
 
-struct ggml_tensor * ggml_to_zero(
-        struct ggml_context * ctx,
-        struct ggml_tensor  * a) {
+struct ggml_tensor * ggml_to_zero(struct ggml_context * ctx, struct ggml_tensor * a) {
     struct ggml_tensor * result = ggml_view_tensor(ctx, a);
     result->op                  = GGML_OP_TO_ZERO;
     result->src[0]              = a;
@@ -5596,7 +5518,7 @@ struct ggml_cgraph ggml_graph_view(struct ggml_cgraph * cgraph0, int i0, int i1)
         /*.order            =*/
         cgraph0->order,
         /*.graph_name_by_time =*/cgraph0->graph_name_by_time,
-        /*.n_ctx            =*/ cgraph0->n_ctx,
+        /*.n_ctx            =*/cgraph0->n_ctx,
     };
 
     return cgraph;
@@ -5649,8 +5571,7 @@ void ggml_graph_cpy(struct ggml_cgraph * src, struct ggml_cgraph * dst) {
     }
 }
 
-void ggml_graph_set_n_ctx(struct ggml_cgraph * cgraph, int n_ctx)
-{
+void ggml_graph_set_n_ctx(struct ggml_cgraph * cgraph, int n_ctx) {
     cgraph->n_ctx = n_ctx;
 }
 

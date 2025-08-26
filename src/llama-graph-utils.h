@@ -46,7 +46,8 @@ class llm_build_context {
 // input building
 struct ggml_tensor * llm_build_inp_embd(struct ggml_context * ctx, struct llama_context & lctx,
                                         const llama_hparams & hparams, const llama_ubatch & ubatch,
-                                        struct ggml_tensor * tok_embd, const llm_build_cb & cb, bool enable_fp16 = false);
+                                        struct ggml_tensor * tok_embd, const llm_build_cb & cb,
+                                        bool enable_fp16 = false);
 
 // lora
 struct ggml_tensor * llm_build_lora_mm(struct llama_context & lctx, struct ggml_context * ctx0, struct ggml_tensor * w,
@@ -68,7 +69,8 @@ struct ggml_tensor * llm_build_ffn(struct ggml_context * ctx, struct llama_conte
                                    struct ggml_tensor * gate, struct ggml_tensor * gate_b, struct ggml_tensor * gate_s,
                                    struct ggml_tensor * down, struct ggml_tensor * down_b, struct ggml_tensor * down_s,
                                    struct ggml_tensor * act_scales, llm_ffn_op_type type_op,
-                                   llm_ffn_gate_type type_gate, const llm_build_cb & cb, int il, bool enable_fp16 = false);
+                                   llm_ffn_gate_type type_gate, const llm_build_cb & cb, int il,
+                                   bool enable_fp16 = false);
 
 // moe ffn
 struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_tensor * cur,
@@ -77,7 +79,8 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
                                        struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
                                        int64_t expert_group_id, int64_t n_expert_groups, llm_ffn_op_type type_op,
                                        bool enable_fused_moe, bool norm_w, bool scale_w, float w_scale,
-                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il, bool enable_fp16 = false);
+                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il,
+                                       bool enable_fp16 = false);
 
 // attention
 struct ggml_tensor * llm_build_kv(struct ggml_context * ctx, struct llama_context & lctx, const llama_kv_cache & kv,

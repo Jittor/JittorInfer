@@ -131,7 +131,8 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
                                        struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
                                        int64_t expert_group_id, int64_t n_expert_groups, llm_ffn_op_type type_op,
                                        bool enable_fused_moe, bool norm_w, bool scale_w, float w_scale,
-                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il, bool enable_fp16) {
+                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il,
+                                       bool enable_fp16) {
     ggml_tensor * cur_f32;
     if (cur->type != GGML_TYPE_F32) {
         cur_f32 = ggml_cast(ctx, cur, GGML_TYPE_F32);
@@ -225,10 +226,10 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
         }
         if (enable_fp16) {
             moe_out = ggml_moe_fused_fp16(ctx, cur_new, selected_experts_id, weights, up_exps, down_exps, gate_exps,
-                                    row_idx_int32, start_expert, end_expert - 1);
+                                          row_idx_int32, start_expert, end_expert - 1);
         } else {
             moe_out = ggml_moe_fused(ctx, cur_new, selected_experts_id, weights, up_exps, down_exps, gate_exps,
-                                        row_idx_int32, start_expert, end_expert - 1);
+                                     row_idx_int32, start_expert, end_expert - 1);
         }
 
         cb(moe_out, "moe_out_after_cast", il);

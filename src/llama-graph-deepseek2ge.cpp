@@ -150,7 +150,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                     ggml_get_slice(ctx0, kv, n_embd_head_qk_nope, n_embd_head_qk_nope + n_embd_head_v, 0);
                 v_states = ggml_reshape_2d(ctx0, v_states, n_embd_head_v * n_head, n_tokens);
                 ggml_set_name(v_states, "v_states");
-                
+
                 // cast q_pe to fp32
                 // q_pe = ggml_cast(ctx0, q_pe, GGML_TYPE_F32);
                 // k_pe = ggml_cast(ctx0, k_pe, GGML_TYPE_F32);
@@ -167,7 +167,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 // cast q_pe and k_pe to fp16
                 // q_pe = ggml_cast(ctx0, q_pe, GGML_TYPE_F16);
                 // k_pe = ggml_cast(ctx0, k_pe, GGML_TYPE_F16);
-                
+
                 struct ggml_tensor * q_states = ggml_concat(ctx0, q_nope, q_pe, 0);
                 cb(q_states, "q_states", il);
 
@@ -202,7 +202,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
 
         if ((uint32_t) il < hparams.n_layer_dense_lead) {
             cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL,
-                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il, false);
+                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il,
+                                false);
             cb(cur, "ffn_out", il);
         } else {
             // MoE branch
@@ -237,7 +238,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         if (cur->type != GGML_TYPE_F16) {
             cur = ggml_cast(ctx0, cur, GGML_TYPE_F16);
         }
-        
+
         cur = ggml_add(ctx0, cur, ffn_inp);
 
         if (lctx.enable_dp_gather && lctx.self_token_size > 0) {
@@ -267,7 +268,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
 }
 
 struct ggml_cgraph * llm_build_deepseek2_ge(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
-                                            const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case, int print_layer) {
+                                            const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case,
+                                            int print_layer) {
     struct ggml_cgraph * result = NULL;
 
     llm_deepseek2_context_ge llm(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);

@@ -87,13 +87,15 @@ struct ggml_compute_params {
 
 typedef uint16_t ggml_fp16_internal_t;
 
-#        define ggml_vld1q_u32(w, x, y, z) { ((w) + ((uint64_t) (x) << 32)), ((y) + ((uint64_t) (z) << 32)) }
+#        define ggml_vld1q_u32(w, x, y, z) \
+            { ((w) + ((uint64_t) (x) << 32)), ((y) + ((uint64_t) (z) << 32)) }
 
 #    else
 
 typedef __fp16 ggml_fp16_internal_t;
 
-#        define ggml_vld1q_u32(w, x, y, z) { (w), (x), (y), (z) }
+#        define ggml_vld1q_u32(w, x, y, z) \
+            { (w), (x), (y), (z) }
 
 #    endif  // _MSC_VER
 

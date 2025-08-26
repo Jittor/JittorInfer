@@ -1976,19 +1976,16 @@ bool ggml_backend_compare_graph_backend(ggml_backend_t backend1, ggml_backend_t 
 
     assert(g1->n_nodes == g2->n_nodes);
 
-    if(only_last_node)
-    {
+    if (only_last_node) {
         ggml_backend_graph_compute(backend1, g1);
         ggml_backend_graph_compute(backend2, g2);
-        
+
         // compare results, calculate rms etc
         if (!callback(0, g1->nodes[g1->n_nodes - 1], g2->nodes[g2->n_nodes - 1], user_data)) {
             printf("failed to compare graphs\n");
             return false;
         }
-    }
-    else
-    {
+    } else {
         for (int i = 0; i < g1->n_nodes; i++) {
             struct ggml_tensor * t1 = g1->nodes[i];
             struct ggml_tensor * t2 = g2->nodes[i];

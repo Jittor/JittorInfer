@@ -5,7 +5,8 @@
 #include "llama-context.h"
 
 llm_deepseek2_context::llm_deepseek2_context(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
-                                             const llama_ubatch & ubatch, const llm_build_cb & cb, bool worst_case, int print_layer) :
+                                             const llama_ubatch & ubatch, const llm_build_cb & cb, bool worst_case,
+                                             int print_layer) :
     llm_build_context(lctx),
     model(lctx.model),
     hparams(model.hparams),
@@ -410,7 +411,8 @@ void llm_deepseek2_context::free() {
 }
 
 struct ggml_cgraph * llm_build_deepseek2(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
-                                         const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case, int print_layer) {
+                                         const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case,
+                                         int print_layer) {
     struct ggml_cgraph * result = NULL;
 
     llm_deepseek2_context llm(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);

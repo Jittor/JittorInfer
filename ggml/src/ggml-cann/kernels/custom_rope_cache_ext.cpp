@@ -6,12 +6,12 @@ using namespace AscendC;
 
 template <typename T>
 class KernelRopeCache {
-public:
+   public:
     __aicore__ inline KernelRopeCache() {}
 
-    __aicore__ inline void Init(GM_ADDR dst_cos, GM_ADDR dst_sin,
-                                int32_t ne0, int32_t ne1, int32_t s1,
-                                int32_t s2, int32_t n_dims, float freq_scale,
+    __aicore__ inline void Init(GM_ADDR dst_cos, GM_ADDR dst_sin, int32_t ne0,
+                                int32_t ne1, int32_t s1, int32_t s2,
+                                int32_t n_dims, float freq_scale,
                                 float theta_scale, float ext_factor,
                                 float attn_factor, float corr_dims_v_0,
                                 float corr_dims_v_1, float logf_1_freq_scale,
@@ -38,11 +38,17 @@ public:
         this->tileNum = 1;
         this->offset = offset;
 
-        cosGm.SetGlobalBuffer((__gm__ float *)dst_cos + blockIndex * this->blockLength, this->blockLength);
-        sinGm.SetGlobalBuffer((__gm__ float *)dst_sin + blockIndex * this->blockLength, this->blockLength);
+        cosGm.SetGlobalBuffer(
+            (__gm__ float *)dst_cos + blockIndex * this->blockLength,
+            this->blockLength);
+        sinGm.SetGlobalBuffer(
+            (__gm__ float *)dst_sin + blockIndex * this->blockLength,
+            this->blockLength);
 
-        pipe.InitBuffer(outQueueDstCos, BUFFER_NUM, this->blockLength * sizeof(T));
-        pipe.InitBuffer(outQueueDstSin, BUFFER_NUM, this->blockLength * sizeof(T));
+        pipe.InitBuffer(outQueueDstCos, BUFFER_NUM,
+                        this->blockLength * sizeof(T));
+        pipe.InitBuffer(outQueueDstSin, BUFFER_NUM,
+                        this->blockLength * sizeof(T));
         pipe.InitBuffer(tmpBuf_i0_2_float, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_theta_base, this->blockLength * sizeof(float));
         pipe.InitBuffer(tmpBuf_theta_interp, this->blockLength * sizeof(float));
@@ -63,7 +69,6 @@ public:
 
    private:
     __aicore__ inline void CopyIn(int32_t row) {
-
         // 复制输入数据到UB
     }
 
@@ -75,7 +80,8 @@ public:
         auto row_dst = GetBlockIdx();         // row_dst: current block index
         int32_t pos_val = offset + row_dst;
 
-        // Generate arithmetic progression: i0_2_float[i] = i, for i in [0, blockN - 1]
+        // Generate arithmetic progression: i0_2_float[i] = i, for i in [0,
+        // blockN - 1]
         LocalTensor<float> /* i0_2_float */ tmp0 =
             tmpBuf_i0_2_float.Get<float>();
         AscendC::ArithProgression<float>(
@@ -180,7 +186,7 @@ public:
         outQueueDstSin.FreeTensor(dstSinLocal);
     }
 
-private:
+   private:
     AscendC::TPipe pipe;
     AscendC::TQue<AscendC::QuePosition::VECOUT, BUFFER_NUM> outQueueDstCos;
     AscendC::TQue<AscendC::QuePosition::VECOUT, BUFFER_NUM> outQueueDstSin;
@@ -197,36 +203,33 @@ private:
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_tmp1;
     TBuf<AscendC::TPosition::VECCALC> tmpBuf_y;
 
-
     uint32_t blockLength;
     uint32_t tileNum;
 
-    int32_t ne0;        // 向量维度
-    int32_t ne1;        // 行数
-    int32_t s1;         // 行跨度
-    int32_t s2;         // 块跨度
-    int32_t n_dims;     // RoPE维度
-    float freq_scale;   // 频率缩放
-    float ext_factor;   // 外推因子
-    float attn_factor;  // 注意力因子
-    float theta_scale;  // theta缩放因子
+    int32_t ne0;          // 向量维度
+    int32_t ne1;          // 行数
+    int32_t s1;           // 行跨度
+    int32_t s2;           // 块跨度
+    int32_t n_dims;       // RoPE维度
+    float freq_scale;     // 频率缩放
+    float ext_factor;     // 外推因子
+    float attn_factor;    // 注意力因子
+    float theta_scale;    // theta缩放因子
     float corr_dims_v_0;  // YaRN修正维度0
     float corr_dims_v_1;  // YaRN修正维度1
     float logf_1_freq_scale;
     int64_t offset;
 };
 
-extern "C" __global__ __aicore__ void ascendc_custom_rope_cache_ext(GM_ADDR dst_cos, GM_ADDR dst_sin, int32_t ne0, int32_t ne1, int32_t s1,
+extern "C" __global__ __aicore__ void ascendc_custom_rope_cache_ext(
+    GM_ADDR dst_cos, GM_ADDR dst_sin, int32_t ne0, int32_t ne1, int32_t s1,
     int32_t s2, int32_t n_dims, float freq_scale, float theta_scale,
     float ext_factor, float attn_factor, float corr_dims_v_0,
     float corr_dims_v_1, float logf_1_freq_scale, int64_t offset) {
     KernelRopeCache<float> op;
 
-    op.Init(dst_cos, dst_sin, ne0, ne1, s1,
-            s2, n_dims, freq_scale,
-            theta_scale, ext_factor,
-            attn_factor, corr_dims_v_0,
-            corr_dims_v_1, logf_1_freq_scale,
-            offset);
+    op.Init(dst_cos, dst_sin, ne0, ne1, s1, s2, n_dims, freq_scale, theta_scale,
+            ext_factor, attn_factor, corr_dims_v_0, corr_dims_v_1,
+            logf_1_freq_scale, offset);
     op.Process();
 }

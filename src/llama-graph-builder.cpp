@@ -19,7 +19,8 @@
 
 struct ggml_cgraph * llama_graph_builder::llama_build_graph(llama_context &        lctx,
                                                             std::vector<uint8_t> & buf_compute_meta,
-                                                            const llama_ubatch & ubatch, bool worst_case, int print_layer) {
+                                                            const llama_ubatch & ubatch, bool worst_case,
+                                                            int print_layer) {
     const auto & model = lctx.model;
 
     // this callback allows us to apply custom logic to each tensor (e.g. ggml-alloc, offloading, etc.)

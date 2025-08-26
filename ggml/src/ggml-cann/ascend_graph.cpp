@@ -295,7 +295,8 @@ void process_input_tensors(
  * @param output_init 输出参数，存储图的输出Tensor
  * @return 构建好的Ascend计算图
  */
-ge::Graph build_ascend_graph(ggml_cgraph* cgraph, ggml_backend_cann_context& cann_ctx, 
+ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
+                             ggml_backend_cann_context& cann_ctx,
                              std::vector<gert::Tensor>& input_init,
                              std::vector<gert::Tensor>& output_init) {
     // 创建新的Ascend图
@@ -552,8 +553,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph, ggml_backend_cann_context& can
 
             case GGML_OP_ROPE: {
                 // 处理旋转位置编码(RoPE)操作
-                Operator rope_op =
-                    handle_rope_op(graph, node, ggml_tensor_to_ge_op_map, i, cann_ctx);
+                Operator rope_op = handle_rope_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i, cann_ctx);
                 ggml_tensor_to_ge_op_map[node] = rope_op;
                 if (node == last_op_node) {
                     graph_outputs.push_back(rope_op);

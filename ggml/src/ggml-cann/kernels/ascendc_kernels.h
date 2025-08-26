@@ -1,6 +1,7 @@
 #ifndef ASCENDC_KERNELS_H
 #define ASCENDC_KERNELS_H
 
+#include "aclrtlaunch_ascendc_custom_rope_cache_ext.h"
 #include "aclrtlaunch_ascendc_custom_rope_f16.h"
 #include "aclrtlaunch_ascendc_custom_rope_f32.h"
 #include "aclrtlaunch_ascendc_dup_by_rows_fp16.h"
@@ -15,6 +16,5 @@
 #include "aclrtlaunch_ascendc_quantize_f16_to_q4_0.h"
 #include "aclrtlaunch_ascendc_quantize_f32_q8_0.h"
 #include "aclrtlaunch_ascendc_quantize_f32_to_q4_0.h"
-#include "aclrtlaunch_ascendc_custom_rope_cache_ext.h"
 
 #endif  // ASCENDC_KERNELS_H

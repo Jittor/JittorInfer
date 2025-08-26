@@ -260,7 +260,7 @@ void ggml_cann_flash_attn_prompt(ggml_backend_cann_context& ctx,
 
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
 void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
-                                 ggml_tensor* dst);
+                                    ggml_tensor* dst);
 #endif
 
 /**
@@ -441,9 +441,11 @@ void ggml_cann_rms_norm(ggml_backend_cann_context& ctx, ggml_tensor* dst);
  *          mean-square computation, normalization, scaling) into a single
  *          efficient operation.
  *
- * @param ctx  The CANN backend context used to manage resources and kernel execution.
- * @param dst  The output tensor. It contains the result after applying RMS normalization.
- *             The input and scale tensors are expected to be in `dst->src[0]` and `dst->src[1]`.
+ * @param ctx  The CANN backend context used to manage resources and kernel
+ * execution.
+ * @param dst  The output tensor. It contains the result after applying RMS
+ * normalization. The input and scale tensors are expected to be in
+ * `dst->src[0]` and `dst->src[1]`.
  */
 void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 

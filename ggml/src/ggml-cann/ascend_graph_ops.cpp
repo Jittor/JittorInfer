@@ -1065,7 +1065,9 @@ ge::Operator handle_concat_op(
     ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
     concat_op.update_output_desc_y(desc_out);
 
-    // GGML_LOG_INFO("concat_%d: %s, src0: %s(%d), src1: %s(%d)\n", op_index, node->name, src0->name, op_x1.GetOutputDesc(0).GetDataType(), src1->name, op_x2.GetOutputDesc(0).GetDataType());
+    // GGML_LOG_INFO("concat_%d: %s, src0: %s(%d), src1: %s(%d)\n", op_index,
+    // node->name, src0->name, op_x1.GetOutputDesc(0).GetDataType(), src1->name,
+    // op_x2.GetOutputDesc(0).GetDataType());
 
     // Add operator to graph
     graph.AddOp(concat_op);
@@ -1436,14 +1438,15 @@ ge::Operator handle_rms_norm_op(
     // 在GGML中，特征维度是ne[0]
     int64_t feature_dim = src_x->ne[0];
 
-    // GGML_LOG_INFO("FRMSNorm with input %s: %s, feature_dim = %ld\n", src_x->name, get_shape_str(op_x).c_str(), feature_dim);
+    // GGML_LOG_INFO("FRMSNorm with input %s: %s, feature_dim = %ld\n",
+    // src_x->name, get_shape_str(op_x).c_str(), feature_dim);
 
     // 创建RMSNorm操作符
     std::string name = "rmsnorm_" + std::to_string(op_index);
     ge::op::RmsNorm rms_norm_op(name);
 
     // 设置RMSNorm的输入和参数
-    rms_norm_op.set_input_x(op_x);                // 主输入
+    rms_norm_op.set_input_x(op_x);          // 主输入
     rms_norm_op.set_attr_epsilon(epsilon);  // 设置epsilon值，防止除零
 
     if (node->op == GGML_OP_RMS_NORM) {
@@ -1457,7 +1460,7 @@ ge::Operator handle_rms_norm_op(
 
         // 设置gamma常量的形状和数据
         ge::TensorDesc gamma_desc(ge::Shape({feature_dim}), ge::FORMAT_ND,
-                                ge::DT_FLOAT16);
+                                  ge::DT_FLOAT16);
         ge::Tensor gamma_tensor(gamma_desc,
                                 reinterpret_cast<uint8_t *>(gamma_data.data()),
                                 gamma_data.size() * sizeof(ggml_fp16_t));
@@ -1472,7 +1475,9 @@ ge::Operator handle_rms_norm_op(
         GGML_ASSERT(src_gamma != nullptr);
         GGML_ASSERT(gmml_tensor_to_ge_op_map.count(src_gamma));
         ge::Operator op_gamma = gmml_tensor_to_ge_op_map[src_gamma];
-        ge::Operator op_squeeze_gamma = create_squeeze_op(graph, "rms_norm_", "_" + std::to_string(op_index), op_gamma, {0, 1, 2});
+        ge::Operator op_squeeze_gamma = create_squeeze_op(
+            graph, "rms_norm_", "_" + std::to_string(op_index), op_gamma,
+            {0, 1, 2});
         rms_norm_op.set_input_gamma(op_squeeze_gamma);
     }
 
@@ -1512,7 +1517,7 @@ ge::Operator handle_rms_norm_op(
 ge::Operator handle_rope_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
-    int op_index, ggml_backend_cann_context& cann_ctx) {
+    int op_index, ggml_backend_cann_context &cann_ctx) {
     // 获取源张量
     struct ggml_tensor *src0 = node->src[0];  // 输入张量
     struct ggml_tensor *src1 = node->src[1];  // 位置索引张量
@@ -1682,24 +1687,31 @@ ge::Operator handle_rope_op(
     // TODO: 在同一个模型中多个RoPE也可能共享一个sin、cos缓存
     std::string curr_suffix = "_" + std::to_string(op_index);
     RopeCache rope_cache(cann_ctx, dst);
-    ge::Operator rope_sin_cache = rope_cache.GetSinOp(graph, "rope_sin_tensor" + curr_suffix);
-    ge::Operator rope_cos_cache = rope_cache.GetCosOp(graph, "rope_cos_tensor" + curr_suffix);
+    ge::Operator rope_sin_cache =
+        rope_cache.GetSinOp(graph, "rope_sin_tensor" + curr_suffix);
+    ge::Operator rope_cos_cache =
+        rope_cache.GetCosOp(graph, "rope_cos_tensor" + curr_suffix);
 
-    ge::Operator op_x1_squeeze = create_squeeze_op(graph, "rope_squeeze_x1_", curr_suffix, op_x1, {0, 1, 2});
+    ge::Operator op_x1_squeeze = create_squeeze_op(
+        graph, "rope_squeeze_x1_", curr_suffix, op_x1, {0, 1, 2});
 
-    ge::Operator gather_sin_cache = create_gather_op(graph, "rope_gather_sin_cache_", curr_suffix, rope_sin_cache, op_x1_squeeze, 1);
-    ge::Operator gather_cos_cache = create_gather_op(graph, "rope_gather_cos_cache_", curr_suffix, rope_cos_cache, op_x1_squeeze, 1);
+    ge::Operator gather_sin_cache =
+        create_gather_op(graph, "rope_gather_sin_cache_", curr_suffix,
+                         rope_sin_cache, op_x1_squeeze, 1);
+    ge::Operator gather_cos_cache =
+        create_gather_op(graph, "rope_gather_cos_cache_", curr_suffix,
+                         rope_cos_cache, op_x1_squeeze, 1);
     std::string name_rope = "rope_rope" + curr_suffix;
     ge::op::RopeExtCustomV2 rope_op(name_rope.c_str());
 
     // // 设置RoPE操作的输入
-    rope_op.set_input_x(perm_x_op);     // 主输入
-    rope_op.set_input_cos(gather_cos_cache);      // 预先计算好的cos输入
-    rope_op.set_input_sin(gather_sin_cache);      // 预先计算好的sin输入
+    rope_op.set_input_x(perm_x_op);           // 主输入
+    rope_op.set_input_cos(gather_cos_cache);  // 预先计算好的cos输入
+    rope_op.set_input_sin(gather_sin_cache);  // 预先计算好的sin输入
 
     // 设置RoPE操作的输出描述
     ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
-                                get_data_type(node->type));
+                                 get_data_type(node->type));
     rope_op.update_output_desc_dst(desc_out_rope);
 
     // 只设置3个属性
