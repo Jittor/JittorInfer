@@ -1,0 +1,47 @@
+name: Code Formatting with clang-format
+
+on: push
+
+permissions:
+  contents: write
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Install clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format
+    
+    - name: Run clang-format
+      run: |
+        # Find and format C/C++ files in specified directories, excluding build_out paths
+        find common examples ggml include src test -name "*.cpp" -o -name "*.hpp" -o -name "*.c" -o -name "*.h" 2>/dev/null | \
+        grep -v "build_out" | \
+        xargs -r clang-format -i
+    
+    - name: Check for changes
+      id: verify-changed-files
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Commit changes
+      if: steps.verify-changed-files.outputs.changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "Auto-format code with clang-format"
+        git push
