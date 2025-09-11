@@ -51,7 +51,7 @@ static struct DefaultMiniParams {
     bool                  use_mlock         = false;  // use mlock to keep model in memory
     bool                  check_tensors     = false;  // validate tensor data
 
-    std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";  // Will be set from command line argument
+    std::string model = "/root/mcx/model/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-fp16.gguf";  // Will be set from command line argument
 
     uint32_t n_ctx = 2048;                                            // context size
 

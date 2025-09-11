@@ -24,7 +24,7 @@ n_batch: 1024 # logical batch size for prompt processing
 n_parallel: 8  # number of parallel sequences to decode (must < 32 now)
 
 # Model parameters
-model: "/root/data/qwen2-7b-instruct-fp16.gguf"  # model path
+model: "/root/mcx/model/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/qwen2.5-0.5b-instruct-fp16.gguf"  # model path
 model_alias: ""  # model alias
 
 # Server parameters
@@ -37,4 +37,4 @@ hostname: "127.0.0.1"  # server hostname
 chat_template: ""    # chat template
 
 # Reasoning format
-reasoning_format: COMMON_REASONING_FORMAT_DEEPSEEK
+# reasoning_format: COMMON_REASONING_FORMAT_DEEPSEEK
