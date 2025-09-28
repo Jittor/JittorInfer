@@ -45,7 +45,7 @@ struct ggml_cgraph * llm_qwen2_context_ge::build_qwen2_ge() {
 
     inp_pos = build_inp_pos();
 
-    indices = build_attn_indices();
+    indices   = build_attn_indices();
     length_q  = build_length_q();
     length_kv = build_length_kv();
 
@@ -81,8 +81,8 @@ struct ggml_cgraph * llm_qwen2_context_ge::build_qwen2_ge() {
                                  beta_fast, beta_slow);
             cb(Kcur, "Kcur", il);
 
-            cur = llm_build_kv_ge(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, Kcur, Vcur, Qcur,
-                                      indices, length_q, length_kv, n_tokens, n_kv, 1.0f / sqrtf(float(n_embd_head)), cb, il, true);
+            cur = llm_build_kv_ge(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, Kcur, Vcur, Qcur, indices,
+                                  length_q, length_kv, n_tokens, n_kv, 1.0f / sqrtf(float(n_embd_head)), cb, il, true);
         }
 
         struct ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
@@ -94,11 +94,11 @@ struct ggml_cgraph * llm_qwen2_context_ge::build_qwen2_ge() {
         cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL, NULL,
                             model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il, false);
         cb(cur, "ffn_out", il);
-        
+
         cur = ggml_add(ctx0, cur, ffn_inp);
         cur = lctx.cvec.apply_to(cur);
         cb(cur, "l_out", il);
-        
+
         inpL = cur;
     }
 
@@ -118,8 +118,8 @@ struct ggml_cgraph * llm_qwen2_context_ge::build_qwen2_ge() {
 }
 
 struct ggml_cgraph * llm_build_qwen2_ge(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
-                                            const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case,
-                                            int print_layer) {
+                                        const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case,
+                                        int print_layer) {
     struct ggml_cgraph * result = NULL;
 
     llm_qwen2_context_ge llm(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
