@@ -100,7 +100,7 @@ static struct DefaultMiniParams {
     bool use_mlock          = false;    // use mlock to keep model in memory
     bool check_tensors      = false;    // validate tensor data
 
-    std::string model       = "/root/zjp/DeepSeek-V2-Chat-f16.gguf";
+    std::string model       = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
 
     uint32_t n_ctx          = 256;         // context size
     uint32_t n_threads      = 64;           // number of threads to use for computation
@@ -136,7 +136,7 @@ static llama_model_params common_model_params_to_llama_local() {
     mparams.check_tensors   = default_mini_params.check_tensors;
     mparams.n_gpu_layers    = default_mini_params.n_gpu_layers;
     // 开启张量并行
-    mparams.enable_tensor_parallel = false;
+    mparams.enable_tensor_parallel = true;
     mparams.enable_expert_parallel = true;
     mparams.enable_data_parallel = true;
     mparams.enable_fused_moe = true;
