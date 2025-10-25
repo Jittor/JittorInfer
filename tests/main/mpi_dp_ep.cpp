@@ -1,10 +1,5 @@
 // A basic application simulating a server with multiple clients.
 // The clients submit requests to the server and they are processed in parallel.
-#include "common_local.h"
-#include "ggml.h"
-#include "llama.h"
-#include "sampling_local.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -14,13 +9,18 @@
 #include <string>
 #include <vector>
 
+#include "common_local.h"
+#include "ggml.h"
+#include "llama.h"
+#include "sampling_local.h"
+
 #define OMPI_SKIP_MPICXX 1
 #include <mpi.h>
 
 // trim whitespace from the beginning and end of a string
 static std::string trim(const std::string &str) {
   size_t start = 0;
-  size_t end = str.size();
+  size_t end   = str.size();
 
   while (start < end && isspace(str[start])) {
     start += 1;
@@ -56,42 +56,56 @@ static std::vector<std::string> k_prompts = {
     "I want to learn how to play the piano.",
 };
 
-struct client {
-  ~client() {
+struct Client {
+  ~Client() {
     if (smpl) {
       common_sampler_local_free(smpl);
     }
   }
 
-  int32_t id = 0;
-  llama_seq_id seq_id = -1;
+  // request id from outside
+  llama_seq_id req_id     = -1;
+  bool         is_running = false;
+
+  int32_t ith_client = 0;
+  int32_t ith_batch  = -1;
+
   llama_token sampled;
 
   int64_t t_start_prompt;
   int64_t t_start_gen;
 
-  int32_t n_prompt = 0;
+  int32_t n_prompt  = 0;
   int32_t n_decoded = 0;
-  int32_t i_batch = -1;
 
-  std::string input;
+  // fake client that is used to prevent empty batch, will only generate 1 token
+  bool is_fake = false;
+
+  std::string              input;
   std::vector<llama_token> prompt;
-  std::string response;
+  std::string              response;
 
   struct common_sampler_local *smpl = nullptr;
 
-  void reset(std::string _input, std::vector<llama_token> _prompt) {
-    static llama_seq_id g_seq_id = 0;
-    seq_id = g_seq_id++;
+  struct ResetParam {
+    std::string              input;
+    std::vector<llama_token> prompt;
+    bool                     is_fake = false;
+    int                      req_id  = -1;
+  };
+
+  void reset(ResetParam &&param) {
+    req_id = param.req_id;
 
     t_start_prompt = ggml_time_us();
-    t_start_gen = 0;
+    t_start_gen    = 0;
 
-    input = std::move(_input);
-    prompt = std::move(_prompt);
-    response = "";
-    n_prompt = prompt.size();
+    input     = std::move(param.input);
+    prompt    = std::move(param.prompt);
+    response  = "";
+    n_prompt  = prompt.size();
     n_decoded = 0;
+    is_fake   = param.is_fake;
 
     common_sampler_reset(smpl);
   }
@@ -99,8 +113,8 @@ struct client {
 
 static void print_date_time() {
   std::time_t current_time = std::time(nullptr);
-  std::tm *local_time = std::localtime(&current_time);
-  char buffer[80];
+  std::tm    *local_time   = std::localtime(&current_time);
+  char        buffer[80];
   strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", local_time);
 
   printf("\n");
@@ -109,57 +123,57 @@ static void print_date_time() {
 }
 
 static struct DefaultMiniParams {
-  int main_gpu = 1;
-  int n_gpu_layers = 99;
+  int                   main_gpu     = 1;
+  int                   n_gpu_layers = 99;
   enum llama_split_mode split_mode =
       LLAMA_SPLIT_MODE_ROW; // how to split the model across GPUs
   float tensor_split[128] = {
-      0};                 // how split tensors should be distributed across GPUs
-  bool use_mmap = true;   // use mmap for faster loads
-  bool use_mlock = false; // use mlock to keep model in memory
+      0}; // how split tensors should be distributed across GPUs
+  bool use_mmap      = true;  // use mmap for faster loads
+  bool use_mlock     = false; // use mlock to keep model in memory
   bool check_tensors = false; // validate tensor data
 
   std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
 
-  uint32_t n_ctx = 512;    // context size
-  uint32_t n_threads = 64; // number of threads to use for computation
+  uint32_t n_ctx     = 512; // context size
+  uint32_t n_threads = 64;  // number of threads to use for computation
   uint32_t n_threads_batch =
       64; // number of threads to use for batch processing
 
-  float defrag_thold = 0.1f; // defragmentation threshold
-  bool no_perf = false;      // disable performance metrics
+  float defrag_thold = 0.1f;  // defragmentation threshold
+  bool  no_perf      = false; // disable performance metrics
   std::vector<common_adapter_lora_info>
       lora_adapters; // lora adapter path with user defined scale
 
   int32_t n_batch = 512; // logical batch size for prompt processing
-  bool enable_chat_template = true;
-  bool escape = true;
+  bool    enable_chat_template               = true;
+  bool    escape                             = true;
   common_conversation_mode conversation_mode = COMMON_CONVERSATION_MODE_ENABLED;
 
   // parallel test configs
-  int n_parallel = 1;
-  bool cont_batching = true;
-  bool dump_kv_cache = false;
-  int32_t n_predict = -1; // new tokens to predict
+  int     n_parallel    = 255;
+  bool    cont_batching = true;
+  bool    dump_kv_cache = false;
+  int32_t n_predict     = 510; // new tokens to predict
 
 } default_mini_params;
 
 static llama_model_params common_model_params_to_llama_local() {
   auto mparams = llama_model_default_params();
 
-  mparams.main_gpu = default_mini_params.main_gpu;
-  mparams.split_mode = default_mini_params.split_mode;
-  mparams.tensor_split = default_mini_params.tensor_split;
-  mparams.use_mmap = default_mini_params.use_mmap;
-  mparams.use_mlock = default_mini_params.use_mlock;
+  mparams.main_gpu      = default_mini_params.main_gpu;
+  mparams.split_mode    = default_mini_params.split_mode;
+  mparams.tensor_split  = default_mini_params.tensor_split;
+  mparams.use_mmap      = default_mini_params.use_mmap;
+  mparams.use_mlock     = default_mini_params.use_mlock;
   mparams.check_tensors = default_mini_params.check_tensors;
-  mparams.n_gpu_layers = default_mini_params.n_gpu_layers;
+  mparams.n_gpu_layers  = default_mini_params.n_gpu_layers;
   // 开启张量并行
   mparams.enable_tensor_parallel = true;
   mparams.enable_expert_parallel = true;
-  mparams.enable_data_parallel = true;
-  mparams.enable_fused_moe = true;
-  mparams.enable_mpi = true;
+  mparams.enable_data_parallel   = true;
+  mparams.enable_fused_moe       = true;
+  mparams.enable_mpi             = true;
 
 #ifdef LLAMA_MPI_SUPPORT
   if (mparams.enable_mpi) {
@@ -179,11 +193,12 @@ static llama_model_params common_model_params_to_llama_local() {
 static llama_context_params common_context_params_to_llama_local() {
   auto cparams = llama_context_default_params();
 
-  cparams.n_ctx = default_mini_params.n_ctx;
-  cparams.n_threads = default_mini_params.n_threads;
+  cparams.n_ctx   = default_mini_params.n_ctx * default_mini_params.n_parallel;
+  cparams.n_batch = default_mini_params.n_batch;
+  cparams.n_threads       = default_mini_params.n_threads;
   cparams.n_threads_batch = default_mini_params.n_threads_batch;
-  cparams.defrag_thold = default_mini_params.defrag_thold;
-  cparams.no_perf = default_mini_params.no_perf;
+  cparams.defrag_thold    = default_mini_params.defrag_thold;
+  cparams.no_perf         = default_mini_params.no_perf;
 
   return cparams;
 }
@@ -256,6 +271,7 @@ static common_init_result common_init_from_params_local() {
 
   return iparams;
 }
+
 // 得到所有server下一步需要处理的token数量
 static void recv_batch_list(int *all_server_tokens, int *self_server_tokens) {
   MPI_Allgather(self_server_tokens, 1, MPI_INT, all_server_tokens, 1, MPI_INT,
@@ -287,30 +303,31 @@ int main(int argc, char **argv) {
   // load the target model
   common_init_result llama_init = common_init_from_params_local();
 
-  llama_model *model = llama_init.model.get();
-  llama_context *ctx = llama_init.context.get();
+  llama_model   *model = llama_init.model.get();
+  llama_context *ctx   = llama_init.context.get();
 
   const llama_vocab *vocab = llama_model_get_vocab(model);
 
   const int n_ctx = llama_n_ctx(ctx);
 
   common_params_local_sampling sparams;
-  std::vector<client> clients(n_clients);
+  std::vector<Client>          clients(n_clients);
   for (size_t i = 0; i < clients.size(); ++i) {
-    auto &client = clients[i];
-    client.id = i;
-    client.smpl = common_sampler_local_init(model, sparams);
+    auto &client      = clients[i];
+    client.ith_client = i;
+    client.smpl       = common_sampler_local_init(model, sparams);
   }
 
   std::vector<llama_token> tokens_system;
-  tokens_system = common_tokenize(ctx, k_system, true);
+  tokens_system                 = common_tokenize(ctx, k_system, true);
   const int32_t n_tokens_system = tokens_system.size();
 
   // the max batch size is as large as the context to handle cases where we get
   // very long input prompt from multiple users. regardless of the size, the
   // main loop will chunk the batch into a maximum of params.n_batch tokens at a
   // time
-  llama_batch batch = llama_batch_init(n_ctx, 0, 1);
+  llama_batch batch =
+      llama_batch_init(n_ctx, 0, default_mini_params.n_parallel);
 
   // int32_t n_total_prompt = 0;
   // int32_t n_total_gen    = 0;
@@ -359,14 +376,13 @@ int main(int argc, char **argv) {
     // 这已经是decode阶段了，n_batch数量等于待处理序列数量.prefill阶段以及全部处理结束seq_id
     // = -1
     for (auto &client : clients) {
-      if (client.seq_id == -1) {
-        continue;
+      if (client.is_running) {
+        client.ith_batch = batch.n_tokens;
+        common_batch_add(batch, client.sampled,
+                         n_tokens_system + client.n_prompt + client.n_decoded,
+                         {client.ith_client + 1}, true);
+        client.n_decoded += 1;
       }
-      client.i_batch = batch.n_tokens;
-      common_batch_add(batch, client.sampled,
-                       n_tokens_system + client.n_prompt + client.n_decoded,
-                       {client.id + 1}, true);
-      client.n_decoded += 1;
     }
 
     if (batch.n_tokens == 0) {
@@ -384,17 +400,19 @@ int main(int argc, char **argv) {
     // == n_seq
     if (cont_batching || batch.n_tokens == 0) {
       for (auto &client : clients) {
-        if (client.seq_id == -1) {
-          {
-            std::string input = k_prompts[rand() % k_prompts.size()];
-            std::vector<llama_token> prompt =
-                common_tokenize(ctx, input + "\nAssistant:", false);
-            client.reset(std::move(input), std::move(prompt));
-          }
+        if (client.req_id == -1) {
+          std::string              input = k_prompts[rand() % k_prompts.size()];
+          std::vector<llama_token> prompt =
+              common_tokenize(ctx, input + "\nAssistant:", false);
+          client.reset({
+              .input  = std::move(input),
+              .prompt = std::move(prompt),
+              .req_id = 1,
+          });
 
           for (size_t i = 0; i < client.prompt.size(); ++i) {
             common_batch_add(batch, client.prompt[i], i + n_tokens_system,
-                             {client.id + 1}, false);
+                             {client.ith_client + 1}, false);
           }
 
           // extract the logits only for the last token
@@ -402,17 +420,16 @@ int main(int argc, char **argv) {
             batch.logits[batch.n_tokens - 1] = true;
           }
 
-          client.i_batch = batch.n_tokens - 1;
+          client.ith_batch = batch.n_tokens - 1;
 
-          printf("\033[31mClient %3d, seq %4d, started decoding ...\033[0m\n",
-                 client.id, client.seq_id);
+          printf("\033[31mClient %3d, req %4d, started decoding ...\033[0m\n",
+                 client.ith_client, client.req_id);
         }
       }
     }
 
-    if (batch.n_tokens == 0) {
-      break;
-    }
+    // empty run seems not working
+    GGML_ASSERT(batch.n_tokens != 0);
 
     // process in chunks of params.n_batch
     int32_t n_batch = default_mini_params.n_batch;
@@ -451,12 +468,13 @@ int main(int argc, char **argv) {
       }
 
       for (auto &client : clients) {
-        if (client.i_batch < (int)i || client.i_batch >= (int)(i + n_tokens)) {
+        if (client.ith_batch < (int)i ||
+            client.ith_batch >= (int)(i + n_tokens)) {
           continue;
         }
 
         const llama_token id =
-            common_sampler_sample(client.smpl, ctx, client.i_batch - i);
+            common_sampler_sample(client.smpl, ctx, client.ith_batch - i);
 
         common_sampler_accept(client.smpl, id, true);
 
@@ -469,13 +487,31 @@ int main(int argc, char **argv) {
         client.response += token_str;
         client.sampled = id;
 
-        if (client.n_decoded > 2 &&
-            (llama_vocab_is_eog(vocab, id) ||
-             (default_mini_params.n_predict > 0 &&
-              client.n_decoded + client.n_prompt >=
-                  default_mini_params.n_predict) ||
-             client.response.find("User:") != std::string::npos ||
-             client.response.find('\n') != std::string::npos)) {
+        auto is_finish = [&] {
+          if (client.is_fake) {
+            // fake client only generate 1 token
+            return true;
+          }
+          if (client.n_decoded > 2) {
+            // eog
+            if (llama_vocab_is_eog(vocab, id)) {
+              return true;
+            }
+            // max tokens reached
+            if (default_mini_params.n_predict > 0) {
+              if (client.n_decoded + client.n_prompt >=
+                  default_mini_params.n_predict) {
+                return true;
+              }
+            }
+            // find "User:"
+            if (client.response.find("User:") != std::string::npos) {
+              return true;
+            }
+          }
+          return false;
+        };
+        if (is_finish()) {
           // basic reverse prompt
           const size_t pos = client.response.find("User:");
           if (pos != std::string::npos) {
@@ -484,27 +520,27 @@ int main(int argc, char **argv) {
 
           // delete only the generated part of the sequence, i.e. keep the
           // system prompt in the cache
-          llama_kv_cache_seq_rm(ctx, client.id + 1, -1, -1);
-          llama_kv_cache_seq_cp(ctx, 0, client.id + 1, -1, -1);
+          llama_kv_cache_seq_rm(ctx, client.ith_client + 1, -1, -1);
+          llama_kv_cache_seq_cp(ctx, 0, client.ith_client + 1, -1, -1);
 
           const auto t_main_end = ggml_time_us();
 
           printf("\033[31mRank %d, Client %3d, seq %3d, prompt %4d t, "
                  "response %4d t, time %5.2f s, speed %5.2f t/s, cache miss %d "
-                 "\033[0m"
+                 "\033[0m\n"
                  "Input:    %s\n\033[35m"
                  "Response: %s\033[0m\n\n",
-                 mpi_rank, client.id, client.seq_id, client.n_prompt,
+                 mpi_rank, client.ith_client, client.req_id, client.n_prompt,
                  client.n_decoded, (t_main_end - client.t_start_prompt) / 1e6,
                  (double)(client.n_prompt + client.n_decoded) /
                      (t_main_end - client.t_start_prompt) * 1e6,
                  n_cache_miss, ::trim(client.input).c_str(),
                  ::trim(client.response).c_str());
           // mark this client as finished
-          client.seq_id = -1;
+          client.req_id = -1;
         }
 
-        client.i_batch = -1;
+        client.ith_batch = -1;
       }
     }
     // printf("input %s; output %s\n\n", ::trim(clients[0].input).c_str(),

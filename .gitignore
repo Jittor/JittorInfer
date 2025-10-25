@@ -71,7 +71,6 @@ autogen-*.md
 # Deprecated
 
 /main
-/server
 
 # CI
 

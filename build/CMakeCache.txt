@@ -226,7 +226,7 @@ CMAKE_BUILD_TYPE:STRING=Debug
 CMAKE_COLOR_MAKEFILE:BOOL=ON
 
 //CXX compiler
-CMAKE_CXX_COMPILER:FILEPATH=/usr/lib64/ccache/c++
+CMAKE_CXX_COMPILER:STRING=/usr/lib64/ccache/c++
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
@@ -252,7 +252,7 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=-O2 -DNDEBUG
 CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
 //C compiler
-CMAKE_C_COMPILER:FILEPATH=/usr/lib64/ccache/cc
+CMAKE_C_COMPILER:STRING=/usr/lib64/ccache/cc
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler

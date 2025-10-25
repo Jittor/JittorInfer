@@ -109,6 +109,13 @@ if (NOT TARGET ggml)
     # ... otherwise assume ggml is added by a parent CMakeLists.txt
 endif()
 
+# Add yaml-cpp
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/yaml-cpp ${CMAKE_BINARY_DIR}/yaml-cpp)
+
+# Add zmq
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/libzmq ${CMAKE_BINARY_DIR}/libzmq)
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/cppzmq ${CMAKE_BINARY_DIR}/cppzmq)
+
 #
 # build the library
 #
@@ -130,6 +137,10 @@ endif()
 
 if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if (LLAMA_BUILD_SERVER AND LLAMA_STANDALONE)
+    add_subdirectory(server)
 endif()
 
 #

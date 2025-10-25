@@ -15,7 +15,7 @@ struct llama_kv_cell {
     int32_t   src   = -1;  // used by recurrent state models to copy states
     int32_t   tail  = -1;
 
-    std::bitset<32> seq_id;
+    std::bitset<256> seq_id;
 
     inline bool has_seq_id(const llama_seq_id & id) const { return seq_id.test(id); }
 
