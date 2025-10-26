@@ -17,38 +17,15 @@
 #define OMPI_SKIP_MPICXX 1
 #include <mpi.h>
 
-// trim whitespace from the beginning and end of a string
-static std::string trim(const std::string &str) {
-  size_t start = 0;
-  size_t end   = str.size();
-
-  while (start < end && isspace(str[start])) {
-    start += 1;
-  }
-
-  while (end > start && isspace(str[end - 1])) {
-    end -= 1;
-  }
-
-  return str.substr(start, end - start);
-}
-
 static std::string k_system =
     R"(Transcript of a never ending dialog, where the User interacts with an Assistant.
 The Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.
-
-User: Recommend a nice restaurant in the area.
-Assistant: I recommend the restaurant "The Golden Duck". It is a 5 star restaurant with a great view of the city. The food is delicious and the service is excellent. The prices are reasonable and the portions are generous. The restaurant is located at 123 Main Street, New York, NY 10001. The phone number is (212) 555-1234. The hours are Monday through Friday from 11:00 am to 10:00 pm. The restaurant is closed on Saturdays and Sundays.
-User: Who is Richard Feynman?
-Assistant: Richard Feynman was an American physicist who is best known for his work in quantum mechanics and particle physics. He was awarded the Nobel Prize in Physics in 1965 for his contributions to the development of quantum electrodynamics. He was a popular lecturer and author, and he wrote several books, including "Surely You're Joking, Mr. Feynman!" and "What Do You Care What Other People Think?".
 User:)";
 
 static std::vector<std::string> k_prompts = {
     "What is the meaning of life?",
     "Tell me an interesting fact about llamas.",
     "What is the best way to cook a steak?",
-    "Are you familiar with the Special Theory of Relativity and can you "
-    "explain it to me?",
     "Recommend some interesting books to read.",
     "What is the best way to learn a new language?",
     "How to get a job at Google?",
@@ -95,7 +72,8 @@ struct Client {
   };
 
   void reset(ResetParam &&param) {
-    req_id = param.req_id;
+    req_id     = param.req_id;
+    is_running = true;
 
     t_start_prompt = ggml_time_us();
     t_start_gen    = 0;
@@ -111,27 +89,12 @@ struct Client {
   }
 };
 
-static void print_date_time() {
-  std::time_t current_time = std::time(nullptr);
-  std::tm    *local_time   = std::localtime(&current_time);
-  char        buffer[80];
-  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", local_time);
-
-  printf("\n");
-  printf("\033[35mrun parameters as of %s\033[0m\n", buffer);
-  printf("\n");
-}
-
 static struct DefaultMiniParams {
-  int                   main_gpu     = 1;
-  int                   n_gpu_layers = 99;
-  enum llama_split_mode split_mode =
-      LLAMA_SPLIT_MODE_ROW; // how to split the model across GPUs
-  float tensor_split[128] = {
-      0}; // how split tensors should be distributed across GPUs
-  bool use_mmap      = true;  // use mmap for faster loads
-  bool use_mlock     = false; // use mlock to keep model in memory
-  bool check_tensors = false; // validate tensor data
+  int main_gpu     = 1;
+  int n_gpu_layers = 99;
+
+  // how split tensors should be distributed across GPUs
+  float tensor_split[128] = {0};
 
   std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
 
@@ -140,8 +103,8 @@ static struct DefaultMiniParams {
   uint32_t n_threads_batch =
       64; // number of threads to use for batch processing
 
-  float defrag_thold = 0.1f;  // defragmentation threshold
-  bool  no_perf      = false; // disable performance metrics
+  float defrag_thold = 0.1f; // defragmentation threshold
+  bool  no_perf      = true; // disable performance metrics
   std::vector<common_adapter_lora_info>
       lora_adapters; // lora adapter path with user defined scale
 
@@ -151,8 +114,7 @@ static struct DefaultMiniParams {
   common_conversation_mode conversation_mode = COMMON_CONVERSATION_MODE_ENABLED;
 
   // parallel test configs
-  int     n_parallel    = 255;
-  bool    cont_batching = true;
+  int     n_parallel    = 16;
   bool    dump_kv_cache = false;
   int32_t n_predict     = 510; // new tokens to predict
 
@@ -162,11 +124,11 @@ static llama_model_params common_model_params_to_llama_local() {
   auto mparams = llama_model_default_params();
 
   mparams.main_gpu      = default_mini_params.main_gpu;
-  mparams.split_mode    = default_mini_params.split_mode;
+  mparams.split_mode    = LLAMA_SPLIT_MODE_ROW;
   mparams.tensor_split  = default_mini_params.tensor_split;
-  mparams.use_mmap      = default_mini_params.use_mmap;
-  mparams.use_mlock     = default_mini_params.use_mlock;
-  mparams.check_tensors = default_mini_params.check_tensors;
+  mparams.use_mmap      = true;
+  mparams.use_mlock     = false;
+  mparams.check_tensors = false;
   mparams.n_gpu_layers  = default_mini_params.n_gpu_layers;
   // 开启张量并行
   mparams.enable_tensor_parallel = true;
@@ -175,16 +137,10 @@ static llama_model_params common_model_params_to_llama_local() {
   mparams.enable_fused_moe       = true;
   mparams.enable_mpi             = true;
 
-#ifdef LLAMA_MPI_SUPPORT
   if (mparams.enable_mpi) {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    mparams.tp_id = rank;
-    int num_processes;
-    MPI_Comm_size(MPI_COMM_WORLD, &num_processes);
-    mparams.num_parallel = num_processes;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mparams.tp_id);
+    MPI_Comm_size(MPI_COMM_WORLD, &mparams.num_parallel);
   }
-#endif
 
   mparams.kv_overrides = NULL;
   return mparams;
@@ -199,6 +155,7 @@ static llama_context_params common_context_params_to_llama_local() {
   cparams.n_threads_batch = default_mini_params.n_threads_batch;
   cparams.defrag_thold    = default_mini_params.defrag_thold;
   cparams.no_perf         = default_mini_params.no_perf;
+  cparams.presample_count = 80;
 
   return cparams;
 }
@@ -208,9 +165,7 @@ static common_init_result common_init_from_params_local() {
 
   auto mparams = common_model_params_to_llama_local();
 
-  llama_model *model = nullptr;
-
-  model =
+  llama_model *model =
       llama_model_load_from_file(default_mini_params.model.c_str(), mparams);
   assert(model != NULL);
 
@@ -231,23 +186,16 @@ static common_init_result common_init_from_params_local() {
 
   llama_clear_adapter_lora(lctx);
 
-  std::cout << __func__
-            << ": warming up the model with an empty run - please wait ... "
-               "(--no-warmup to disable)\n";
-
+  // create warmup sequence with BOS and EOS tokens
   std::vector<llama_token> tmp;
-
-  llama_token bos = llama_vocab_bos(vocab);
-  llama_token eos = llama_vocab_eos(vocab);
-
+  llama_token              bos = llama_vocab_bos(vocab);
+  llama_token              eos = llama_vocab_eos(vocab);
   if (bos != LLAMA_TOKEN_NULL) {
     tmp.push_back(bos);
   }
-
   if (eos != LLAMA_TOKEN_NULL) {
     tmp.push_back(eos);
   }
-
   if (tmp.empty()) {
     tmp.push_back(0);
   }
@@ -272,15 +220,7 @@ static common_init_result common_init_from_params_local() {
   return iparams;
 }
 
-// 得到所有server下一步需要处理的token数量
-static void recv_batch_list(int *all_server_tokens, int *self_server_tokens) {
-  MPI_Allgather(self_server_tokens, 1, MPI_INT, all_server_tokens, 1, MPI_INT,
-                MPI_COMM_WORLD);
-}
-
 int main(int argc, char **argv) {
-  srand(1234);
-
   int mpi_rank = 0;
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -290,9 +230,6 @@ int main(int argc, char **argv) {
 
   // dedicate one sequence to the system prompt
   default_mini_params.n_parallel += 1;
-
-  // insert new requests as soon as the previous one is done
-  const bool cont_batching = default_mini_params.cont_batching;
 
   const bool dump_kv_cache = default_mini_params.dump_kv_cache;
 
@@ -338,9 +275,8 @@ int main(int argc, char **argv) {
 
   const auto t_main_start = ggml_time_us();
 
-  printf("%s: n_parallel = %d, cont_batching = %d, system "
-         "tokens = %d\n",
-         __func__, n_clients, cont_batching, n_tokens_system);
+  printf("%s: n_parallel = %d, , system tokens = %d\n", __func__, n_clients,
+         n_tokens_system);
 
   { // prefill system prompt
     printf("%s: Evaluating the system prompt ...\n", __func__);
@@ -365,6 +301,7 @@ int main(int argc, char **argv) {
   printf("System prompt prefilled, start processing requests ...\n\n");
 
   while (true) {
+
     if (dump_kv_cache) {
       llama_kv_cache_view_update(ctx, &kvc_view);
       common_kv_cache_dump_view_seqs(kvc_view, 40);
@@ -398,33 +335,31 @@ int main(int argc, char **argv) {
     // insert new sequences for decoding
     // 这个阶段是prefill，结束后将所有client的tokens连成一个batch，唯一一个n_tokens很长的阶段，decode阶段g_seq_id
     // == n_seq
-    if (cont_batching || batch.n_tokens == 0) {
-      for (auto &client : clients) {
-        if (client.req_id == -1) {
-          std::string              input = k_prompts[rand() % k_prompts.size()];
-          std::vector<llama_token> prompt =
-              common_tokenize(ctx, input + "\nAssistant:", false);
-          client.reset({
-              .input  = std::move(input),
-              .prompt = std::move(prompt),
-              .req_id = 1,
-          });
+    for (auto &client : clients) {
+      if (!client.is_running) {
+        std::string              input = k_prompts[rand() % k_prompts.size()];
+        std::vector<llama_token> prompt =
+            common_tokenize(ctx, input + "\nAssistant:", false);
+        client.reset({
+            .input  = std::move(input),
+            .prompt = std::move(prompt),
+            .req_id = 1,
+        });
 
-          for (size_t i = 0; i < client.prompt.size(); ++i) {
-            common_batch_add(batch, client.prompt[i], i + n_tokens_system,
-                             {client.ith_client + 1}, false);
-          }
-
-          // extract the logits only for the last token
-          if (batch.n_tokens > 0) {
-            batch.logits[batch.n_tokens - 1] = true;
-          }
-
-          client.ith_batch = batch.n_tokens - 1;
-
-          printf("\033[31mClient %3d, req %4d, started decoding ...\033[0m\n",
-                 client.ith_client, client.req_id);
+        for (size_t i = 0; i < client.prompt.size(); ++i) {
+          common_batch_add(batch, client.prompt[i], i + n_tokens_system,
+                           {client.ith_client + 1}, false);
         }
+
+        // extract the logits only for the last token
+        if (batch.n_tokens > 0) {
+          batch.logits[batch.n_tokens - 1] = true;
+        }
+
+        client.ith_batch = batch.n_tokens - 1;
+
+        printf("\033[31mClient %3d, req %4d, started decoding ...\033[0m\n",
+               client.ith_client, client.req_id);
       }
     }
 
@@ -534,10 +469,9 @@ int main(int argc, char **argv) {
                  client.n_decoded, (t_main_end - client.t_start_prompt) / 1e6,
                  (double)(client.n_prompt + client.n_decoded) /
                      (t_main_end - client.t_start_prompt) * 1e6,
-                 n_cache_miss, ::trim(client.input).c_str(),
-                 ::trim(client.response).c_str());
+                 n_cache_miss, client.input.c_str(), client.response.c_str());
           // mark this client as finished
-          client.req_id = -1;
+          client.is_running = false;
         }
 
         client.ith_batch = -1;
@@ -559,12 +493,7 @@ int main(int argc, char **argv) {
              (t_main_end - t_main_start) * 1e6);
 
   llama_batch_free(batch);
-
   llama_backend_free();
-
-  // printf("\n\n");
-
   MPI_Finalize();
-
   return 0;
 }
