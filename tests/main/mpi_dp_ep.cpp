@@ -124,6 +124,9 @@ static struct DefaultMiniParams {
   bool    dump_kv_cache = false;
   int32_t n_predict     = 510; // new tokens to predict
 
+  int  n_tokens_system = -1;
+  bool enable_debug    = false;
+
 } default_mini_params;
 
 static llama_model_params common_model_params_to_llama_local() {
@@ -270,7 +273,11 @@ int main(int argc, char **argv) {
   }
 
   std::vector<llama_token> tokens_system;
-  tokens_system                 = common_tokenize(ctx, k_system, true);
+  tokens_system = common_tokenize(ctx, k_system, true);
+  if (default_mini_params.n_tokens_system != -1 &&
+      default_mini_params.n_tokens_system < (int)tokens_system.size()) {
+    tokens_system.resize(default_mini_params.n_tokens_system);
+  }
   const int32_t n_tokens_system = tokens_system.size();
 
   // the max batch size is as large as the context to handle cases where we get
@@ -284,13 +291,10 @@ int main(int argc, char **argv) {
   // int32_t n_total_gen    = 0;
   int32_t n_cache_miss = 0;
 
-  struct llama_kv_cache_view kvc_view =
-      llama_kv_cache_view_init(ctx, n_clients);
-
   printf("%s: n_parallel = %d, , system tokens = %d\n", __func__, n_clients,
          n_tokens_system);
 
-  { // prefill system prompt
+  if (n_tokens_system > 0) { // prefill system prompt
     printf("%s: Evaluating the system prompt ...\n", __func__);
 
     for (int32_t i = 0; i < n_tokens_system; ++i) {
@@ -307,18 +311,10 @@ int main(int argc, char **argv) {
       llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
     }
 
-    printf("\n");
+    printf("System prompt prefilled, start processing requests ...\n\n");
   }
 
-  printf("System prompt prefilled, start processing requests ...\n\n");
-
   while (true) {
-
-    if (dump_kv_cache) {
-      llama_kv_cache_view_update(ctx, &kvc_view);
-      common_kv_cache_dump_view_seqs(kvc_view, 40);
-    }
-
     common_batch_clear(batch);
 
     // decode any currently ongoing sequences
@@ -334,15 +330,15 @@ int main(int argc, char **argv) {
       }
     }
 
-    if (batch.n_tokens == 0) {
-      // all sequences have ended - clear the entire KV cache
-      for (int i = 1; i <= n_clients; ++i) {
-        llama_kv_cache_seq_rm(ctx, i, -1, -1);
-        // but keep the system prompt
-        llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
-      }
-      // printf("%s: clearing the KV cache\n", __func__);
-    }
+    // if (batch.n_tokens == 0) {
+    //   // all sequences have ended - clear the entire KV cache
+    //   for (int i = 1; i <= n_clients; ++i) {
+    //     llama_kv_cache_seq_rm(ctx, i, -1, -1);
+    //     // but keep the system prompt
+    //     llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
+    //   }
+    //   printf("%s: clearing the KV cache\n", __func__);
+    // }
 
     // insert new sequences for decoding
     // 这个阶段是prefill，结束后将所有client的tokens连成一个batch，唯一一个n_tokens很长的阶段，decode阶段g_seq_id
@@ -374,7 +370,8 @@ int main(int argc, char **argv) {
       common_batch_add(batch, 0, n_tokens_system, {1}, false);
     }
 
-    { // print fake batch percentage
+    if (default_mini_params.enable_debug) {
+      // print batch percentage
       MPI_Barrier(MPI_COMM_WORLD);
       if (mpi_rank == 0) {
         printf("\033[2J\033[1;1H");
