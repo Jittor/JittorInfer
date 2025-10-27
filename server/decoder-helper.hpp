@@ -83,6 +83,16 @@ public:
     size_t valid_len = _validate_utf8(text);
     std::string result = text.substr(0, valid_len);
     text = text.substr(valid_len);
+    
+    // if result still start with cut-off character, remove it
+    for (char &c: result) {
+      if ((c & 0b11000000) == 0b10000000) {
+        c = ' '; // replace invalid byte with space
+      } else {
+        break;
+      }
+    }
+    
     return result;
   }
 };
