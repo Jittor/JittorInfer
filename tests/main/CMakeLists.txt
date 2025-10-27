@@ -31,7 +31,19 @@ if (LLAMA_MPI)
         chat_local.cpp
     )
     install(TARGETS ${TARGET} RUNTIME)
-    target_link_libraries(${TARGET} PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
-    target_include_directories(${TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(${TARGET} PRIVATE 
+        cppzmq
+        yaml-cpp
+        llama 
+        ${CMAKE_THREAD_LIBS_INIT}
+    )
+    target_include_directories(${TARGET} PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/third_party 
+        ${CMAKE_SOURCE_DIR}/third_party/yaml-cpp/include
+        ${CMAKE_SOURCE_DIR}/third_party/libzmq/include
+        ${CMAKE_SOURCE_DIR}/third_party/cppzmq
+        ${CMAKE_SOURCE_DIR}/server
+    )
     target_compile_features(${TARGET} PRIVATE cxx_std_17)
 endif()

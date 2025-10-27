@@ -39,4 +39,50 @@ public:
     zmq::message_t zmq_msg(update.to_message());
     zmq_router.send(zmq_msg, zmq::send_flags::none);
   }
+
+  // return the last index of character that can form a valid string
+  // if the last character is potentially cut in half, return the index before
+  // the cut if validate_utf8(text) == text.size(), then the whole text is valid
+  // utf8
+  static size_t _validate_utf8(const std::string &text) {
+    size_t len = text.size();
+    if (len == 0) {
+      return 0;
+    }
+
+    // Check the last few bytes to see if a multi-byte character is cut off
+    for (size_t i = 1; i <= 4 && i <= len; ++i) {
+      unsigned char c = text[len - i];
+      // Check for start of a multi-byte sequence from the end
+      if ((c & 0xE0) == 0xC0) {
+        // 2-byte character start: 110xxxxx
+        // Needs at least 2 bytes
+        if (i < 2) {
+          return len - i;
+        }
+      } else if ((c & 0xF0) == 0xE0) {
+        // 3-byte character start: 1110xxxx
+        // Needs at least 3 bytes
+        if (i < 3) {
+          return len - i;
+        }
+      } else if ((c & 0xF8) == 0xF0) {
+        // 4-byte character start: 11110xxx
+        // Needs at least 4 bytes
+        if (i < 4) {
+          return len - i;
+        }
+      }
+    }
+
+    // If no cut-off multi-byte character is found, return full length
+    return len;
+  }
+  
+  static std::string retrieve_valid_utf8(std::string &text) {
+    size_t valid_len = _validate_utf8(text);
+    std::string result = text.substr(0, valid_len);
+    text = text.substr(valid_len);
+    return result;
+  }
 };

@@ -1,7 +1,7 @@
 router:
   listen_addr: "127.0.0.1"              # Address to listen on for incoming HTTP requests
   listen_port: 8080                     # Port to listen on
-  num_http_threads: 16                  # Number of threads for the HTTP server
+  num_http_threads: 128                 # Number of threads for the HTTP server
   mailbox_addr: "tcp://127.0.0.1:5555"  # Address for the zmq mailbox
 
 decoders:
@@ -9,3 +9,7 @@ decoders:
   - mailbox_addr: "tcp://127.0.0.1:6002"
   - mailbox_addr: "tcp://127.0.0.1:6003"
   - mailbox_addr: "tcp://127.0.0.1:6004"
+  - mailbox_addr: "tcp://127.0.0.1:6005"
+  - mailbox_addr: "tcp://127.0.0.1:6006"
+  - mailbox_addr: "tcp://127.0.0.1:6007"
+  - mailbox_addr: "tcp://127.0.0.1:6008"

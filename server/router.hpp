@@ -65,6 +65,7 @@ struct Decoder {
 protected:
   zmq::socket_t               socket;
   std::unique_ptr<std::mutex> mutex;
+  uint64_t                    count = 0;
   // other workload info...
 
 public:
@@ -83,6 +84,8 @@ public:
         .input = task.req.messages.back().content,
     });
     socket.send(zmq::message_t(msg.to_message()), zmq::send_flags::none);
+    count += 1;
+    printf("dispatched tasks: %d\n", (int)count);
   }
 };
 
@@ -201,13 +204,21 @@ static void start(const ArchConfig &config) {
   // clang-format off
   svr.Post("/v1/chat/completions", 
     [&](const httplib::Request &req_raw, httplib::Response &res) {
-    printf("recv request: %s\n", req_raw.body.c_str());
+    // printf("recv request: %s\n", req_raw.body.c_str());
     auto req = openai::ChatCompletionRequest::from_json(nlohmann::json::parse(req_raw.body));
 
     // register request in task table
     auto &task = running_task.emplace({
         .req = std::move(req),
     });
+    
+    static std::mutex print_mutex;
+    static uint64_t count = 0;
+    {
+      std::unique_lock<std::mutex> lock(print_mutex);
+      count += 1;
+      printf("recv request %lu \n", count);
+    }
 
     // dispatch task to decoder pool
     decoder_pool.dispatch_task(task);

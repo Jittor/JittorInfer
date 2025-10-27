@@ -1,5 +1,8 @@
 // A basic application simulating a server with multiple clients.
 // The clients submit requests to the server and they are processed in parallel.
+
+#include "../server/decoder-helper.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -7,8 +10,10 @@
 #include <ctime>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "common_def.hpp"
 #include "common_local.h"
 #include "ggml.h"
 #include "llama.h"
@@ -47,7 +52,7 @@ struct Client {
   int32_t ith_client = 0;
   int32_t ith_batch  = -1;
 
-  llama_token sampled;
+  llama_token last_token;
 
   int64_t t_start_prompt;
   int64_t t_start_gen;
@@ -55,20 +60,20 @@ struct Client {
   int32_t n_prompt  = 0;
   int32_t n_decoded = 0;
 
-  // fake client that is used to prevent empty batch, will only generate 1 token
-  bool is_fake = false;
+  std::string              input_string;
+  std::vector<llama_token> input_tokens;
+  std::string              output_string;
 
-  std::string              input;
-  std::vector<llama_token> prompt;
-  std::string              response;
+  // llms usually split a whole utf-8 character into multiple tokens,
+  // we need to buffer the last incomplete character here
+  std::string output_buffer;
 
   struct common_sampler_local *smpl = nullptr;
 
   struct ResetParam {
-    std::string              input;
-    std::vector<llama_token> prompt;
-    bool                     is_fake = false;
-    int                      req_id  = -1;
+    std::string              input_string;
+    std::vector<llama_token> input_tokens;
+    int                      req_id = -1;
   };
 
   void reset(ResetParam &&param) {
@@ -76,14 +81,15 @@ struct Client {
     is_running = true;
 
     t_start_prompt = ggml_time_us();
-    t_start_gen    = 0;
 
-    input     = std::move(param.input);
-    prompt    = std::move(param.prompt);
-    response  = "";
-    n_prompt  = prompt.size();
-    n_decoded = 0;
-    is_fake   = param.is_fake;
+    GGML_ASSERT(!param.input_tokens.empty());
+    input_string  = std::move(param.input_string);
+    input_tokens  = std::move(param.input_tokens);
+    last_token    = input_tokens.back();
+    output_string = "";
+    output_buffer = "";
+    n_prompt      = input_tokens.size();
+    n_decoded     = 0;
 
     common_sampler_reset(smpl);
   }
@@ -225,10 +231,18 @@ int main(int argc, char **argv) {
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
+  // load decoder-helper
+  GGML_ASSERT(argc >= 2 && "Usage: mpi_dp_ep <arch_config.yml>");
+  ArchConfig    config{YAML::LoadFile(argv[1])};
+  DecoderHelper decoder_helper;
+  decoder_helper.zmq_init(config.router, config.workers[mpi_rank]);
+  std::thread recv_thread([&decoder_helper]() { decoder_helper.start_recv(); });
+
   // number of simultaneous "clients" to simulate
   const int32_t n_clients = default_mini_params.n_parallel;
 
   // dedicate one sequence to the system prompt
+  // so as to reserve a kv cache slot for it
   default_mini_params.n_parallel += 1;
 
   const bool dump_kv_cache = default_mini_params.dump_kv_cache;
@@ -273,8 +287,6 @@ int main(int argc, char **argv) {
   struct llama_kv_cache_view kvc_view =
       llama_kv_cache_view_init(ctx, n_clients);
 
-  const auto t_main_start = ggml_time_us();
-
   printf("%s: n_parallel = %d, , system tokens = %d\n", __func__, n_clients,
          n_tokens_system);
 
@@ -315,7 +327,7 @@ int main(int argc, char **argv) {
     for (auto &client : clients) {
       if (client.is_running) {
         client.ith_batch = batch.n_tokens;
-        common_batch_add(batch, client.sampled,
+        common_batch_add(batch, client.last_token,
                          n_tokens_system + client.n_prompt + client.n_decoded,
                          {client.ith_client + 1}, true);
         client.n_decoded += 1;
@@ -329,7 +341,7 @@ int main(int argc, char **argv) {
         // but keep the system prompt
         llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
       }
-      printf("%s: clearing the KV cache\n", __func__);
+      // printf("%s: clearing the KV cache\n", __func__);
     }
 
     // insert new sequences for decoding
@@ -337,30 +349,49 @@ int main(int argc, char **argv) {
     // == n_seq
     for (auto &client : clients) {
       if (!client.is_running) {
-        std::string              input = k_prompts[rand() % k_prompts.size()];
-        std::vector<llama_token> prompt =
-            common_tokenize(ctx, input + "\nAssistant:", false);
-        client.reset({
-            .input  = std::move(input),
-            .prompt = std::move(prompt),
-            .req_id = 1,
-        });
+        auto req = decoder_helper.request_buffer.try_pop();
 
-        for (size_t i = 0; i < client.prompt.size(); ++i) {
-          common_batch_add(batch, client.prompt[i], i + n_tokens_system,
-                           {client.ith_client + 1}, false);
-        }
+        if (req.has_value()) {
+          std::vector<llama_token> prompt =
+              common_tokenize(ctx, req->input + "\nAssistant:", false);
+          client.reset({
+              .input_string = std::move(req->input),
+              .input_tokens = std::move(prompt),
+              .req_id       = req->id,
+          });
 
-        // extract the logits only for the last token
-        if (batch.n_tokens > 0) {
+          client.ith_batch = batch.n_tokens - 1;
+          for (size_t i = 0; i < client.input_tokens.size(); ++i) {
+            common_batch_add(batch, client.input_tokens[i], i + n_tokens_system,
+                             {client.ith_client + 1}, false);
+          }
           batch.logits[batch.n_tokens - 1] = true;
         }
-
-        client.ith_batch = batch.n_tokens - 1;
-
-        printf("\033[31mClient %3d, req %4d, started decoding ...\033[0m\n",
-               client.ith_client, client.req_id);
       }
+    }
+
+    if (batch.n_tokens == 0) {
+      common_batch_add(batch, 0, n_tokens_system, {1}, false);
+    }
+
+    { // print fake batch percentage
+      MPI_Barrier(MPI_COMM_WORLD);
+      if (mpi_rank == 0) {
+        printf("\033[2J\033[1;1H");
+      }
+      MPI_Barrier(MPI_COMM_WORLD);
+
+      int n_running = 0;
+      for (auto &client : clients) {
+        n_running += client.is_running;
+      }
+      const float running_pct = 100.0f * n_running / clients.size();
+      printf("\033[31m[%d]: batch tokens = %4d, running clients = %4d "
+             "(%.2f%%)\033[0m\n",
+             mpi_rank, batch.n_tokens, n_running, running_pct);
+      fflush(stdout);
+
+      MPI_Barrier(MPI_COMM_WORLD);
     }
 
     // empty run seems not working
@@ -407,29 +438,39 @@ int main(int argc, char **argv) {
             client.ith_batch >= (int)(i + n_tokens)) {
           continue;
         }
+        if (!client.is_running) {
+          continue;
+        }
 
-        const llama_token id =
+        const llama_token sampled_token =
             common_sampler_sample(client.smpl, ctx, client.ith_batch - i);
-
-        common_sampler_accept(client.smpl, id, true);
+        common_sampler_accept(client.smpl, sampled_token, true);
 
         if (client.n_decoded == 1) {
           client.t_start_gen = ggml_time_us();
         }
 
-        const std::string token_str = common_token_to_piece(ctx, id);
+        const std::string sampled_string =
+            common_token_to_piece(ctx, sampled_token);
+        client.output_string += sampled_string;
+        client.last_token = sampled_token;
 
-        client.response += token_str;
-        client.sampled = id;
+        client.output_buffer += sampled_string;
+        std::string output_sent =
+            DecoderHelper::retrieve_valid_utf8(client.output_buffer);
+
+        if (!output_sent.empty()) {
+          decoder_helper.send_update({
+              .type    = ipcm::DecoderUpdate::Update,
+              .id      = client.req_id,
+              .content = output_sent,
+          });
+        }
 
         auto is_finish = [&] {
-          if (client.is_fake) {
-            // fake client only generate 1 token
-            return true;
-          }
           if (client.n_decoded > 2) {
             // eog
-            if (llama_vocab_is_eog(vocab, id)) {
+            if (llama_vocab_is_eog(vocab, client.last_token)) {
               return true;
             }
             // max tokens reached
@@ -440,18 +481,15 @@ int main(int argc, char **argv) {
               }
             }
             // find "User:"
-            if (client.response.find("User:") != std::string::npos) {
+            if (client.output_string.find("User:") != std::string::npos) {
               return true;
             }
           }
           return false;
         };
         if (is_finish()) {
-          // basic reverse prompt
-          const size_t pos = client.response.find("User:");
-          if (pos != std::string::npos) {
-            client.response = client.response.substr(0, pos);
-          }
+          decoder_helper.send_update(
+              {.type = ipcm::DecoderUpdate::Finish, .id = client.req_id});
 
           // delete only the generated part of the sequence, i.e. keep the
           // system prompt in the cache
@@ -460,16 +498,18 @@ int main(int argc, char **argv) {
 
           const auto t_main_end = ggml_time_us();
 
-          printf("\033[31mRank %d, Client %3d, seq %3d, prompt %4d t, "
-                 "response %4d t, time %5.2f s, speed %5.2f t/s, cache miss %d "
-                 "\033[0m\n"
-                 "Input:    %s\n\033[35m"
-                 "Response: %s\033[0m\n\n",
-                 mpi_rank, client.ith_client, client.req_id, client.n_prompt,
-                 client.n_decoded, (t_main_end - client.t_start_prompt) / 1e6,
-                 (double)(client.n_prompt + client.n_decoded) /
-                     (t_main_end - client.t_start_prompt) * 1e6,
-                 n_cache_miss, client.input.c_str(), client.response.c_str());
+          // printf("\033[31mRank %d, Client %3d, seq %3d, prompt %4d t, "
+          //        "response %4d t, time %5.2f s, speed %5.2f t/s, cache miss
+          //        %d "
+          //        "\033[0m\n"
+          //        "Input:    %s\n\033[35m"
+          //        "Response: %s\033[0m\n\n",
+          //        mpi_rank, client.ith_client, client.req_id, client.n_prompt,
+          //        client.n_decoded, (t_main_end - client.t_start_prompt) /
+          //        1e6, (double)(client.n_prompt + client.n_decoded) /
+          //            (t_main_end - client.t_start_prompt) * 1e6,
+          //        n_cache_miss, client.input_string.c_str(),
+          //        client.output_string.c_str());
           // mark this client as finished
           client.is_running = false;
         }
@@ -477,20 +517,7 @@ int main(int argc, char **argv) {
         client.ith_batch = -1;
       }
     }
-    // printf("input %s; output %s\n\n", ::trim(clients[0].input).c_str(),
-    // ::trim(clients[0].response).c_str()); printf("input %s; output %s\n\n",
-    // ::trim(clients[1].input).c_str(), ::trim(clients[1].response).c_str());
   }
-
-  while (llama_empty_run(ctx)) {
-    ;
-  }
-
-  const auto t_main_end = ggml_time_us();
-
-  printf("Total speed (AVG):   %6s  speed: %5.2f t/s\n", "",
-         (double)(llama_all_processed_tokens(ctx)) /
-             (t_main_end - t_main_start) * 1e6);
 
   llama_batch_free(batch);
   llama_backend_free();

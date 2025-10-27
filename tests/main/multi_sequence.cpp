@@ -73,7 +73,7 @@ struct Client {
 
     llama_seq_id req_id = -1;
 
-    llama_token sampled;
+    llama_token last_token;
 
     int64_t t_start_prompt;
     int64_t t_start_gen;
@@ -82,9 +82,9 @@ struct Client {
     int32_t n_decoded = 0;
     int32_t ith_batch   = -1;
 
-    std::string input;
-    std::string prompt;
-    std::string response;
+    std::string input_text;
+    std::string input_tokens;
+    std::string output_string;
 
     struct common_sampler_local * smpl = nullptr;
 };
@@ -363,7 +363,7 @@ int main() {
 
             client.ith_batch = batch.n_tokens;
 
-            common_batch_add(batch, client.sampled, n_tokens_system + client.n_prompt + client.n_decoded,
+            common_batch_add(batch, client.last_token, n_tokens_system + client.n_prompt + client.n_decoded,
                              { client.ith_client + 1 }, true);
 
             client.n_decoded += 1;
@@ -389,15 +389,15 @@ int main() {
                     client.t_start_prompt = ggml_time_us();
                     client.t_start_gen    = 0;
 
-                    client.input    = k_prompts[rand() % k_prompts.size()];
-                    client.prompt   = client.input + "\nAssistant:";
-                    client.response = "";
+                    client.input_text    = k_prompts[rand() % k_prompts.size()];
+                    client.input_tokens   = client.input_text + "\nAssistant:";
+                    client.output_string = "";
 
                     common_sampler_reset(client.smpl);
 
                     // do not prepend BOS because we have a system prompt!
                     std::vector<llama_token> tokens_prompt;
-                    tokens_prompt = common_tokenize(ctx, client.prompt, false);
+                    tokens_prompt = common_tokenize(ctx, client.input_tokens, false);
 
                     for (size_t i = 0; i < tokens_prompt.size(); ++i) {
                         common_batch_add(batch, tokens_prompt[i], i + n_tokens_system, { client.ith_client + 1 }, false);
@@ -489,8 +489,8 @@ int main() {
 
                 const std::string token_str = common_token_to_piece(ctx, id);
 
-                client.response += token_str;
-                client.sampled = id;
+                client.output_string += token_str;
+                client.last_token = id;
 
                 //printf("client %d, seq %d, token %d, pos %d, batch %d: %s\n",
                 //        client.id, client.seq_id, id, client.n_decoded, client.i_batch, token_str.c_str());
@@ -498,12 +498,12 @@ int main() {
                 if (client.n_decoded > 2 && (llama_vocab_is_eog(vocab, id) ||
                                              (default_mini_params.n_predict > 0 &&
                                               client.n_decoded + client.n_prompt >= default_mini_params.n_predict) ||
-                                             client.response.find("User:") != std::string::npos ||
-                                             client.response.find('\n') != std::string::npos)) {
+                                             client.output_string.find("User:") != std::string::npos ||
+                                             client.output_string.find('\n') != std::string::npos)) {
                     // basic reverse prompt
-                    const size_t pos = client.response.find("User:");
+                    const size_t pos = client.output_string.find("User:");
                     if (pos != std::string::npos) {
-                        client.response = client.response.substr(0, pos);
+                        client.output_string = client.output_string.substr(0, pos);
                     }
 
                     // delete only the generated part of the sequence, i.e. keep the system prompt in the cache
@@ -518,7 +518,7 @@ int main() {
                         client.ith_client, client.req_id, n_seq, client.n_prompt, client.n_decoded,
                         (t_main_end - client.t_start_prompt) / 1e6,
                         (double) (client.n_prompt + client.n_decoded) / (t_main_end - client.t_start_prompt) * 1e6,
-                        n_cache_miss, ::trim(client.input).c_str(), ::trim(client.response).c_str());
+                        n_cache_miss, ::trim(client.input_text).c_str(), ::trim(client.output_string).c_str());
 
                     n_total_prompt += client.n_prompt;
                     n_total_gen += client.n_decoded;
