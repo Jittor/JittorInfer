@@ -63,16 +63,19 @@ public:
 
 struct Decoder {
 protected:
-  zmq::socket_t socket;
+  zmq::socket_t               socket;
+  std::unique_ptr<std::mutex> mutex;
   // other workload info...
 
 public:
   Decoder(zmq::context_t &context, const DecoderConfig &config) {
     socket = zmq::socket_t(context, zmq::socket_type::push);
     socket.connect(config.mailbox_addr);
+    mutex = std::make_unique<std::mutex>();
   }
 
   void dispatch_task(const RunningTask &task) {
+    std::unique_lock<std::mutex> lock(*mutex);
     // send task to decoder via zmq
     ipcm::DecoderRequest msg({
         .id    = task.id,
@@ -103,8 +106,9 @@ protected:
   } next_worker;
 
 public:
-  void register_worker(Decoder &&worker) {
-    workers.emplace_back(std::move(worker));
+  template <class... Args>
+  void register_worker(Args &&...args) {
+    workers.emplace_back(std::forward<Args>(args)...);
     next_worker.total = workers.size();
   }
 
@@ -125,7 +129,7 @@ static void start(const ArchConfig &config) {
   // PART: Decoder Pool
   DecoderPool decoder_pool;
   for (const auto &worker_config : config.workers) {
-    decoder_pool.register_worker(Decoder(zmq_ctx, worker_config));
+    decoder_pool.register_worker(zmq_ctx, worker_config);
   }
 
   // PART: Mailbox Recv Thread
