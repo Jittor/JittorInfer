@@ -109,7 +109,7 @@ static struct DefaultMiniParams {
   uint32_t n_threads_batch =
       64; // number of threads to use for batch processing
 
-  float defrag_thold = 0.1f; // defragmentation threshold
+  float defrag_thold = 0; // defragmentation threshold
   bool  no_perf      = true; // disable performance metrics
   std::vector<common_adapter_lora_info>
       lora_adapters; // lora adapter path with user defined scale
@@ -238,7 +238,7 @@ int main(int argc, char **argv) {
   GGML_ASSERT(argc >= 2 && "Usage: mpi_dp_ep <arch_config.yml>");
   ArchConfig    config{YAML::LoadFile(argv[1])};
   DecoderHelper decoder_helper;
-  decoder_helper.zmq_init(config.router, config.workers[mpi_rank]);
+  decoder_helper.init(config, mpi_rank);
   std::thread recv_thread([&decoder_helper]() { decoder_helper.start_recv(); });
 
   // number of simultaneous "clients" to simulate

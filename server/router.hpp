@@ -91,7 +91,7 @@ public:
 
 struct DecoderPool {
 protected:
-  std::vector<Decoder> workers;
+  std::vector<Decoder> decoders;
 
   // simple round-robin scheduling
   struct {
@@ -106,17 +106,17 @@ protected:
       current    = (current + 1) % total;
       return res;
     }
-  } next_worker;
+  } next_decoder;
 
 public:
   template <class... Args>
   void register_worker(Args &&...args) {
-    workers.emplace_back(std::forward<Args>(args)...);
-    next_worker.total = workers.size();
+    decoders.emplace_back(std::forward<Args>(args)...);
+    next_decoder.total = decoders.size();
   }
 
   void dispatch_task(const RunningTask &task) {
-    workers[next_worker.get()].dispatch_task(task);
+    decoders[next_decoder.get()].dispatch_task(task);
   }
 };
 
@@ -131,7 +131,7 @@ static void start(const ArchConfig &config) {
 
   // PART: Decoder Pool
   DecoderPool decoder_pool;
-  for (const auto &worker_config : config.workers) {
+  for (const auto &worker_config : config.decoders) {
     decoder_pool.register_worker(zmq_ctx, worker_config);
   }
 

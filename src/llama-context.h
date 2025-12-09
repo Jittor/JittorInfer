@@ -65,7 +65,6 @@ struct llama_context {
         model(model),
         t_start_us(model.t_start_us),
         t_load_us(model.t_load_us),
-        all_processed_token(0),
         enable_dp_gather(false) {}
 
     const struct llama_model & model;
@@ -169,8 +168,6 @@ struct llama_context {
     int  all_server_token_sum;
     int  self_token_size;
     int  self_token_offset;
-    // 统计所有server处理过的token数量之和
-    int  all_processed_token;
     // 是否启用数据并行，attention之后需要进行gather
     bool enable_dp_gather;
 };

@@ -18,10 +18,10 @@ int main(int argc, char **argv) {
   printf("Decoder Worker %d starting, "
          "binding to mailbox at %s, "
          "connecting to router at %s\n",
-         mpi_rank, config.workers[mpi_rank].mailbox_addr.c_str(),
+         mpi_rank, config.decoders[mpi_rank].mailbox_addr.c_str(),
          config.router.mailbox_addr.c_str());
   DecoderHelper helper;
-  helper.zmq_init(config.router, config.workers[mpi_rank]);
+  helper.init(config, mpi_rank);
   std::thread recv_thread([&helper]() { helper.start_recv(); });
 
   for (auto req : helper.request_buffer) {

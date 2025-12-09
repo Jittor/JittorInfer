@@ -14,9 +14,9 @@ int main(int argc, char **argv) {
   std::cout << "Number of HTTP threads: " << config.router.num_http_threads
             << "\n";
   std::cout << "Router mailbox address: " << config.router.mailbox_addr << "\n";
-  std::cout << "Workers:\n";
-  for (const auto &worker : config.workers) {
-    std::cout << "  - " << worker.mailbox_addr << "\n";
+  std::cout << "Decoders:\n";
+  for (const auto &decoder : config.decoders) {
+    std::cout << "  - " << decoder.mailbox_addr << "\n";
   }
   
   router::start(config);

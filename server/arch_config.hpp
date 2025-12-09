@@ -32,11 +32,11 @@ struct DecoderConfig {
 
 struct ArchConfig {
   RouterConfig               router;
-  std::vector<DecoderConfig> workers;
+  std::vector<DecoderConfig> decoders;
 
   ArchConfig(const YAML::Node &config) : router(config["router"]) {
     for (const auto &worker_node : config["decoders"]) {
-      workers.emplace_back(worker_node);
+      decoders.emplace_back(worker_node);
     }
   }
 };
