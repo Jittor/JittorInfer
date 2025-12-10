@@ -140,6 +140,35 @@ void create_graph_input_tensor(
         tensor_desc, src_tensor->data, ggml_nbytes(src_tensor));
     input_init.push_back(std::move(input_tensor));
 }
+/**
+ * @brief 创建并配置图输入张量
+ *
+ * 为给定的源张量创建对应的Ascend Tensor，并添加到图输入列表中
+ *
+ * @param src_tensor 源GGML张量
+ * @param ggml_tensor_to_es_tensor_map 张量映射
+ * @param input_init 输入张量初始化列表
+ */
+void create_graph_input_tensor_es(
+    ggml_tensor* src_tensor,
+    std::map<ggml_tensor*, ge::es::EsTensorHolder>*
+        ggml_tensor_to_es_tensor_map,
+    std::vector<gert::Tensor>& input_init) {
+    // 获取输出描述符，使用输出端口0
+    ge::es::EsTensorHolder tensor_holder =
+        ggml_tensor_to_es_tensor_map->at(src_tensor);
+
+    // tensor_holder当前并没有提供SetPlacement方法，所以用下面这种方式绕一下；
+    // TODO:EsTensorHolder提供SetPlacement方法
+    ge::TensorDesc tensor_desc;
+    (void)tensor_holder.GetProducer()->GetOutputDesc(0, tensor_desc);
+    tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
+
+    // 使用辅助函数创建并绑定张量
+    gert::Tensor input_tensor = create_bound_tensor_with_ptr(
+        tensor_desc, src_tensor->data, ggml_nbytes(src_tensor));
+    input_init.push_back(std::move(input_tensor));
+}
 
 /**
  * @brief 创建gert::Tensor并绑定指定的主机侧数据指针
@@ -289,11 +318,54 @@ namespace {
 // ES version helper function declarations
 void process_input_tensors_es(
     ggml_tensor** tensor_array, int count,
-    std::vector<gert::Tensor>& input_init,
-    const std::string& name_prefix, int index_offset,
-    ge::es::EsGraphBuilder* graph_builder,
-    std::map<ggml_tensor*, ge::es::EsTensorHolder>* ggml_tensor_to_es_tensor_map,
-    std::vector<ge::es::EsTensorHolder>* graph_inputs);
+    std::vector<gert::Tensor>& input_init, const std::string& name_prefix,
+    int index_offset, ge::es::EsGraphBuilder* graph_builder,
+    std::map<ggml_tensor*, ge::es::EsTensorHolder>*
+        ggml_tensor_to_es_tensor_map,
+    std::vector<ge::es::EsTensorHolder>* graph_inputs) {
+    auto create_data = [&](ggml_tensor* node) {
+        if (ggml_tensor_to_es_tensor_map->find(node) !=
+            ggml_tensor_to_es_tensor_map->end()) {
+            return;
+        }
+
+        // 使用辅助函数创建张量描述符
+        ge::TensorDesc desc = create_tensor_desc_for_node(node);
+
+        // 构建输入名称
+        std::string name = name_prefix + std::string(node->name);
+
+        // 使用ES API创建输入
+        int input_index = static_cast<int>(graph_inputs->size()) + index_offset;
+        auto es_input = graph_builder->CreateInput(
+            input_index, name.c_str(), desc.GetDataType(), desc.GetFormat(),
+            desc.GetShape().GetDims());
+
+        // 添加到映射和输入列表
+        (*ggml_tensor_to_es_tensor_map)[node] = es_input;
+        graph_inputs->push_back(es_input);
+
+        // 创建对应的gert::Tensor用于input_init
+        create_graph_input_tensor_es(node, ggml_tensor_to_es_tensor_map,
+                                     input_init);
+    };
+
+    for (int i = 0; i < count; i++) {
+        ggml_tensor* node = tensor_array[i];
+        for (int j = 0; j < GGML_MAX_SRC; j++) {
+            ggml_tensor* src = node->src[j];
+            if (src == nullptr || ggml_is_empty(src) ||
+                src->op != GGML_OP_NONE) {
+                continue;
+            }
+            create_data(src);
+        }
+        if (ggml_is_empty(node) || node->op != GGML_OP_NONE) {
+            continue;
+        }
+        create_data(node);
+    }
+}
 }
 /**
  * @brief 构建Ascend(昇腾)计算图
