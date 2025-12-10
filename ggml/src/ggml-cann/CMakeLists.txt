@@ -116,6 +116,9 @@ if (CANN_INSTALL_DIR)
 
     target_compile_definitions(ggml-cann PRIVATE "-D${SOC_TYPE_COMPILE_OPTION}")
     target_compile_definitions(ggml-cann PRIVATE "-D_GLIBCXX_USE_CXX11_ABI=0")
+    # CANN包本身的BUG, 引入es all之后头文件搜索路径变化，搜索到了不包含GE_FUNC_VISIBILITY的头文件ge_error_codes.h，导致编译失败
+    # 这里手动定义一个空的GE_FUNC_VISIBILITY，避免编译失败
+    target_compile_definitions(ggml-cann PRIVATE "-DGE_FUNC_VISIBILITY=")
 
     message(STATUS "CANN: CANN_INCLUDE_DIRS =  ${CANN_INCLUDE_DIRS}")
     message(STATUS "CANN: CANN_LIBRARIES =  ${CANN_LIBRARIES}")
@@ -127,6 +130,32 @@ if (CANN_INSTALL_DIR)
     )
 
     add_dependencies(ggml-cann custom_rope_ext)
+    # ===== 引入函数（推荐：使用 find_package） =====
+    list(APPEND CMAKE_MODULE_PATH "${CANN_INSTALL_DIR}/include/ge/cmake")
+    find_package(GenerateEsPackage REQUIRED)
+    # ===== 1. 前置条件：定义原型库 =====
+    # 注意:
+    # 当前为开箱即用示例, 即定义INTERFACE使用已有的原型so
+    # 正常使用不会是用现有的so，更普遍的方式是直接使用项目中已有的so的target
+    # 使用项目中已有的so方式:
+    # 1. add_library(opgraph_all SHARED)
+    # 2. 设置PROPERTIES LIBRARY_OUTPUT_DIRECTORY
+    add_library(opgraph_all INTERFACE)
+    set_target_properties(opgraph_all PROPERTIES
+            INTERFACE_LIBRARY_OUTPUT_DIRECTORY "${CANN_INSTALL_DIR}/opp/built-in/op_proto"
+    )
+
+    # ===== 2. 生成 ES API 包 =====
+    add_es_library(
+            ES_LINKABLE_AND_ALL_TARGET es_all
+            OPP_PROTO_TARGET  opgraph_all
+            OUTPUT_PATH       ${CMAKE_BINARY_DIR}/output
+    )
+
+    # ===== 3. 在应用中使用 =====
+    target_link_libraries(ggml-cann PRIVATE
+            es_all # 自动获得依赖、头文件和库
+    )
 else()
     message(FATAL_ERROR "CANN: Can't find CANN_INSTALL_DIR, did you forget to source set_var.sh?")
 endif()
