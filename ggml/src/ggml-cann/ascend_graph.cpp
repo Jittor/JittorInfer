@@ -30,6 +30,9 @@
 
 #include "ggml-cann/ascend_graph_ops.h"
 
+// 引入es构图api的聚合头文件
+#include "es_all_ops.h"
+
 using namespace std;
 
 void apply_tensor_desc(gert::Tensor& tensor,
