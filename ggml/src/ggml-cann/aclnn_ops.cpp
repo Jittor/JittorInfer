@@ -21,7 +21,6 @@
  */
 
 #include "aclnn_ops.h"
-
 #include <aclnnop/aclnn_addcdiv.h>
 #include <aclnnop/aclnn_avgpool2d.h>
 #include <aclnnop/aclnn_batch_matmul.h>
@@ -55,7 +54,9 @@
 #include <aclnnop/aclnn_triu.h>
 #include <aclnnop/aclnn_upsample_nearest_2d.h>
 #include <aclnnop/aclnn_weight_quant_batch_matmul_v2.h>
+#ifdef __aarch64__
 #include <arm_neon.h>
+#endif
 #include <float.h>
 
 #include <chrono>
@@ -79,7 +80,12 @@
 #endif
 
 #define GGML_COMMON_DECL_C
-
+#ifndef float16_t
+typedef uint16_t float16_t;
+#endif
+#ifndef float32_t
+typedef float float32_t;
+#endif
 #include "../ggml-common.h"
 
 /**
