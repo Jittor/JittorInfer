@@ -299,10 +299,40 @@ ge::es::EsTensorHolder handle_add_op_es(
         assert(false && "src1 tensor not found in ES tensor map");
     }
 
-    // 处理广播
-    // TODO: 实现ES版本的广播处理（Tile/Repeat操作）
-    // 目前先使用ES API的Add函数，ES API应该会自动处理广播
-    // 如果后续需要显式处理广播，可以调用handle_repeat_op_es（如果存在）
+    // 处理广播（参考原始GE API实现）
+    int64_t out_ne[GGML_MAX_DIMS], nb0[GGML_MAX_DIMS], nb1[GGML_MAX_DIMS];
+    bool need_tile0[GGML_MAX_DIMS], need_tile1[GGML_MAX_DIMS];
+    bcast_shape(src0, src1, out_ne, nb0, nb1, need_tile0, need_tile1);
+
+    // 如果src0需要平铺(Tile)，使用ES API创建Tile操作
+    if (std::any_of(need_tile0, need_tile0 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        // 计算每个维度的重复倍数
+        std::vector<int64_t> multiples;
+        for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+            int64_t repeat = out_ne[i] / src0->ne[i];
+            multiples.push_back(repeat);
+        }
+        // 使用ES API创建Tile操作
+        es_tensor1 = Tile(es_tensor1, multiples)
+            .SetDataType(get_data_type(src0->type))
+            .SetShape(build_output_shape(node));
+    }
+
+    // 如果src1需要平铺，同样处理
+    if (std::any_of(need_tile1, need_tile1 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        // 计算每个维度的重复倍数
+        std::vector<int64_t> multiples;
+        for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+            int64_t repeat = out_ne[i] / src1->ne[i];
+            multiples.push_back(repeat);
+        }
+        // 使用ES API创建Tile操作
+        es_tensor2 = Tile(es_tensor2, multiples)
+            .SetDataType(get_data_type(src1->type))
+            .SetShape(build_output_shape(node));
+    }
 
     // 使用ES API创建Add操作（支持运算符重载或函数调用）
     // 使用运算符重载+链式调用;
@@ -383,6 +413,89 @@ ge::Operator handle_mul_op(
 }
 
 /**
+ * @brief ES版本：处理MUL（乘法）操作的函数
+ *
+ * 使用ES API在计算图中创建一个乘法操作，支持两个输入张量的形状不同时的广播处理
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示MUL操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的MUL操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_mul_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    // TODO: 删除这个没有用到的参数，因为es的api内部维护了一个自增的索引
+    (void)op_index;
+    // 获取源张量
+    struct ggml_tensor *src0 = node->src[0];
+    struct ggml_tensor *src1 = node->src[1];
+
+    // 检查输入是否已经在映射中
+    ge::es::EsTensorHolder es_tensor1, es_tensor2;
+
+    // 处理src0 - 获取现有ES张量
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor1 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    // 处理src1 - 获取现有ES张量
+    if (ggml_tensor_to_es_tensor_map.find(src1) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor2 = ggml_tensor_to_es_tensor_map[src1];
+    } else {
+        assert(false && "src1 tensor not found in ES tensor map");
+    }
+
+    // 处理广播（参考原始GE API实现）
+    int64_t out_ne[GGML_MAX_DIMS], nb0[GGML_MAX_DIMS], nb1[GGML_MAX_DIMS];
+    bool need_tile0[GGML_MAX_DIMS], need_tile1[GGML_MAX_DIMS];
+    bcast_shape(src0, src1, out_ne, nb0, nb1, need_tile0, need_tile1);
+
+    // 如果src0需要平铺(Tile)，使用ES API创建Tile操作
+    if (std::any_of(need_tile0, need_tile0 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        // 计算每个维度的重复倍数
+        std::vector<int64_t> multiples;
+        for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+            int64_t repeat = out_ne[i] / src0->ne[i];
+            multiples.push_back(repeat);
+        }
+        // 使用ES API创建Tile操作
+        es_tensor1 = Tile(es_tensor1, multiples)
+            .SetDataType(get_data_type(src0->type))
+            .SetShape(build_output_shape(node));
+    }
+
+    // 如果src1需要平铺，同样处理
+    if (std::any_of(need_tile1, need_tile1 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        // 计算每个维度的重复倍数
+        std::vector<int64_t> multiples;
+        for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+            int64_t repeat = out_ne[i] / src1->ne[i];
+            multiples.push_back(repeat);
+        }
+        // 使用ES API创建Tile操作
+        es_tensor2 = Tile(es_tensor2, multiples)
+            .SetDataType(get_data_type(src1->type))
+            .SetShape(build_output_shape(node));
+    }
+
+    // 使用ES API创建Mul操作（使用运算符重载+链式调用）
+    return (es_tensor1 * es_tensor2)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
+/**
  * @brief 处理矩阵乘法(MATMUL)操作的函数
  *
  * 在计算图中创建一个矩阵乘法操作
@@ -436,6 +549,56 @@ ge::Operator handle_matmul_op(
     graph.AddOp(matmul_op);
 
     return matmul_op;
+}
+
+/**
+ * @brief ES版本：处理MATMUL（矩阵乘法）操作的函数
+ *
+ * 使用ES API在计算图中创建一个矩阵乘法操作
+ * 注意：在昇腾中，矩阵乘法的输入顺序和转置设置需要特殊处理
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示MATMUL操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的MATMUL操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_matmul_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *src0 = node->src[0];
+    struct ggml_tensor *src1 = node->src[1];
+
+    // 检查输入是否已经在映射中
+    ge::es::EsTensorHolder es_tensor0, es_tensor1;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor0 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(src1) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor1 = ggml_tensor_to_es_tensor_map[src1];
+    } else {
+        assert(false && "src1 tensor not found in ES tensor map");
+    }
+
+    // 注意：在昇腾中，矩阵乘法的输入顺序是反的
+    // 原始GE API: set_input_x1(op_b)对应src1, set_input_x2(op_a)对应src0
+    // 设置adj_x2=true，表示第二个输入(src0)需要转置
+    // ES API: MatMul(x1, x2, bias, transpose_x1, transpose_x2)
+    // 所以这里使用: MatMul(src1, src0, nullptr, transpose_x1=false,
+    // transpose_x2=true)
+    return MatMul(es_tensor1, es_tensor0, nullptr, false, true)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
 }
 
 /**
@@ -677,6 +840,127 @@ ge::Operator handle_softmax_op(
 }
 
 /**
+ * @brief ES版本：处理SOFTMAX（Softmax）操作的函数
+ *
+ * 使用ES
+ * API在计算图中创建一个Softmax操作，支持scale缩放和mask掩码处理（包括ALiBi）
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示SOFTMAX操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的SOFTMAX操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_softmax_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入tensor
+    struct ggml_tensor *src0 = node->src[0];  // 主输入
+    struct ggml_tensor *src1 = node->src[1];  // mask (可能为NULL)
+
+    // 获取scale和max_bias参数
+    float scale = 1.0f;     // 默认缩放因子为1.0
+    float max_bias = 0.0f;  // 默认最大偏置为0.0
+    if (node->op_params) {
+        memcpy(&scale, (float *)node->op_params + 0, sizeof(float));
+        memcpy(&max_bias, (float *)node->op_params + 1, sizeof(float));
+    }
+
+    // 获取input ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "Input tensor not found in ES tensor map");
+    }
+
+    // 如果有mask，需要应用mask（这部分实现Attention中的掩码处理）
+    if (src1 != nullptr) {
+        // 创建ALiBi处理（一种Attention偏置实现）
+        const uint32_t n_head = node->ne[2];  // ne02：获取注意力头数
+        const uint32_t n_head_log2 = 1u << (uint32_t)floor(log2(n_head));
+
+        // 计算ALiBi的m0和m1参数
+        const float m0 = powf(2.0f, -(max_bias) / n_head_log2);
+        const float m1 = powf(2.0f, -(max_bias / 2.0f) / n_head_log2);
+
+        // 获取mask ES tensor
+        ge::es::EsTensorHolder es_mask;
+        if (ggml_tensor_to_es_tensor_map.find(src1) !=
+            ggml_tensor_to_es_tensor_map.end()) {
+            es_mask = ggml_tensor_to_es_tensor_map[src1];
+        } else {
+            assert(false && "Mask tensor not found in ES tensor map");
+        }
+
+        // 如果mask的形状需要切片
+        if (src1->ne[1] != src0->ne[1]) {
+            // 创建切片参数
+            std::vector<int64_t> begin_vals = {0, 0, 0, 0};
+            std::vector<int64_t> end_vals = {src1->ne[3], src1->ne[2],
+                                             src0->ne[1], src1->ne[0]};
+            std::vector<int64_t> strides_vals = {1, 1, 1, 1};
+            std::vector<int64_t> axes_vals = {0, 1, 2, 3};
+
+            // 使用ES API直接创建StridedSliceV2操作
+            // 计算切片后的形状
+            std::vector<int64_t> slice_shape = {src1->ne[3], src1->ne[2],
+                                                src0->ne[1], src1->ne[0]};
+            es_mask = StridedSliceV2(es_mask, begin_vals, end_vals,
+                                    strides_vals, axes_vals)
+                .SetDataType(get_data_type(src1->type))
+                .SetShape(slice_shape);
+        }
+
+        // 创建用于存储slope的常量
+        std::vector<float> slopes(n_head);
+        for (uint32_t h = 0; h < n_head; h++) {
+            if (max_bias > 0.0f) {
+                slopes[h] = h < n_head_log2
+                                ? powf(m0, h + 1)
+                                : powf(m1, 2 * (h - n_head_log2) + 1);
+            } else {
+                slopes[h] = 1.0f;
+            }
+        }
+
+        // 使用ES API创建slopes常量（shape: [1, n_head, 1, 1]）
+        // 将mask与slopes相乘
+        auto slope_mul =
+            (es_mask * graph_builder.CreateConst(
+                           slopes, {1, (int64_t)slopes.size(), 1, 1}))
+                .SetDataType(get_data_type(src1->type))
+                .SetShape(build_output_shape(src1));
+
+        // 先对输入应用scale缩放
+        auto scaled_input =
+            (es_input * graph_builder.CreateVector(std::vector{scale}))
+                .SetDataType(get_data_type(src0->type))
+                .SetShape(build_output_shape(src0));
+
+        // 添加掩码：将缩放后的输入与掩码相加
+        es_input = (scaled_input + slope_mul)
+                       .SetDataType(get_data_type(node->type))
+                       .SetShape(build_output_shape(node));
+    } else if (scale != 1.0f) {
+        // 如果没有mask但有scale，仅应用scale
+        es_input = (es_input * graph_builder.CreateVector(std::vector{scale}))
+                       .SetDataType(get_data_type(src0->type))
+                       .SetShape(build_output_shape(src0));
+    }
+
+    // 创建Softmax操作
+    // 注意：GGML的维度和CANN的维度排序是反的，axes设为-1（最后一个维度）
+    return SoftmaxV2(es_input, {-1})
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
+/**
  * @brief 处理重复(Repeat)操作的函数
  *
  * 实现张量的重复操作，使用昇腾的Tile算子
@@ -746,6 +1030,51 @@ ge::Operator handle_repeat_op(
     return tile_op;
 }
 
+/**
+ * @brief ES版本：处理REPEAT（重复/广播）操作的函数
+ *
+ * 使用ES API在计算图中创建一个Tile（重复）操作，用于实现张量的重复和广播
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示REPEAT操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的REPEAT操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_repeat_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入 tensor
+    struct ggml_tensor *input_tensor = node->src[0];
+
+    // 获取输入 ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(input_tensor) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[input_tensor];
+    } else {
+        assert(false && "Input tensor not found in ES tensor map");
+    }
+
+    // 构造重复倍数(multiples)数组
+    // 计算每个维度上需要重复的次数
+    std::vector<int64_t> multiples;
+    for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+        // 计算当前维度的重复次数：输出维度大小 / 输入维度大小
+        int64_t repeat = node->ne[i] / input_tensor->ne[i];
+        multiples.push_back(repeat);
+    }
+
+    // 使用ES API创建Tile操作
+    // Tile(x, multiples) - 在昇腾中，Tile操作实现了GGML的Repeat功能
+    return Tile(es_input, multiples)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node, true));
+}
+
 ge::Operator handle_silu_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -779,6 +1108,42 @@ ge::Operator handle_silu_op(
     graph.AddOp(swish_op);
 
     return swish_op;
+}
+
+/**
+ * @brief ES版本：处理SILU（Swish激活函数）操作的函数
+ *
+ * 使用ES API在计算图中创建一个Swish操作，SILU是Swish的一种特殊情况
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示SILU操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的SILU操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_silu_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入tensor
+    struct ggml_tensor *input_tensor = node->src[0];
+
+    // 获取输入ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(input_tensor) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[input_tensor];
+    } else {
+        assert(false && "Input tensor not found in ES tensor map");
+    }
+
+    // 使用ES API创建Swish操作（SILU是Swish的一种特殊情况）
+    return Swish(es_input)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
 }
 
 ge::Operator handle_argsort_op(
@@ -840,6 +1205,52 @@ ge::Operator handle_argsort_op(
     return identity_op;
 }
 
+/**
+ * @brief ES版本：处理ARGSORT（参数排序）操作的函数
+ *
+ * 使用ES API在计算图中创建一个Sort操作，返回排序后的索引
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ARGSORT操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的ARGSORT操作的ES张量持有者（返回indices）
+ */
+ge::es::EsTensorHolder handle_argsort_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入tensor
+    struct ggml_tensor *input_tensor = node->src[0];
+
+    // 获取输入ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(input_tensor) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[input_tensor];
+    } else {
+        assert(false && "Input tensor not found in ES tensor map");
+    }
+
+    // 提取排序顺序（从op_params读取）
+    enum ggml_sort_order order =
+        static_cast<enum ggml_sort_order>(node->op_params[0]);
+    bool descending = (order == GGML_SORT_ORDER_DESC);
+
+    // 使用ES API创建Sort操作
+    // 注意：Sort操作返回两个输出（sorted values和indices），我们需要indices,
+    // 原来的玩法是
+    // 通过一个identity来规避，现在我们可以之间结构化绑定之后返回需要的输出
+    auto [y1, y2] = Sort(es_input, -1, descending);
+    // 设置输出形状和数据类型
+    return y2
+        .SetDataType(ge::DT_INT32)  // Argsort输出的是索引，类型为INT32
+        .SetShape(build_output_shape(node));
+}
+
 ge::Operator handle_scale_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -887,6 +1298,45 @@ ge::Operator handle_scale_op(
     graph.AddOp(mul_op);
 
     return mul_op;
+}
+
+/**
+ * @brief ES版本：处理SCALE（缩放）操作的函数
+ *
+ * 使用ES API在计算图中创建一个缩放操作，将输入张量与标量常量相乘
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示SCALE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的SCALE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_scale_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取源张量
+    struct ggml_tensor *src0 = node->src[0];
+
+    // 检查输入是否已经在映射中
+    ge::es::EsTensorHolder es_tensor;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    // 从op_params中读取scale值
+    float scale_val;
+    memcpy(&scale_val, node->op_params, sizeof(float));
+    // 使用ES API创建Mul操作（使用运算符重载+链式调用）
+    // 使用ES API创建常量，shape是[1]
+    return (es_tensor * graph_builder.CreateVector(std::vector{scale_val}))
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
 }
 
 /**
@@ -958,6 +1408,53 @@ ge::Operator handle_reshape_op(
     return reshape_op;
 }
 
+/**
+ * @brief ES版本：处理RESHAPE（重塑形状）操作的函数
+ *
+ * 使用ES
+ * API在计算图中创建一个重塑操作，在不改变数据内容的情况下改变张量的维度结构
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示RESHAPE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的RESHAPE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_reshape_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入张量
+    ggml_tensor *src_x = node->src[0];
+    assert(src_x && "RESHAPE: missing data tensor");
+
+    // 检查输入是否已经在映射中
+    ge::es::EsTensorHolder es_tensor;
+    if (ggml_tensor_to_es_tensor_map.find(src_x) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor = ggml_tensor_to_es_tensor_map[src_x];
+    } else {
+        assert(false && "src_x tensor not found in ES tensor map");
+    }
+
+    // 构建目标形状数组（从高维到低维，与CANN维度顺序一致）
+    std::vector<int64_t> shape;
+    for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+        int64_t ne = node->ne[i];  // 获取目标形状的各维度大小
+        if (ne > 0) {
+            shape.push_back(ne);
+        }
+    }
+
+    // 使用ES API创建Reshape操作, 支持直接传入数值，内部创建const
+    return Reshape(es_tensor, shape)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
 ge::Operator handle_permute_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -988,6 +1485,49 @@ ge::Operator handle_permute_op(
 
     graph.AddOp(perm_op);
     return perm_op;
+}
+
+/**
+ * @brief ES版本：处理PERMUTE（维度置换）操作的函数
+ *
+ * 使用ES API在计算图中创建一个维度置换操作，按照指定的顺序重新排列维度
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示PERMUTE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的PERMUTE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_permute_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入张量
+    ggml_tensor *src_x = node->src[0];
+    assert(src_x && "PERMUTE: missing data tensor");
+
+    // 检查输入是否已经在映射中
+    ge::es::EsTensorHolder es_tensor;
+    if (ggml_tensor_to_es_tensor_map.find(src_x) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor = ggml_tensor_to_es_tensor_map[src_x];
+    } else {
+        assert(false && "src_x tensor not found in ES tensor map");
+    }
+
+    // 从op_params中读取维度顺序
+    std::vector<int64_t> order;
+    for (int i = 0; i < GGML_MAX_DIMS; i++) {
+        order.push_back(node->op_params[i]);
+    }
+
+    // 注意：order向量需要根据CANN的维度顺序进行调整
+    return Permute(es_tensor, order)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
 }
 
 /**
@@ -1066,6 +1606,63 @@ ge::Operator handle_transpose_op(
     return transpose_op;
 }
 
+/**
+ * @brief ES版本：处理TRANSPOSE（转置）操作的函数
+ *
+ * 使用ES API在计算图中创建一个转置操作，交换最后两个维度
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示TRANSPOSE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的TRANSPOSE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_transpose_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入张量
+    ggml_tensor *src_x = node->src[0];
+    assert(src_x && "TRANSPOSE: missing data tensor");
+
+    // 获取输入ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(src_x) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[src_x];
+    } else {
+        assert(false && "src_x tensor not found in ES tensor map");
+    }
+
+    // 构建置换数组，用于交换维度顺序
+    // GGML中，转置操作默认交换最后两个维度
+    std::vector<int64_t> perm;
+
+    // 获取有效维度的数量
+    int effective_dims = 0;
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+        if (node->ne[i] > 0) effective_dims++;
+    }
+
+    // 构建置换序列（转置时交换最后两个维度）
+    for (int i = 0; i < effective_dims; ++i) {
+        if (i == effective_dims - 1)
+            perm.push_back(effective_dims - 2);  // 将倒数第一维映射到倒数第二维
+        else if (i == effective_dims - 2)
+            perm.push_back(effective_dims - 1);  // 将倒数第二维映射到倒数第一维
+        else
+            perm.push_back(i);  // 其他维度保持不变
+    }
+
+    // 使用ES API创建Transpose操作，直接传入置换数组
+    return Transpose(es_input, perm)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
 ge::Operator handle_concat_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -1126,6 +1723,58 @@ ge::Operator handle_concat_op(
     // Add operator to graph
     graph.AddOp(concat_op);
     return concat_op;
+}
+
+/**
+ * @brief ES版本：处理CONCAT（拼接）操作的函数
+ *
+ * 使用ES API在计算图中创建一个ConcatV2操作，将两个张量在指定维度上拼接
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示CONCAT操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的CONCAT操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_concat_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *src0 = node->src[0];
+    struct ggml_tensor *src1 = node->src[1];
+
+    // 获取输入ES tensor
+    ge::es::EsTensorHolder es_tensor1, es_tensor2;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor1 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(src1) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor2 = ggml_tensor_to_es_tensor_map[src1];
+    } else {
+        assert(false && "src1 tensor not found in ES tensor map");
+    }
+
+    // 计算concat_dim（需要转换维度顺序）
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    int32_t concat_dim_value =
+        static_cast<int32_t>(output_shape.size() - node->op_params[0] - 1);
+
+    // 使用ES API创建concat_dim标量
+    auto concat_dim = graph_builder.CreateScalar(concat_dim_value);
+
+    // 使用ES API创建ConcatV2操作
+    // ConcatV2({tensor1, tensor2}, concat_dim, N) - N是输入数量
+    return ConcatV2({es_tensor1, es_tensor2}, concat_dim, 2)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(output_shape);
 }
 
 // Helper function to create a scalar Const operator
@@ -1444,6 +2093,48 @@ ge::Operator handle_cpy_op(
     // 4) 最终把 op_x 加入图，并返回
     graph.AddOp(op_x);
     return op_x;
+}
+
+/**
+ * @brief ES版本：处理CPY（复制/类型转换）操作的函数
+ *
+ * 使用ES API在计算图中创建一个Cast操作，实现张量的类型转换
+ * 输出形状与目标张量一致
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示CPY操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的CPY操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_cpy_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取源张量 src0 和目标张量 src1
+    ggml_tensor *src0 = node->src[0];
+    assert(src0 && "CPY: missing src0");
+    ggml_tensor *src1 = node->src[1];
+    assert(src1 && "CPY: missing src1");
+
+    // 获取源张量的ES tensor
+    ge::es::EsTensorHolder es_src0;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_src0 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    // 获取目标数据类型
+    ge::DataType dt_dst = get_data_type(node->type);
+
+    // 使用ES API创建Cast操作，将src0的类型转换为目标类型
+    // 默认输出形状与src1一致， 原始的实现里面注释和代码实现不符，按照代码实现来了，去掉了先执行 CONT（内存连续化）的操作
+    return Cast(es_src0, dt_dst).SetDataType(dt_dst).SetShape(build_output_shape(src1));
 }
 
 /**
