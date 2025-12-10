@@ -258,6 +258,60 @@ ge::Operator handle_add_op(
 }
 
 /**
+ * @brief ES版本：处理ADD（加法）操作的函数
+ *
+ * 使用ES API在计算图中创建一个加法操作，支持两个输入张量的形状不同时的广播处理
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ADD操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的ADD操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_add_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    // TODO: 删除这个没有用到的参数，因为es的api内部维护了一个自增的索引
+    (void)op_index;
+    // 获取源张量
+    struct ggml_tensor *src0 = node->src[0];
+    struct ggml_tensor *src1 = node->src[1];
+
+    // 检查输入是否已经在映射中
+    ge::es::EsTensorHolder es_tensor1, es_tensor2;
+
+    // 处理src0 - 获取现有ES张量
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor1 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    // 处理src1 - 获取现有ES张量
+    if (ggml_tensor_to_es_tensor_map.find(src1) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_tensor2 = ggml_tensor_to_es_tensor_map[src1];
+    } else {
+        assert(false && "src1 tensor not found in ES tensor map");
+    }
+
+    // 处理广播
+    // TODO: 实现ES版本的广播处理（Tile/Repeat操作）
+    // 目前先使用ES API的Add函数，ES API应该会自动处理广播
+    // 如果后续需要显式处理广播，可以调用handle_repeat_op_es（如果存在）
+
+    // 使用ES API创建Add操作（支持运算符重载或函数调用）
+    // 使用运算符重载+链式调用;
+    return (es_tensor1 + es_tensor2)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
+/**
  * @brief 处理MUL（乘法）操作的函数
  *
  * 在计算图中创建一个乘法操作，处理两个输入张量

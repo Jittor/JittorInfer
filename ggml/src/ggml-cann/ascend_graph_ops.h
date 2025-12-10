@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "all_ops.h"
+// ES (Eager Style) API support
+#include "es_all_ops.h"
 #include "common.h"
 #include "ggml.h"
 #include "graph/graph.h"
@@ -26,6 +28,23 @@ ge::DataType get_data_type(enum ggml_type type);
 ge::Operator handle_add_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
+/**
+ * @brief ES版本：处理ADD（加法）操作的函数
+ *
+ * 使用ES API在计算图中创建一个加法操作，支持两个输入张量的形状不同时的广播处理
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ADD操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的ADD操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_add_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
     int op_index);
 
 ge::Operator handle_mul_op(
