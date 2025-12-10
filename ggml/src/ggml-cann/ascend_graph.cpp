@@ -29,7 +29,6 @@
 #include <vector>
 
 #include "ggml-cann/ascend_graph_ops.h"
-
 // 引入es构图api的聚合头文件
 #include "es_all_ops.h"
 
@@ -286,7 +285,16 @@ void process_input_tensors(
         create_data(node);
     }
 }
-
+namespace {
+// ES version helper function declarations
+void process_input_tensors_es(
+    ggml_tensor** tensor_array, int count,
+    std::vector<gert::Tensor>& input_init,
+    const std::string& name_prefix, int index_offset,
+    ge::es::EsGraphBuilder* graph_builder,
+    std::map<ggml_tensor*, ge::es::EsTensorHolder>* ggml_tensor_to_es_tensor_map,
+    std::vector<ge::es::EsTensorHolder>* graph_inputs);
+}
 /**
  * @brief 构建Ascend(昇腾)计算图
  *
