@@ -1990,6 +1990,108 @@ ge::Operator handle_view_op(
 }
 
 /**
+ * @brief ES版本：处理VIEW（视图）操作的函数
+ *
+ * 使用ES
+ * API在计算图中创建一个ViewCopy操作，实现张量的视图（不复制数据，只改变形状和步长）
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示VIEW操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的VIEW操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_view_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取源张量
+    struct ggml_tensor *src0 = node->src[0];
+    assert(src0 && "VIEW: missing source tensor");
+
+    // 获取源张量的ES tensor
+    ge::es::EsTensorHolder es_src0;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_src0 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 tensor not found in ES tensor map");
+    }
+
+    // 元素大小 (字节)
+    size_t s0_elsize = ggml_element_size(src0);
+    size_t node_elsize = ggml_element_size(node);
+    assert(s0_elsize == node_elsize &&
+           "VIEW: source and view tensor element sizes must match");
+
+    // 目标视图参数 (node)
+    std::vector<int64_t> dst_shape_vec;
+    std::vector<int64_t> dst_strides_vec;
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+        if (node->ne[i] > 0) {
+            dst_shape_vec.push_back(node->ne[i]);
+            dst_strides_vec.push_back(node->nb[i] / node_elsize);
+        }
+    }
+    if (dst_shape_vec.empty()) {
+        dst_shape_vec.push_back(1);
+        dst_strides_vec.push_back(1);
+    }
+    // Pad with 1s if ndims < 4 for CANN, reverse order for CANN
+    while (dst_shape_vec.size() < 4 && dst_shape_vec.size() > 0) {
+        dst_shape_vec.insert(dst_shape_vec.begin(), 1);
+        dst_strides_vec.insert(dst_strides_vec.begin(),
+                               dst_strides_vec.front() * dst_shape_vec[1]);
+    }
+    std::reverse(dst_shape_vec.begin(), dst_shape_vec.end());
+    std::reverse(dst_strides_vec.begin(), dst_strides_vec.end());
+
+    // dst_storage_offset
+    assert(node->view_src == src0 && "View node's view_src is not src0");
+    int64_t dst_storage_offset_val = node->view_offs / node_elsize;
+
+    // 源张量参数 (src0)
+    std::vector<int64_t> src_shape_vec;
+    std::vector<int64_t> src_strides_vec;
+    for (int i = 0; i < GGML_MAX_DIMS; ++i) {
+        if (src0->ne[i] > 0) {
+            src_shape_vec.push_back(src0->ne[i]);
+            src_strides_vec.push_back(src0->nb[i] / s0_elsize);
+        }
+    }
+    if (src_shape_vec.empty()) {
+        src_shape_vec.push_back(1);
+        src_strides_vec.push_back(1);
+    }
+    // Pad with 1s if ndims < 4 for CANN, reverse order for CANN
+    while (src_shape_vec.size() < 4 && src_shape_vec.size() > 0) {
+        src_shape_vec.insert(src_shape_vec.begin(), 1);
+        src_strides_vec.insert(src_strides_vec.begin(),
+                               src_strides_vec.front() * src_shape_vec[1]);
+    }
+    std::reverse(src_shape_vec.begin(), src_shape_vec.end());
+    std::reverse(src_strides_vec.begin(), src_strides_vec.end());
+
+    int64_t src_storage_offset_val = 0;
+
+    std::vector<int64_t> output_shape = build_output_shape(node, true);
+    if (output_shape.empty()) {
+        output_shape.push_back(1);
+    }
+    while (output_shape.size() < 4 && output_shape.size() > 0) {
+        output_shape.insert(output_shape.begin(), 1);
+    }
+    // 使用ES API创建ViewCopy操作
+    return ViewCopy(es_src0, dst_shape_vec, dst_strides_vec,
+                    dst_storage_offset_val, es_src0, src_shape_vec,
+                    src_strides_vec, src_storage_offset_val)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(output_shape);
+}
+
+/**
  * @brief 处理连续(Cont)操作的函数
  *
  * 将张量转换为内存连续排列的新张量
@@ -2054,6 +2156,67 @@ ge::Operator handle_cont_op(
         output_op = cont_op;
     }
     return output_op;
+}
+
+/**
+ * @brief ES版本：处理CONT（连续化）操作的函数
+ *
+ * 使用ES API在计算图中创建一个Identity或Reshape操作，将张量转换为内存连续排列
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示CONT操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的CONT操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_cont_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入张量
+    ggml_tensor *src = node->src[0];
+    assert(src && "CONT: missing source tensor");
+
+    // 获取输入ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(src) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[src];
+    } else {
+        assert(false && "src tensor not found in ES tensor map");
+    }
+
+    // 检查node的shape和src是否相同
+    bool same_shape = true;
+    for (int i = 0; i < GGML_MAX_DIMS; i++) {
+        if (node->ne[i] != src->ne[i]) {
+            same_shape = false;
+            break;
+        }
+    }
+
+    // 如果形状不同，需要先进行reshape操作
+    if (!same_shape) {
+        // 创建目标形状向量
+        std::vector<int64_t> target_shape;
+        for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+            int64_t ne = node->ne[i];
+            if (ne > 0) {
+                target_shape.push_back(ne);
+            }
+        }
+        // 使用ES API创建Reshape操作
+        return Reshape(es_input, target_shape)
+            .SetDataType(get_data_type(node->type))
+            .SetShape(build_output_shape(node));
+    } else {
+        // 形状相同，使用Identity操作实现连续化
+        return Identity(es_input)
+            .SetDataType(get_data_type(node->type))
+            .SetShape(build_output_shape(node));
+    }
 }
 
 ge::Operator handle_cpy_op(
@@ -2244,6 +2407,78 @@ ge::Operator handle_rms_norm_op(
     graph.AddOp(identity_op);
 
     return identity_op;
+}
+
+/**
+ * @brief ES版本：处理RMS_NORM（RMS归一化）操作的函数
+ *
+ * 使用ES API在计算图中创建一个RmsNorm操作，实现Root Mean Square归一化
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示RMS_NORM操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的RMS_NORM操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_rms_norm_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入张量
+    ggml_tensor *src_x = node->src[0];
+    assert(src_x && "RMSNorm: missing input tensor");
+
+    // 获取输入ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(src_x) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[src_x];
+    } else {
+        assert(false && "src_x tensor not found in ES tensor map");
+    }
+
+    // 获取epsilon参数，防止除零错误
+    float epsilon = 1e-6f;  // 默认值
+    if (node->op_params != nullptr) {
+        memcpy(&epsilon, node->op_params, sizeof(float));
+    }
+
+    // 在GGML中，特征维度是ne[0]
+    int64_t feature_dim = src_x->ne[0];
+
+    // 处理gamma参数
+    ge::es::EsTensorHolder es_gamma;
+    if (node->op == GGML_OP_RMS_NORM) {
+        // GGML_OP_RMS_NORM: 没有gamma，创建全1的常量
+        std::vector<float> gamma_data(feature_dim, 1.0f);
+        // 使用ES API创建gamma常量
+        es_gamma = graph_builder.CreateConst(gamma_data, {feature_dim});
+    } else {
+        // GGML_OP_RMS_NORM_FUSED: 有gamma输入
+        GGML_ASSERT(node->op == GGML_OP_RMS_NORM_FUSED);
+        ggml_tensor *src_gamma = node->src[1];
+        GGML_ASSERT(src_gamma != nullptr);
+        if (ggml_tensor_to_es_tensor_map.find(src_gamma) !=
+            ggml_tensor_to_es_tensor_map.end()) {
+            es_gamma = ggml_tensor_to_es_tensor_map[src_gamma];
+            // 对gamma进行squeeze操作（移除维度0,1,2）
+            es_gamma = Squeeze(es_gamma, std::vector<int64_t>{0, 1, 2})
+                           .SetDataType(get_data_type(src_gamma->type))
+                           .SetShape(build_output_shape(src_gamma));
+        } else {
+            assert(false && "src_gamma tensor not found in ES tensor map");
+        }
+    }
+
+    // 使用ES API创建RmsNorm操作, 注意：我们需要y输出
+    // 在ES API中，应该可以直接返回输出，无需Identity
+    auto [y, rstd] = RmsNorm(es_input, es_gamma, epsilon);
+
+    // 设置输出形状和数据类型
+    return y.SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
 }
 
 /**

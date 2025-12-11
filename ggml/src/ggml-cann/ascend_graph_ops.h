@@ -318,15 +318,67 @@ ge::Operator handle_view_op(
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
 
+/**
+ * @brief ES版本：处理VIEW（视图）操作的函数
+ *
+ * 使用ES API在计算图中创建一个ViewCopy操作，实现张量的视图（不复制数据，只改变形状和步长）
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示VIEW操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的VIEW操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_view_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_cont_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
+/**
+ * @brief ES版本：处理CONT（连续化）操作的函数
+ *
+ * 使用ES API在计算图中创建一个Identity或Reshape操作，将张量转换为内存连续排列
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示CONT操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的CONT操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_cont_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
     int op_index);
 
 ge::Operator handle_rms_norm_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+
+/**
+ * @brief ES版本：处理RMS_NORM（RMS归一化）操作的函数
+ *
+ * 使用ES API在计算图中创建一个RmsNorm操作，实现Root Mean Square归一化
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示RMS_NORM操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的RMS_NORM操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_rms_norm_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_rope_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
