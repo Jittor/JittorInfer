@@ -123,6 +123,7 @@ if (CANN_INSTALL_DIR)
     message(STATUS "CANN: CANN_INCLUDE_DIRS =  ${CANN_INCLUDE_DIRS}")
     message(STATUS "CANN: CANN_LIBRARIES =  ${CANN_LIBRARIES}")
 
+    # TODO:自定义算子也调用add_es_library生成es的API
     add_custom_target(custom_rope_ext 
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom_rope_ext/op_project/install.sh
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom_rope_ext/op_project

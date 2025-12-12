@@ -14,7 +14,7 @@
 #include "ggml-impl.h"
 #include "op_proto.h"
 #include "rope_cache.h"
-
+#include "es_c_graph_builder.h"
 /**
  * @brief 构建输出形状向量，从张量维度提取
  *
@@ -2781,6 +2781,183 @@ ge::Operator handle_rope_op(
 
     // 返回最终操作
     return op_reshape_dst;
+}
+
+/**
+ * @brief ES版本：处理ROPE（旋转位置编码）操作的函数
+ *
+ * 使用ES API在计算图中创建一个RoPE操作，实现旋转位置编码
+ * 注意：此操作非常复杂，涉及Reshape、Transpose、Gather、自定义算子等多个步骤
+ * 由于RopeCache返回GE API的Operator，此实现可能需要混合使用GE和ES API
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ROPE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @param cann_ctx CANN上下文，用于RopeCache
+ * @return 创建的ROPE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_rope_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index, ggml_backend_cann_context &cann_ctx) {
+    (void)graph_builder;
+    // 获取源张量
+    struct ggml_tensor *src0 = node->src[0];  // 输入张量
+    struct ggml_tensor *src1 = node->src[1];  // 位置索引张量
+
+    auto dst = node;
+    GGML_TENSOR_UNARY_OP_LOCALS  // 使用GGML宏获取输入张量的维度
+
+        // 获取输入ES tensor
+        ge::es::EsTensorHolder es_src0,
+        es_src1;
+    if (ggml_tensor_to_es_tensor_map.find(src0) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_src0 = ggml_tensor_to_es_tensor_map[src0];
+    } else {
+        assert(false && "src0 not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(src1) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_src1 = ggml_tensor_to_es_tensor_map[src1];
+    } else {
+        assert(false && "src1 not found in ES tensor map");
+    }
+
+    // 从操作参数中获取RoPE配置参数
+    float freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow;
+    const int n_dims = ((int32_t *)node->op_params)[1];      // 特征维度数量
+    const int mode = ((int32_t *)node->op_params)[2];        // RoPE模式
+    const int n_ctx_orig = ((int32_t *)node->op_params)[4];  // 原始上下文长度
+
+    // 复制浮点参数
+    memcpy(&freq_base, (int32_t *)dst->op_params + 5, sizeof(float));
+    memcpy(&freq_scale, (int32_t *)dst->op_params + 6, sizeof(float));
+    memcpy(&ext_factor, (int32_t *)dst->op_params + 7, sizeof(float));
+    memcpy(&attn_factor, (int32_t *)dst->op_params + 8, sizeof(float));
+    memcpy(&beta_fast, (int32_t *)dst->op_params + 9, sizeof(float));
+    memcpy(&beta_slow, (int32_t *)dst->op_params + 10, sizeof(float));
+
+    // 确认维度条件
+    GGML_ASSERT(n_dims == ne0);
+    GGML_ASSERT(n_dims % 2 == 0);  // 特征维度必须是偶数
+
+    // 计算RoPE参数
+    const float theta_scale = powf(freq_base, -2.0f / n_dims);
+    const int64_t pos_len = src0->ne[2];  // 位置长度
+
+    // 定义重塑后的维度
+    int64_t ne_x_reshape[] = {2, src0->ne[0] / 2, src0->ne[1], src0->ne[2],
+                              src0->ne[3]};
+
+    // 第一步：将输入重塑为5D [..., dim//2, 2]
+    std::vector<int64_t> shape_reshape_x;
+    for (int i = 4; i >= 0; --i) {
+        shape_reshape_x.push_back(ne_x_reshape[i]);
+    }
+
+    // 使用ES API创建Reshape操作
+    auto es_reshape_x = Reshape(es_src0, shape_reshape_x)
+                            .SetDataType(get_data_type(src0->type))
+                            .SetShape(shape_reshape_x);
+
+    // 第二步：转置操作，将维度顺序变为 [....,2, dim//2]
+    std::vector<int64_t> perm_order = {0, 1, 2, 4, 3};  // 置换维度的顺序
+
+    // 使用ES API创建Transpose操作
+    std::vector<int64_t> out_shape_perm_x;
+    for (int i = 4; i >= 0; --i) {
+        int64_t idx = perm_order[4 - i];
+        out_shape_perm_x.push_back(ne_x_reshape[idx]);
+    }
+    auto es_perm_x = Transpose(es_reshape_x, perm_order)
+                         .SetDataType(get_data_type(src0->type))
+                         .SetShape(out_shape_perm_x);
+
+    // 第三步：执行RoPE操作
+    // 获取底层 Graph（RopeCache 需要 Graph& 参数）
+    ge::Graph *graph = graph_builder.GetCGraphBuilder()->GetGraph();
+    GGML_ASSERT(graph != nullptr);
+    std::string curr_suffix = "_" + std::to_string(op_index);
+
+    // 3.1: 创建 RopeCache 并获取 sin/cos 缓存（直接使用 CreateConst 创建）
+    RopeCache rope_cache(cann_ctx, dst);
+    ge::es::EsTensorHolder es_sin_cache =
+        rope_cache.GetSinEsTensor(graph_builder);
+    ge::es::EsTensorHolder es_cos_cache =
+        rope_cache.GetCosEsTensor(graph_builder);
+
+    // 3.2: 使用 ES API 的 Squeeze 处理位置索引
+    std::vector<int64_t> squeeze_axes = {0, 1, 2};  // 移除维度 0, 1, 2
+    auto es_x1_squeeze = Squeeze(es_src1, squeeze_axes)
+                             .SetDataType(get_data_type(src1->type))
+                             .SetShape(build_output_shape(src1));
+
+    // 3.3: 使用 ES API 的 Gather 操作（axis=1）
+    // Gather 函数签名需要确认，假设是 Gather(data, indices, axis)
+    // 创建 axis 常量
+    auto es_axis = graph_builder.CreateScalar(static_cast<int64_t>(1));
+    auto es_gather_sin = GatherV2(es_sin_cache, es_x1_squeeze, es_axis)
+                             .SetDataType(get_data_type(node->type))
+                             .SetShape(out_shape_perm_x);
+    auto es_gather_cos = GatherV2(es_cos_cache, es_x1_squeeze, es_axis)
+                             .SetDataType(get_data_type(node->type))
+                             .SetShape(out_shape_perm_x);
+
+    // 3.4: 创建 RopeExtCustomV2 自定义算子
+    // TODO:使用自定义算子的ES API来替换
+    std::string name_rope = "rope_rope" + curr_suffix;
+    ge::op::RopeExtCustomV2 rope_op(name_rope.c_str());
+
+    // 设置输出描述
+    ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
+                                 get_data_type(node->type));
+    rope_op.update_output_desc_dst(desc_out_rope);
+
+    // 设置必需属性
+    rope_op.set_attr_ne0(ne0);
+    rope_op.set_attr_ne1(ne1);
+    rope_op.set_attr_pos_len(src0->ne[2]);
+
+    // 添加到图中并转换为 GNode
+    ge::GNode g_rope_node = graph->AddNodeByOp(rope_op);
+
+    // 连接输入边
+    // 输入 x (索引 0): es_perm_x
+    ge::GNode *g_perm_x_node = es_perm_x.GetProducer();
+    graph->AddDataEdge(*g_perm_x_node, 0, g_rope_node, 0);  // x 输入
+
+    // 输入 cos (索引 1): es_gather_cos
+    ge::GNode *g_gather_cos_node = es_gather_cos.GetProducer();
+    graph->AddDataEdge(*g_gather_cos_node, 0, g_rope_node, 1);  // cos 输入
+
+    // 输入 sin (索引 2): es_gather_sin
+    ge::GNode *g_gather_sin_node = es_gather_sin.GetProducer();
+    graph->AddDataEdge(*g_gather_sin_node, 0, g_rope_node, 2);  // sin 输入
+
+    // 转换为 EsTensorHolder
+    ge::es::EsTensorHolder es_rope_result(
+        graph_builder.GetCGraphBuilder()->GetTensorHolderFromNode(g_rope_node,
+                                                                  0));
+
+    // 第四步：转置回来（使用 ES API）
+    auto es_permute_dst = Transpose(es_rope_result, perm_order)
+                              .SetDataType(get_data_type(node->type))
+                              .SetShape(shape_reshape_x);
+
+    // 第五步：重塑回 4D（使用 ES API）
+    std::vector<int64_t> out_shape_reshape_dst;
+    for (int i = 3; i >= 0; --i) {
+        out_shape_reshape_dst.push_back(src0->ne[i]);
+    }
+    auto es_reshape_dst = Reshape(es_permute_dst, out_shape_reshape_dst)
+                              .SetDataType(get_data_type(node->type))
+                              .SetShape(out_shape_reshape_dst);
+
+    return es_reshape_dst;
 }
 
 /**

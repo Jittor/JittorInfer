@@ -106,3 +106,31 @@ ge::Operator RopeCache::GetSinOp(ge::Graph& graph,
     graph.AddOp(const_op);
     return const_op;
 }
+
+ge::es::EsTensorHolder RopeCache::GetCosEsTensor(
+    ge::es::EsGraphBuilder& graph_builder) const {
+    // 将 final_shape 转换为 vector
+    std::vector<int64_t> shape(final_shape.begin(), final_shape.end());
+
+    // 将 float* 数据转换为 vector<float>
+    const float* data = static_cast<const float*>(cos_final_buffer);
+    size_t num_elements = final_size / sizeof(float);
+    std::vector<float> value(data, data + num_elements);
+
+    // 使用 EsGraphBuilder 的 CreateConst 方法创建常量
+    return graph_builder.CreateConst(value, shape);
+}
+
+ge::es::EsTensorHolder RopeCache::GetSinEsTensor(
+    ge::es::EsGraphBuilder& graph_builder) const {
+    // 将 final_shape 转换为 vector
+    std::vector<int64_t> shape(final_shape.begin(), final_shape.end());
+
+    // 将 float* 数据转换为 vector<float>
+    const float* data = static_cast<const float*>(sin_final_buffer);
+    size_t num_elements = final_size / sizeof(float);
+    std::vector<float> value(data, data + num_elements);
+
+    // 使用 EsGraphBuilder 的 CreateConst 方法创建常量
+    return graph_builder.CreateConst(value, shape);
+}

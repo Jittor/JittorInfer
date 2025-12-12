@@ -383,6 +383,26 @@ ge::Operator handle_rope_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index, ggml_backend_cann_context &cann_ctx);
+
+/**
+ * @brief ES版本：处理ROPE（旋转位置编码）操作的函数
+ *
+ * 使用ES API在计算图中创建一个RoPE操作，实现旋转位置编码
+ * 注意：此操作非常复杂，涉及Reshape、Transpose、Gather、自定义算子等多个步骤
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ROPE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @param cann_ctx CANN上下文，用于RopeCache
+ * @return 创建的ROPE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_rope_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index, ggml_backend_cann_context &cann_ctx);
+
 ge::Operator handle_moe_fused_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
