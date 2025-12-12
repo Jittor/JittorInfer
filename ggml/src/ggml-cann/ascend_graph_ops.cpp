@@ -3692,6 +3692,443 @@ ge::es::EsTensorHolder handle_arange_op_es(
 }
 
 /**
+ * @brief ES版本：处理StridedSliceV2（步长切片）操作的函数
+ *
+ * 使用ES API在计算图中创建一个StridedSliceV2操作，实现张量的步长切片操作
+ * 从输入张量中提取指定步长的切片，支持多维张量的灵活切片
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示StridedSliceV2操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的StridedSliceV2操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_stridedslicev2_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *src_x = node->src[0];  // 主输入张量
+
+    // 获取输入张量对应的ES tensor
+    ge::es::EsTensorHolder es_x;
+    if (ggml_tensor_to_es_tensor_map.find(src_x) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_x = ggml_tensor_to_es_tensor_map[src_x];
+    } else {
+        assert(false && "Input tensor not found in ES tensor map");
+    }
+
+    // 从 op_params 中读取三个 int64_t 参数：{fr, to, axis}
+    int64_t params[3] = {};
+    memcpy(params, node->op_params, sizeof(int64_t) * 3);
+    int64_t fr = params[0];
+    int64_t to = params[1];
+    int64_t axis = params[2];
+
+    // 初始化begin, end, strides数组，按照CANN维度顺序
+    std::vector<int64_t> begin_vec(GGML_MAX_DIMS);
+    std::vector<int64_t> end_vec(GGML_MAX_DIMS);
+    std::vector<int64_t> strides_vec(GGML_MAX_DIMS);
+
+    // 获取输入张量的维度信息，按照CANN维度顺序初始化
+    for (int i = 0; i < GGML_MAX_DIMS; i++) {
+        begin_vec[GGML_MAX_DIMS - i - 1] = 0;
+        end_vec[GGML_MAX_DIMS - i - 1] = src_x->ne[i];
+        strides_vec[GGML_MAX_DIMS - i - 1] = 1;
+    }
+
+    // 根据axis修改对应维度的begin和end
+    begin_vec[GGML_MAX_DIMS - axis - 1] = fr;
+    end_vec[GGML_MAX_DIMS - axis - 1] = to;
+
+    // 创建axes向量，内容为{0,1,2,3}，类型为int64
+    std::vector<int64_t> axes_vec = {0, 1, 2, 3};
+
+    // 使用 ES API 的 StridedSliceV2 算子
+    // EsTensorLike 支持 std::vector<int64_t> 的隐式构造，可以直接传递
+    return StridedSliceV2(es_x, begin_vec, end_vec, axes_vec, strides_vec)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
+/**
+ * @brief ES版本：处理Flash Attention Prompt操作的函数
+ *
+ * 使用ES API在计算图中创建一个PromptFlashAttention操作，实现Flash
+ * Attention的prompt阶段
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Flash Attention Prompt操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Flash Attention Prompt操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_flash_attn_prompt_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *query = node->src[0];
+    struct ggml_tensor *key = node->src[1];
+    struct ggml_tensor *value = node->src[2];
+    struct ggml_tensor *attn_mask = node->src[3];
+    struct ggml_tensor *length_q_tensor = node->src[4];
+    struct ggml_tensor *length_kv_tensor = node->src[5];
+
+    // 数据类型和形状验证
+    GGML_ASSERT(query->type == GGML_TYPE_F16);
+    GGML_ASSERT(key->type == GGML_TYPE_F16);
+    GGML_ASSERT(value->type == GGML_TYPE_F16);
+    GGML_ASSERT(attn_mask->type == GGML_TYPE_I8);
+    GGML_ASSERT(node->type == GGML_TYPE_F16);
+
+    // 获取输入张量对应的ES tensor
+    ge::es::EsTensorHolder es_query, es_key, es_value, es_attn_mask,
+        es_length_q_tensor, es_length_kv_tensor;
+
+    if (ggml_tensor_to_es_tensor_map.find(query) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_query = ggml_tensor_to_es_tensor_map[query];
+    } else {
+        assert(false && "Query tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(key) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_key = ggml_tensor_to_es_tensor_map[key];
+    } else {
+        assert(false && "Key tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(value) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_value = ggml_tensor_to_es_tensor_map[value];
+    } else {
+        assert(false && "Value tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(attn_mask) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_attn_mask = ggml_tensor_to_es_tensor_map[attn_mask];
+    } else {
+        assert(false && "Attention mask tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(length_q_tensor) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_length_q_tensor = ggml_tensor_to_es_tensor_map[length_q_tensor];
+    } else {
+        assert(false && "Length Q tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(length_kv_tensor) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_length_kv_tensor = ggml_tensor_to_es_tensor_map[length_kv_tensor];
+    } else {
+        assert(false && "Length KV tensor not found in ES tensor map");
+    }
+
+    // 从 op_params 中读取参数
+    struct flash_attn_params {
+        int batch_size;
+        int num_heads;
+        int head_dim_kq;
+        int head_dim_v;
+        int key_num_heads;
+        int sequence_lenth_q;
+        int64_t sequence_lenth_kv;
+        float scaleValue;
+    };
+    flash_attn_params *params =
+        reinterpret_cast<flash_attn_params *>(node->op_params);
+
+    // 从参数中提取配置
+    int32_t num_heads = params->num_heads;
+    float scale_value = params->scaleValue;
+    int32_t sequence_length_q = params->sequence_lenth_q;
+
+    // 设置属性值，匹配 FusedInferAttentionScore 算子的规范
+    int64_t num_key_value_heads = num_heads;
+    const char *input_layout = "BSND";  // 默认输入布局
+    int64_t pre_tokens = 2147483647;    // 匹配默认值
+    int64_t next_tokens = 0;
+    int64_t sparse_mode = 1;  // 拦截，非量化情况不考虑
+    int64_t inner_precise =
+        sequence_length_q > 1 ? 2 : 0;  // 高精度模式，开启行无效修正
+
+    // 使用 ES API 的 FusedInferAttentionScore 算子
+    // key 和 value 需要包装成 vector（动态输入）
+    std::vector<ge::es::EsTensorHolder> es_key_vec = {es_key};
+    std::vector<ge::es::EsTensorHolder> es_value_vec = {es_value};
+
+    // 调用 FusedInferAttentionScore，返回结构体包含 attention_out 和
+    // softmax_lse 对于可选参数，使用 nullptr 表示未传递
+    auto [attention_out, softmax_lse] = FusedInferAttentionScore(
+        es_query, es_key_vec, es_value_vec,
+        nullptr,  // pse_shift
+        es_attn_mask, es_length_q_tensor, es_length_kv_tensor,
+        nullptr,  // dequant_scale1
+        nullptr,  // quant_scale1
+        nullptr,  // dequant_scale2
+        nullptr,  // quant_scale2
+        nullptr,  // quant_offset2
+        nullptr,  // antiquant_scale
+        nullptr,  // antiquant_offset
+        nullptr,  // block_table
+        nullptr,  // query_padding_size
+        nullptr,  // kv_padding_size
+        nullptr,  // key_antiquant_scale
+        nullptr,  // key_antiquant_offset
+        nullptr,  // value_antiquant_scale
+        nullptr,  // value_antiquant_offset
+        nullptr,  // key_shared_prefix
+        nullptr,  // value_shared_prefix
+        nullptr,  // actual_shared_prefix_len
+        nullptr,  // query_rope
+        nullptr,  // key_rope
+        nullptr,  // key_rope_antiquant_scale
+        nullptr,  // dequant_scale_query
+        nullptr,  // learnable_sink
+        nullptr,  // q_start_idx
+        nullptr,  // kv_start_idx
+        num_heads, scale_value, pre_tokens, next_tokens, input_layout,
+        num_key_value_heads, sparse_mode, inner_precise,
+        0,      // block_size
+        0,      // antiquant_mode
+        false,  // softmax_lse_flag
+        0,      // key_antiquant_mode
+        0,      // value_antiquant_mode
+        0,      // query_quant_mode
+        0,      // pse_type
+        0       // out_dtype
+    );
+
+    // 返回 attention_out（原始实现中通过 Identity 算子只保留 attention_out）
+    return attention_out.SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
+/**
+ * @brief ES版本：处理Set Slice（切片赋值）操作的函数
+ *
+ * 使用ES API在计算图中创建一个ScatterUpdate操作，实现张量的切片赋值
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Set Slice操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Set Slice操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_set_slice_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *src_var = node->src[0];     // 待赋值的张量
+    struct ggml_tensor *src_index = node->src[1];   // 索引张量
+    struct ggml_tensor *src_update = node->src[2];  // 赋值张量
+
+    assert(src_var && "SET_SLICE: missing input tensor");
+    assert(src_index && "SET_SLICE: missing index tensor");
+    assert(src_update && "SET_SLICE: missing update tensor");
+
+    // 获取输入张量对应的ES tensor
+    ge::es::EsTensorHolder es_var, es_indices, es_updates;
+
+    if (ggml_tensor_to_es_tensor_map.find(src_var) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_var = ggml_tensor_to_es_tensor_map[src_var];
+    } else {
+        assert(false && "SET_SLICE: var tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(src_index) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_indices = ggml_tensor_to_es_tensor_map[src_index];
+    } else {
+        assert(false && "SET_SLICE: indices tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(src_update) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_updates = ggml_tensor_to_es_tensor_map[src_update];
+    } else {
+        assert(false && "SET_SLICE: updates tensor not found in ES tensor map");
+    }
+
+    // 计算形状（参考原始实现）
+    std::vector<int64_t> op_var_shape = squeeze_ggml_tensor_shape(src_var);
+    if (op_var_shape.size() == 1) {
+        op_var_shape.insert(op_var_shape.begin(), 1);
+    }
+    assert(op_var_shape.size() == 2 &&
+           "SET_SLICE: var tensor must have 2 dimensions after reshape");
+
+    std::vector<int64_t> op_indices_shape =
+        squeeze_ggml_tensor_shape(src_index);
+    if (op_indices_shape.empty()) {
+        op_indices_shape.push_back(1);
+    }
+    assert(op_indices_shape.size() == 1 &&
+           "SET_SLICE: indices tensor must have 1 dimension after reshape");
+
+    std::vector<int64_t> op_updates_shape =
+        squeeze_ggml_tensor_shape(src_update);
+    if (op_updates_shape.size() == 1) {
+        op_updates_shape.insert(op_updates_shape.begin(), 1);
+    }
+    assert(op_updates_shape.size() == 2 &&
+           "SET_SLICE: updates tensor must have 2 dimensions after reshape");
+
+    // 使用 ES API 的 Reshape 操作重塑输入
+    auto es_var_reshaped = Reshape(es_var, op_var_shape)
+                               .SetDataType(get_data_type(src_var->type))
+                               .SetShape(op_var_shape);
+
+    auto es_indices_reshaped = Reshape(es_indices, op_indices_shape)
+                                   .SetDataType(get_data_type(src_index->type))
+                                   .SetShape(op_indices_shape);
+
+    auto es_updates_reshaped = Reshape(es_updates, op_updates_shape)
+                                   .SetDataType(get_data_type(src_update->type))
+                                   .SetShape(op_updates_shape);
+
+    // 使用 ES API 的 ScatterUpdate 算子
+    std::vector<int64_t> out_shape = build_output_shape(node);
+    return ScatterUpdate(es_var_reshaped, es_indices_reshaped,
+                         es_updates_reshaped, false)  // use_locking=false
+        .SetDataType(get_data_type(node->type))
+        .SetShape(out_shape);
+}
+
+/**
+ * @brief ES版本：处理Get Rows操作的函数
+ *
+ * 使用ES API在计算图中创建一个GatherV2操作，实现按行索引获取张量行
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Get Rows操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Get Rows操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_get_rows_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)graph_builder;
+    (void)op_index;
+    struct ggml_tensor *src = node->src[0];
+    struct ggml_tensor *rows = node->src[1];
+
+    // 获取输入张量对应的ES tensor
+    ge::es::EsTensorHolder es_src, es_rows;
+    if (ggml_tensor_to_es_tensor_map.find(src) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_src = ggml_tensor_to_es_tensor_map[src];
+    } else {
+        assert(false && "get_rows: input tensor not found in ES tensor map");
+    }
+    if (ggml_tensor_to_es_tensor_map.find(rows) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_rows = ggml_tensor_to_es_tensor_map[rows];
+    } else {
+        assert(false && "get_rows: rows tensor not found in ES tensor map");
+    }
+
+    int batch_dims = rows->ne[1];
+    int row_num = rows->ne[0];
+
+    // 使用 ES API 的 Squeeze 操作（参考原始实现）
+    // Squeeze src: 移除维度0，形状从 [1, src->ne[0], src->ne[1], src->ne[2]]
+    // 变为 [src->ne[0], src->ne[1], src->ne[2]]
+    std::vector<int64_t> squeezed_src_shape;
+    for (int i = GGML_MAX_DIMS - 1; i >= 0; --i) {
+        if (i != 0 && src->ne[i] > 0) {
+            squeezed_src_shape.push_back(src->ne[i]);
+        }
+    }
+    auto es_squeezed_src = Squeeze(es_src, std::vector<int64_t>{0})
+                               .SetDataType(get_data_type(src->type))
+                               .SetShape(squeezed_src_shape);
+
+    // Squeeze rows: 移除维度0和1，形状从 [rows->ne[0], rows->ne[1], 1, 1] 变为
+    // [rows->ne[0] * rows->ne[1]]
+    std::vector<int64_t> squeezed_rows_shape = {row_num * batch_dims};
+    auto es_squeezed_rows = Squeeze(es_rows, std::vector<int64_t>{0, 1})
+                                .SetDataType(get_data_type(rows->type))
+                                .SetShape(squeezed_rows_shape);
+
+    // 创建 axis 常量（axis=1）
+    // 使用 ES API 的 GatherV2 算子（参考原始实现：axis=1, batch_dims=1）
+    auto es_result =
+        GatherV2(es_squeezed_src, es_squeezed_rows, static_cast<int64_t>(1), 1);
+
+    // 使用 ES API 的 Unsqueeze 操作（参考原始实现：unsqueeze axis 0）
+    auto es_unsq_result = Unsqueeze(es_result, std::vector<int64_t>{0})
+                              .SetDataType(get_data_type(node->type))
+                              .SetShape(std::vector<int64_t>{
+                                  1, rows->ne[1], rows->ne[0], src->ne[0]});
+
+    // 使用 ES API 的 Cast 操作（参考原始实现）
+    return Cast(es_unsq_result, static_cast<int64_t>(get_data_type(node->type)))
+        .SetDataType(get_data_type(node->type))
+        .SetShape(
+            std::vector<int64_t>{1, rows->ne[1], rows->ne[0], src->ne[0]});
+}
+
+/**
+ * @brief ES版本：处理Pad（填充）操作的函数
+ *
+ * 使用ES API在计算图中创建一个PadV3操作，实现张量的填充
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Pad操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Pad操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_pad_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *src = node->src[0];  // 待填充的张量
+    assert(src && "PAD: missing input tensor");
+
+    // 获取输入张量对应的ES tensor
+    ge::es::EsTensorHolder es_input;
+    if (ggml_tensor_to_es_tensor_map.find(src) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[src];
+    } else {
+        assert(false && "PAD: input tensor not found in ES tensor map");
+    }
+
+    // 创建paddings向量（参考原始实现）
+    std::vector<int64_t> paddings = {
+        0, node->ne[3] - src->ne[3], 0, node->ne[2] - src->ne[2],
+        0, node->ne[1] - src->ne[1], 0, node->ne[0] - src->ne[0]};
+    // 使用 ES API 的 PadV3 算子
+    std::vector<int64_t> out_shape = build_output_shape(node);
+    return PadV3(es_input, paddings, 0.0f, "constant", true)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(out_shape);
+}
+
+/**
  * @brief 处理StridedSliceV2操作的函数
  *
  * 实现张量的步长切片操作，从输入张量中提取指定步长的切片

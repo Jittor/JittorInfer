@@ -448,18 +448,105 @@ ge::es::EsTensorHolder handle_arange_op_es(
         &ggml_tensor_to_es_tensor_map,
     int op_index);
 
+/**
+ * @brief ES版本：处理StridedSliceV2（步长切片）操作的函数
+ *
+ * 使用ES API在计算图中创建一个StridedSliceV2操作，实现张量的步长切片操作
+ * 从输入张量中提取指定步长的切片，支持多维张量的灵活切片
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示StridedSliceV2操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的StridedSliceV2操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_stridedslicev2_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_stridedslicev2_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+/**
+ * @brief ES版本：处理Flash Attention Prompt操作的函数
+ *
+ * 使用ES API在计算图中创建一个PromptFlashAttention操作，实现Flash
+ * Attention的prompt阶段
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Flash Attention Prompt操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Flash Attention Prompt操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_flash_attn_prompt_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_flash_attn_prompt_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
 
+/**
+ * @brief ES版本：处理Set Slice（切片赋值）操作的函数
+ *
+ * 使用ES API在计算图中创建一个ScatterUpdate操作，实现张量的切片赋值
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Set Slice操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Set Slice操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_set_slice_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_set_slice_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
+/**
+ * @brief ES版本：处理Get Rows操作的函数
+ *
+ * 使用ES API在计算图中创建一个GatherV2操作，实现按行索引获取张量行
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Get Rows操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Get Rows操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_get_rows_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
+/**
+ * @brief ES版本：处理Pad（填充）操作的函数
+ *
+ * 使用ES API在计算图中创建一个PadV3操作，实现张量的填充
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示Pad操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的Pad操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_pad_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
     int op_index);
 
 ge::Operator handle_get_rows_op(
