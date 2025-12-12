@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -14,8 +16,11 @@
 
 namespace router {
 
+struct Decoder;
+
 struct RunningTask {
   int                           id;
+  Decoder                      *decoder = nullptr;
   openai::ChatCompletionRequest req;
   // channel to send updates back to HTTP handler
   // using unique_ptr to avoid moving mutex inside mpsc
@@ -48,8 +53,13 @@ public:
   void update(ipcm::DecoderUpdate &&update) {
     std::unique_lock<std::mutex> lock(mutex);
 
-    auto &channel =
-        std::unordered_map<int, RunningTask>::find(update.id)->second.channel;
+    auto it = std::unordered_map<int, RunningTask>::find(update.id);
+    if (it == std::unordered_map<int, RunningTask>::end()) {
+      // task not found, already cancelled or finished
+      return;
+    }
+
+    auto &channel = it->second.channel;
     switch (update.type) {
     case ipcm::DecoderUpdate::Update:
       channel->emplace(std::move(update));
@@ -59,13 +69,17 @@ public:
       break;
     }
   }
+
+  void finish(RunningTask &task);
 };
 
 struct Decoder {
 protected:
+  friend struct DecoderPool;
   zmq::socket_t               socket;
   std::unique_ptr<std::mutex> mutex;
-  uint64_t                    count = 0;
+  uint64_t                    ntasks_total  = 0;
+  uint64_t                    ntasks_active = 0;
   // other workload info...
 
 public:
@@ -84,8 +98,13 @@ public:
         .input = task.req.messages.back().content,
     });
     socket.send(zmq::message_t(msg.to_message()), zmq::send_flags::none);
-    count += 1;
-    printf("dispatched tasks: %d\n", (int)count);
+    ntasks_total += 1;
+    ntasks_active += 1;
+  }
+
+  void finish_task() {
+    std::unique_lock<std::mutex> lock(*mutex);
+    ntasks_active -= 1;
   }
 };
 
@@ -93,32 +112,30 @@ struct DecoderPool {
 protected:
   std::vector<Decoder> decoders;
 
-  // simple round-robin scheduling
-  struct {
-    size_t     current = 0;
-    size_t     total   = 0;
-    std::mutex mutex;
-
-    size_t get() {
-      std::unique_lock<std::mutex> lock(mutex);
-
-      size_t res = current;
-      current    = (current + 1) % total;
-      return res;
-    }
-  } next_decoder;
-
 public:
   template <class... Args>
   void register_worker(Args &&...args) {
     decoders.emplace_back(std::forward<Args>(args)...);
-    next_decoder.total = decoders.size();
   }
 
-  void dispatch_task(const RunningTask &task) {
-    decoders[next_decoder.get()].dispatch_task(task);
+  void dispatch_task(RunningTask &task) {
+    auto *decoder =
+        &*std::min_element(decoders.begin(), decoders.end(),
+                           [](const Decoder &a, const Decoder &b) {
+                             return a.ntasks_active < b.ntasks_active;
+                           });
+    task.decoder = decoder;
+    decoder->dispatch_task(task);
+    printf("Request %d: decoder %d, active %lu, total %lu\n", task.id,
+           static_cast<int>(decoder - decoders.data()), decoder->ntasks_active,
+           decoder->ntasks_total);
   }
 };
+
+inline void RunningTaskTable::finish(RunningTask &task) {
+  task.decoder->finish_task();
+  std::unordered_map<int, RunningTask>::erase(task.id);
+}
 
 static void start(const ArchConfig &config) {
   // PART: mailbox
@@ -156,7 +173,8 @@ static void start(const ArchConfig &config) {
   };
 
   auto handle_response_unstreamed = [](RunningTask       &task,
-                                       httplib::Response &res) {
+                                       httplib::Response &res,
+                                       auto             &&on_finish) {
     openai::ChatCompletionResponse resp{
         .choices = {(openai::ChatCompletionResponse::Choice){
             .message = std::optional<openai::ChatCompletionResponse::Message>({
@@ -169,9 +187,10 @@ static void start(const ArchConfig &config) {
       resp_content += update.content;
     }
     res.set_content(resp.to_json().dump(), "application/json");
+    on_finish();
   };
-  auto handle_response_streamed = [](RunningTask       &task,
-                                     httplib::Response &res) {
+  auto handle_response_streamed = [](RunningTask &task, httplib::Response &res,
+                                     auto &&on_finish) {
     res.set_content_provider(
         "text/event-stream",
         [&task](size_t /*_offset*/, httplib::DataSink &sink) -> bool {
@@ -196,15 +215,15 @@ static void start(const ArchConfig &config) {
             return true;
           }
         },
-        [](bool _) {
+        [on_finish](bool _) {
           // TODO: send this to decoder to cancel the task
+          on_finish();
         });
   };
 
   // clang-format off
   svr.Post("/v1/chat/completions", 
     [&](const httplib::Request &req_raw, httplib::Response &res) {
-    // printf("recv request: %s\n", req_raw.body.c_str());
     auto req = openai::ChatCompletionRequest::from_json(nlohmann::json::parse(req_raw.body));
 
     // register request in task table
@@ -212,21 +231,16 @@ static void start(const ArchConfig &config) {
         .req = std::move(req),
     });
     
-    static std::mutex print_mutex;
-    static uint64_t count = 0;
-    {
-      std::unique_lock<std::mutex> lock(print_mutex);
-      count += 1;
-      printf("recv request %lu \n", count);
-    }
-
     // dispatch task to decoder pool
     decoder_pool.dispatch_task(task);
 
+    auto on_task_finish = [&running_task, &task]() {
+      running_task.finish(task);
+    };
     if (req.stream) {
-      handle_response_streamed(task, res);
+      handle_response_streamed(task, res, on_task_finish);
     } else {
-      handle_response_unstreamed(task, res);
+      handle_response_unstreamed(task, res, on_task_finish);
     }
   });
   // clang-format on
