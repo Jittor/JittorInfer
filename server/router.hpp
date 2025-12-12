@@ -237,7 +237,7 @@ static void start(const ArchConfig &config) {
     auto on_task_finish = [&running_task, &task]() {
       running_task.finish(task);
     };
-    if (req.stream) {
+    if (task.req.stream) {
       handle_response_streamed(task, res, on_task_finish);
     } else {
       handle_response_unstreamed(task, res, on_task_finish);

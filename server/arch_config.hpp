@@ -15,8 +15,8 @@ struct RouterConfig {
 
   // constructor from YAML::Node
   RouterConfig(const YAML::Node &config) {
-    input_addr       = config["listen_addr"].as<std::string>();
-    input_port       = config["listen_port"].as<int>();
+    input_addr       = config["input_addr"].as<std::string>();
+    input_port       = config["input_port"].as<int>();
     num_http_threads = config["num_http_threads"].as<int>();
     mailbox_addr     = config["mailbox_addr"].as<std::string>();
   }
