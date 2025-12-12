@@ -407,10 +407,47 @@ ge::Operator handle_moe_fused_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+
+/**
+ * @brief ES版本：处理MOE_FUSED（混合专家融合）操作的函数
+ *
+ * 使用ES API在计算图中创建一个MoE Fused操作，实现混合专家模型的前向传播
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示MOE_FUSED操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的MOE_FUSED操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_moe_fused_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_arange_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+
+/**
+ * @brief ES版本：处理ARANGE（等差数列生成）操作的函数
+ *
+ * 使用ES
+ * API在计算图中创建一个Range操作，生成从start到limit（不包含）步长为delta的等差数列
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ARANGE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的ARANGE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_arange_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index);
+
 ge::Operator handle_stridedslicev2_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,

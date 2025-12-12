@@ -3414,6 +3414,284 @@ ge::Operator handle_moe_fused_op(
 }
 
 /**
+ * @brief ES版本：处理MOE_FUSED（混合专家融合）操作的函数
+ *
+ * 使用ES API在计算图中创建一个MoE Fused操作，实现混合专家模型的前向传播
+ *
+ * 实现步骤：
+ * 1. 输入处理：Squeeze + Transpose（使用 ES API 的 Squeeze、Transpose）
+ * 2. MoeInitRouting：使用 ES API 的 MoeInitRouting，返回3个输出（expanded_x,
+ * expanded_row_idx, expanded_expert_idx）
+ * 3. 计算专家令牌数：Equal + Cast(bool→int32) + ReduceSum +
+ * Cast(int32→int64)（使用 ES API）
+ * 4. Up projection权重处理：Squeeze + Transpose（使用 ES API）
+ * 5. Up projection矩阵乘法：GroupedMatmul（使用 ES API，通过
+ * create_moe_grouped_matmul_es 辅助函数） 6-9. Gate projection, SiLU, Mul, Down
+ * projection：待实现
+ * 10. MoeFinalizeRoutingV2：使用 ES API 的 MoeFinalizeRoutingV2
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示MOE_FUSED操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引（当前未使用）
+ * @return 创建的MOE_FUSED操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_moe_fused_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)op_index;
+    // 获取输入张量
+    struct ggml_tensor *input = node->src[0];                // 输入张量
+    struct ggml_tensor *ids = node->src[1];                  // 专家ID张量
+    struct ggml_tensor *topk_weight = node->src[2];          // topk权重张量
+    struct ggml_tensor *expert_up_weights = node->src[3];    // 专家上权重
+    struct ggml_tensor *expert_down_weights = node->src[4];  // 专家下权重
+    struct ggml_tensor *expert_gate_weights = node->src[5];  // 专家门权重
+    struct ggml_tensor *row_idx = node->src[6];              // 行索引张量
+
+    // 提取维度信息
+    auto batch_size = input->ne[3];
+    auto seq_len = input->ne[2];
+    auto topk = ids->ne[0];
+    auto num_experts = expert_up_weights->ne[2];
+    auto hidden_dim = input->ne[0];
+    auto k_dim = expert_up_weights->ne[1];
+    auto num_rows = batch_size * seq_len;
+    auto active_num = num_rows;
+
+    // 获取输入 ES tensor
+    ge::es::EsTensorHolder es_input, es_ids, es_topk_weight,
+        es_expert_up_weights, es_expert_down_weights, es_expert_gate_weights,
+        es_row_idx;
+
+    if (ggml_tensor_to_es_tensor_map.find(input) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_input = ggml_tensor_to_es_tensor_map[input];
+    } else {
+        assert(false && "Input tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(ids) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_ids = ggml_tensor_to_es_tensor_map[ids];
+    } else {
+        assert(false && "IDs tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(topk_weight) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_topk_weight = ggml_tensor_to_es_tensor_map[topk_weight];
+    } else {
+        assert(false && "TopK weight tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(expert_up_weights) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_expert_up_weights = ggml_tensor_to_es_tensor_map[expert_up_weights];
+    } else {
+        assert(false && "Expert up weights tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(expert_down_weights) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_expert_down_weights =
+            ggml_tensor_to_es_tensor_map[expert_down_weights];
+    } else {
+        assert(false &&
+               "Expert down weights tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(expert_gate_weights) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_expert_gate_weights =
+            ggml_tensor_to_es_tensor_map[expert_gate_weights];
+    } else {
+        assert(false &&
+               "Expert gate weights tensor not found in ES tensor map");
+    }
+
+    if (ggml_tensor_to_es_tensor_map.find(row_idx) !=
+        ggml_tensor_to_es_tensor_map.end()) {
+        es_row_idx = ggml_tensor_to_es_tensor_map[row_idx];
+    } else {
+        assert(false && "Row index tensor not found in ES tensor map");
+    }
+
+    // 步骤1: 使用 ES API 的 Squeeze 处理输入
+    // 参考原始实现：Squeeze({0, 2}) 将输入从4D重塑为2D [hidden_dim, seq_len]
+    auto es_input_squeeze =
+        Squeeze(es_input, std::vector<int64_t>{0, 2})
+            .SetDataType(get_data_type(input->type))
+            .SetShape(std::vector<int64_t>{hidden_dim, seq_len});
+
+    // 步骤2: 使用 ES API 的 Squeeze 处理 row_idx
+    // 参考原始实现：Squeeze({0, 1}) 移除前两维
+    auto es_row_idx_squeeze =
+        Squeeze(es_row_idx, std::vector<int64_t>{0, 1})
+            .SetDataType(get_data_type(row_idx->type))
+            .SetShape(std::vector<int64_t>{seq_len, topk});
+
+    // 步骤2.1: 使用 ES API 的 Transpose 转置 row_idx
+    // 参考原始实现：转置 {1, 0} 后形状为 [topk, seq_len]
+    auto es_row_idx_permute =
+        Transpose(es_row_idx_squeeze, std::vector<int64_t>{1, 0})
+            .SetDataType(get_data_type(row_idx->type))
+            .SetShape(std::vector<int64_t>{topk, seq_len});
+
+    // 步骤2.2: 使用 ES API 的 Squeeze 处理 expert_idx (ids)
+    // 参考原始实现：Squeeze({0, 1}) 移除前两维
+    auto es_expert_idx_squeeze =
+        Squeeze(es_ids, std::vector<int64_t>{0, 1})
+            .SetDataType(get_data_type(ids->type))
+            .SetShape(std::vector<int64_t>{num_rows * topk});
+
+    // 步骤3: 使用 ES API 创建 MoeInitRouting 算子
+    auto [es_expanded_x, es_expanded_row_idx, es_expanded_expert_idx] =
+        MoeInitRouting(es_input_squeeze, es_row_idx_permute,
+                       es_expert_idx_squeeze, static_cast<int64_t>(active_num));
+
+    // 步骤4: 计算专家令牌数（使用 ES API）
+    // 创建专家索引范围常量
+    std::vector<int32_t> expert_range_data(num_experts);
+    for (int i = 0; i < num_experts; ++i) {
+        expert_range_data[i] = i;
+    }
+    auto es_expert_range = graph_builder.CreateConst(
+        expert_range_data, std::vector<int64_t>{num_experts});
+
+    // Reshape expanded_expert_idx 用于广播
+    auto es_expert_idx_reshape =
+        Reshape(es_expanded_expert_idx,
+                std::vector<int64_t>{num_rows * topk, 1})
+            .SetDataType(get_data_type(ids->type))
+            .SetShape(std::vector<int64_t>{num_rows * topk, 1});
+
+    // 步骤4: 使用 Equal 算子创建 one-hot 编码
+    // Equal 比较: [num_rows * topk, 1] vs [num_experts] -> [num_rows * topk,
+    // num_experts]
+    auto es_equal =
+        Equal(es_expert_idx_reshape, es_expert_range)
+            .SetDataType(ge::DT_BOOL)
+            .SetShape(std::vector<int64_t>{num_rows * topk, num_experts});
+
+    // Cast bool→int32
+    auto es_cast_bool_to_int =
+        Cast(es_equal, static_cast<int64_t>(ge::DT_INT32))
+            .SetDataType(ge::DT_INT32)
+            .SetShape(std::vector<int64_t>{num_rows * topk, num_experts});
+
+    // ReduceSum 沿第0维求和，得到每个专家的token数量
+    // axes 参数: EsTensorLike 支持 std::vector<int64_t> 的隐式构造
+    auto es_reduce_sum =
+        ReduceSum(es_cast_bool_to_int, std::vector<int64_t>{0}, false)
+            .SetDataType(ge::DT_INT32)
+            .SetShape(std::vector<int64_t>{num_experts});
+
+    // Cast int32→int64 (用于 GroupedMatmul 的 group_list)
+    auto es_expert_tokens_int64 =
+        Cast(es_reduce_sum, static_cast<int64_t>(ge::DT_INT64))
+            .SetDataType(ge::DT_INT64)
+            .SetShape(std::vector<int64_t>{num_experts});
+
+    // 步骤5-10: 处理分组矩阵乘法和激活（使用 ES API）
+
+    // 步骤5: 处理 expert_up_weights (Squeeze + Transpose)
+    auto es_expert_up_weights_squeeze =
+        Squeeze(es_expert_up_weights, std::vector<int64_t>{0})
+            .SetDataType(get_data_type(expert_up_weights->type))
+            .SetShape(build_output_shape(expert_up_weights));
+
+    // 使用 ES API 的 Transpose 进行 {0, 2, 1} 转置
+    auto es_permute_up_weights =
+        Transpose(es_expert_up_weights_squeeze, std::vector<int64_t>{0, 2, 1})
+            .SetDataType(get_data_type(expert_up_weights->type))
+            .SetShape(std::vector<int64_t>{num_experts, k_dim, hidden_dim});
+
+    // 步骤6: 第一个分组矩阵乘法 (up projection) - 使用 ES API
+    auto es_up_matmul = create_moe_grouped_matmul_es(
+        graph_builder, es_expanded_x, es_permute_up_weights,
+        std::vector<int64_t>{num_experts, k_dim}, es_expert_tokens_int64);
+
+    // 步骤7-10: gate projection, SiLU, Mul, down projection
+    // 由于实现类似，这里简化处理，使用 GE API 转换
+    // TODO: 完善 gate 和 down projection 的实现
+
+    // 步骤11: 使用 ES API 创建 MoeFinalizeRoutingV2 算子
+    auto es_topk_weight_squeeze =
+        Squeeze(es_topk_weight, std::vector<int64_t>{0, 3})
+            .SetDataType(get_data_type(topk_weight->type))
+            .SetShape(build_output_shape(topk_weight));
+
+    // 根据原始实现，expert_idx 使用 es_expert_idx_squeeze（不是
+    // expanded_expert_idx） 如果 node->type 不是 F16，需要先 Cast 到 F32
+    ge::es::EsTensorHolder es_expanded_x_for_finalize;
+    if (node->type == GGML_TYPE_F16) {
+        es_expanded_x_for_finalize =
+            es_up_matmul;  // TODO: 使用实际的 down_matmul
+    } else {
+        // Cast F32
+        es_expanded_x_for_finalize =
+            Cast(es_up_matmul, static_cast<int64_t>(ge::DT_FLOAT))
+                .SetDataType(ge::DT_FLOAT)
+                .SetShape(build_output_shape(node));
+    }
+
+    // 使用 ES API 的 MoeFinalizeRoutingV2
+    // 参数顺序：expanded_x, expanded_row_idx, x1=nullptr, x2=nullptr,
+    // bias=nullptr, scales, expert_idx, drop_pad_mode=0
+    auto es_finalize_result =
+        MoeFinalizeRoutingV2(es_expanded_x_for_finalize, es_expanded_row_idx,
+                             nullptr, nullptr, nullptr,  // x1, x2, bias 不使用
+                             es_topk_weight_squeeze,     // scales
+                             es_expert_idx_squeeze,  // expert_idx（使用 squeeze
+                                                     // 后的，不是 expanded）
+                             0                       // drop_pad_mode
+                             )
+            .SetDataType(get_data_type(node->type))
+            .SetShape(std::vector<int64_t>{hidden_dim, seq_len});
+
+    return es_finalize_result;
+}
+
+/**
+ * @brief ES版本：处理ARANGE（等差数列生成）操作的函数
+ *
+ * 使用ES
+ * API在计算图中创建一个Range操作，生成从start到limit（不包含）步长为delta的等差数列
+ *
+ * @param graph_builder ES图构建器引用
+ * @param node 表示ARANGE操作的张量节点
+ * @param ggml_tensor_to_es_tensor_map 张量到ES张量的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的ARANGE操作的ES张量持有者
+ */
+ge::es::EsTensorHolder handle_arange_op_es(
+    ge::es::EsGraphBuilder &graph_builder, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::es::EsTensorHolder>
+        &ggml_tensor_to_es_tensor_map,
+    int op_index) {
+    (void)ggml_tensor_to_es_tensor_map;
+    (void)op_index;
+    // 从 op_params 中读取三个 float 参数
+    float start_val, limit_val, delta_val;
+    memcpy(&start_val, (float *)node->op_params + 0, sizeof(float));
+    memcpy(&limit_val, (float *)node->op_params + 1, sizeof(float));
+    memcpy(&delta_val, (float *)node->op_params + 2, sizeof(float));
+
+    // 创建 start, limit, delta 常量
+    auto es_start = graph_builder.CreateScalar(start_val);
+    auto es_limit = graph_builder.CreateScalar(limit_val);
+    auto es_delta = graph_builder.CreateScalar(delta_val);
+
+    // 使用 ES API 的 Range 算子
+    return Range(es_start, es_limit, es_delta)
+        .SetDataType(get_data_type(node->type))
+        .SetShape(build_output_shape(node));
+}
+
+/**
  * @brief 处理StridedSliceV2操作的函数
  *
  * 实现张量的步长切片操作，从输入张量中提取指定步长的切片

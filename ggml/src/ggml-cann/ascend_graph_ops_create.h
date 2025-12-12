@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "all_ops.h"
+#include "es_all_ops.h"
 #include "ggml.h"
 #include "graph/graph.h"
 
@@ -54,5 +55,12 @@ ge::Operator create_gather_op(ge::Graph& graph, const std::string& prefix,
 ge::Operator create_cast_op(ge::Graph& graph, const std::string& prefix,
                             const std::string& suffix, ge::Operator src,
                             ge::DataType dst_type);
+
+// ES API 版本：对MOE_FUSED算子中的GroupMatmul算子进行封装，预定义好一些属性
+ge::es::EsTensorHolder create_moe_grouped_matmul_es(
+    ge::es::EsGraphBuilder& graph_builder, const ge::es::EsTensorHolder& x,
+    const ge::es::EsTensorHolder& weight,
+    const std::vector<int64_t>& bias_shape,
+    const ge::es::EsTensorHolder& group_list);
 
 #endif  // _ASCEND_GRAPH_OPS_CREATE_H_
