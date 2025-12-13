@@ -69,7 +69,7 @@ User:)";
 struct BackendConfig {
     // number of parallel sequences to process
     uint32_t n_parallel = 1;
-    
+
     // context length (for kv cache)
     uint32_t n_context = 512;
 
