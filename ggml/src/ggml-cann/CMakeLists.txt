@@ -137,10 +137,7 @@ if (CANN_INSTALL_DIR)
     # ===== 1. 前置条件：定义原型库 =====
     # 注意:
     # 当前为开箱即用示例, 即定义INTERFACE使用已有的原型so
-    # 正常使用不会是用现有的so，更普遍的方式是直接使用项目中已有的so的target
-    # 使用项目中已有的so方式:
-    # 1. add_library(opgraph_all SHARED)
-    # 2. 设置PROPERTIES LIBRARY_OUTPUT_DIRECTORY
+    # 正常使用直接基于run包中已有的es产物来构图即可，此种场景下 无需自己调用add_es_library来生成了
     add_library(opgraph_all INTERFACE)
     set_target_properties(opgraph_all PROPERTIES
             INTERFACE_LIBRARY_OUTPUT_DIRECTORY "${CANN_INSTALL_DIR}/opp/built-in/op_proto"
