@@ -30,7 +30,7 @@ struct DecoderConfig {
 };
 
 struct ServerConfig {
-    enum { Standalone, Server } mode;
+    enum Mode { Standalone, Server } mode;
 
     std::optional<RouterConfig> router;
     std::vector<DecoderConfig>  decoders;

@@ -22,7 +22,6 @@ int main(int argc, char **argv) {
          config.server.router->mailbox_addr.c_str());
   DecoderHelper helper;
   helper.init(config, mpi_rank);
-  std::thread recv_thread([&helper]() { helper.start_recv(); });
 
   for (auto req : helper.request_buffer) {
     // pretend to process requests
@@ -40,6 +39,5 @@ int main(int argc, char **argv) {
     helper.send_update({.type = ipcm::DecoderUpdate::Finish, .id = req.id});
   }
 
-  recv_thread.join();
   return 0;
 }

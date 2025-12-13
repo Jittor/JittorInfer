@@ -1,0 +1,4 @@
+model:
+
+server:
+  mode: standalone                        # Server mode

@@ -91,6 +91,9 @@ public:
 
   void dispatch_task(const RunningTask &task) {
     std::unique_lock<std::mutex> lock(*mutex);
+    ntasks_total += 1;
+    ntasks_active += 1;
+
     // send task to decoder via zmq
     ipcm::DecoderRequest msg({
         .id    = task.id,
@@ -98,8 +101,6 @@ public:
         .input = task.req.messages.back().content,
     });
     socket.send(zmq::message_t(msg.to_message()), zmq::send_flags::none);
-    ntasks_total += 1;
-    ntasks_active += 1;
   }
 
   void finish_task() {

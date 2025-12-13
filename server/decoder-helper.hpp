@@ -4,6 +4,8 @@
 #include "channel.hpp"
 #include "common_def.hpp"
 #include "zmq.hpp"
+#include <cstdio>
+#include <thread>
 
 // inject into decoder to provide communication with router via zmq
 struct DecoderHelper {
@@ -12,21 +14,6 @@ protected:
   zmq::context_t zmq_ctx;
   zmq::socket_t  zmq_mailbox;
   zmq::socket_t  zmq_router;
-
-public:
-  channel::mpsc<ipcm::DecoderRequest> request_buffer;
-
-  void init(const Config &config, int mpi_rank) {
-    zmq_ctx     = zmq::context_t(1);
-    zmq_mailbox = zmq::socket_t(zmq_ctx, zmq::socket_type::pull);
-    zmq_mailbox.bind(config.server.decoders[mpi_rank].mailbox_addr);
-    zmq_router = zmq::socket_t(zmq_ctx, zmq::socket_type::push);
-    zmq_router.connect(config.server.router->mailbox_addr);
-    
-    // printf mpi rank <-> pid for profiling and debugging
-    int pid = static_cast<int>(getpid());
-    printf("Decoder rank %d started with PID %d\n", mpi_rank, pid);
-  }
 
   // blocking function, should be run in a separate thread
   void start_recv() {
@@ -37,11 +24,6 @@ public:
           ipcm::DecoderRequest::from_message(zmq_msg.to_string_view());
       request_buffer.emplace(std::move(req));
     }
-  }
-
-  void send_update(const ipcm::DecoderUpdate &update) {
-    zmq::message_t zmq_msg(update.to_message());
-    zmq_router.send(zmq_msg, zmq::send_flags::none);
   }
 
   // return the last index of character that can form a valid string
@@ -82,21 +64,53 @@ public:
     // If no cut-off multi-byte character is found, return full length
     return len;
   }
-  
+
+public:
+  channel::mpsc<ipcm::DecoderRequest> request_buffer;
+  ServerConfig::Mode                  mode;
+
+  void init(const Config &config, int mpi_rank) {
+    mode = config.server.mode;
+    if (mode == ServerConfig::Standalone) {
+      printf("Decoder initialized in standalone mode\n");
+    } else {
+      zmq_ctx     = zmq::context_t(1);
+      zmq_mailbox = zmq::socket_t(zmq_ctx, zmq::socket_type::pull);
+      zmq_mailbox.bind(config.server.decoders[mpi_rank].mailbox_addr);
+      zmq_router = zmq::socket_t(zmq_ctx, zmq::socket_type::push);
+      zmq_router.connect(config.server.router->mailbox_addr);
+
+      // printf mpi rank <-> pid for profiling and debugging
+      int pid = static_cast<int>(getpid());
+      printf("Decoder rank %d started with PID %d\n", mpi_rank, pid);
+
+      std::thread([this]() { this->start_recv(); }).detach();
+    }
+  }
+
+  void send_update(const ipcm::DecoderUpdate &update) {
+    if (mode == ServerConfig::Standalone) {
+      auto msg = update.to_message();
+      printf("Decoder update: %s\n", msg.c_str());
+    } else {
+      zmq::message_t zmq_msg(update.to_message());
+      zmq_router.send(zmq_msg, zmq::send_flags::none);
+    }
+  }
+
   static std::string retrieve_valid_utf8(std::string &text) {
-    size_t valid_len = _validate_utf8(text);
-    std::string result = text.substr(0, valid_len);
-    text = text.substr(valid_len);
-    
+    size_t      valid_len = _validate_utf8(text);
+    std::string result    = text.substr(0, valid_len);
+    text                  = text.substr(valid_len);
+
     // if result still start with cut-off character, remove it
-    for (char &c: result) {
+    for (char &c : result) {
       if ((c & 0b11000000) == 0b10000000) {
         c = ' '; // replace invalid byte with space
       } else {
         break;
       }
     }
-    
     return result;
   }
 };

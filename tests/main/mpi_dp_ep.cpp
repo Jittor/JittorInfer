@@ -10,7 +10,6 @@
 #include <ctime>
 #include <iostream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "common_def.hpp"
@@ -240,9 +239,17 @@ int main(int argc, char **argv) {
   Config config{YAML::LoadFile(argv[1])};
 
   DecoderHelper decoder_helper;
-  if (config.server.mode == ServerConfig::Server) {
-    decoder_helper.init(config, mpi_rank);
-    std::thread([&decoder_helper]() { decoder_helper.start_recv(); }).detach();
+  decoder_helper.init(config, mpi_rank);
+  if (decoder_helper.mode == ServerConfig::Standalone) {
+    // make fake requests
+    int req_id = 0;
+    for (const auto &prompt : k_prompts) {
+      decoder_helper.request_buffer.emplace((ipcm::DecoderRequest){
+          .id    = req_id++,
+          .model = "example-model",
+          .input = prompt,
+      });
+    }
   }
 
   // number of simultaneous "clients" to simulate
