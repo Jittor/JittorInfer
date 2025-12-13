@@ -22,11 +22,6 @@
 #define OMPI_SKIP_MPICXX 1
 #include <mpi.h>
 
-static std::string k_system =
-    R"(Transcript of a never ending dialog, where the User interacts with an Assistant.
-The Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.
-User:)";
-
 static std::vector<std::string> k_prompts = {
     "What is the meaning of life?",
     "Tell me an interesting fact about llamas.",
@@ -95,50 +90,15 @@ struct Client {
   }
 };
 
-static struct DefaultMiniParams {
-  int main_gpu     = 1;
-  int n_gpu_layers = 99;
-
-  // how split tensors should be distributed across GPUs
-  float tensor_split[128] = {0};
-
-  std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
-
-  uint32_t n_ctx     = 512; // context size
-  uint32_t n_threads = 64;  // number of threads to use for computation
-  uint32_t n_threads_batch =
-      64; // number of threads to use for batch processing
-
-  float defrag_thold = 0;    // defragmentation threshold
-  bool  no_perf      = true; // disable performance metrics
-  std::vector<common_adapter_lora_info>
-      lora_adapters; // lora adapter path with user defined scale
-
-  int32_t n_batch = 512; // logical batch size for prompt processing
-  bool    enable_chat_template               = true;
-  bool    escape                             = true;
-  common_conversation_mode conversation_mode = COMMON_CONVERSATION_MODE_ENABLED;
-
-  // parallel test configs
-  int     n_parallel    = 16;
-  bool    dump_kv_cache = false;
-  int32_t n_predict     = 510; // new tokens to predict
-
-  int  n_tokens_system = -1;
-  bool enable_debug    = false;
-
-} default_mini_params;
-
 static llama_model_params common_model_params_to_llama_local() {
   auto mparams = llama_model_default_params();
 
-  mparams.main_gpu      = default_mini_params.main_gpu;
+  mparams.main_gpu      = 1;
   mparams.split_mode    = LLAMA_SPLIT_MODE_ROW;
-  mparams.tensor_split  = default_mini_params.tensor_split;
   mparams.use_mmap      = true;
   mparams.use_mlock     = false;
   mparams.check_tensors = false;
-  mparams.n_gpu_layers  = default_mini_params.n_gpu_layers;
+  mparams.n_gpu_layers  = 99;
   // 开启张量并行
   mparams.enable_tensor_parallel = true;
   mparams.enable_expert_parallel = true;
@@ -155,43 +115,42 @@ static llama_model_params common_model_params_to_llama_local() {
   return mparams;
 }
 
-static llama_context_params common_context_params_to_llama_local() {
+static llama_context_params
+common_context_params_to_llama_local(const Config &config) {
   auto cparams = llama_context_default_params();
 
-  cparams.n_ctx   = default_mini_params.n_ctx * default_mini_params.n_parallel;
-  cparams.n_batch = default_mini_params.n_batch;
-  cparams.n_threads       = default_mini_params.n_threads;
-  cparams.n_threads_batch = default_mini_params.n_threads_batch;
-  cparams.defrag_thold    = default_mini_params.defrag_thold;
-  cparams.no_perf         = default_mini_params.no_perf;
+  cparams.n_ctx     = config.backend.n_context * config.backend.n_parallel;
+  cparams.n_batch   = config.backend.n_batch;
+  cparams.n_threads = config.backend.n_threads;
+  cparams.n_threads_batch = config.backend.n_threads;
+  cparams.defrag_thold    = config.backend.defrag_thold;
+  cparams.no_perf         = true;
   cparams.presample_count = 80;
 
   return cparams;
 }
 
-static common_init_result common_init_from_params_local() {
+static common_init_result common_init_from_params_local(const Config &config) {
   common_init_result iparams;
 
   auto mparams = common_model_params_to_llama_local();
 
   llama_model *model =
-      llama_model_load_from_file(default_mini_params.model.c_str(), mparams);
+      llama_model_load_from_file(config.model.model_path.c_str(), mparams);
   assert(model != NULL);
 
   const llama_vocab *vocab = llama_model_get_vocab(model);
 
-  auto cparams = common_context_params_to_llama_local();
+  auto cparams = common_context_params_to_llama_local(config);
 
   llama_context *lctx = llama_init_from_model(model, cparams);
 
   if (lctx == NULL) {
     std::cerr << __func__ << ": failed to create context with model '"
-              << default_mini_params.model << "'\n";
+              << config.model.model_path << "'\n";
     llama_model_free(model);
     return iparams;
   }
-
-  GGML_ASSERT(default_mini_params.lora_adapters.empty());
 
   llama_clear_adapter_lora(lctx);
 
@@ -212,11 +171,11 @@ static common_init_result common_init_from_params_local() {
   GGML_ASSERT(!llama_model_has_encoder(model));
 
   if (llama_model_has_decoder(model)) {
-    llama_decode(lctx,
-                 llama_batch_get_one(
-                     tmp.data(),
-                     std::min(tmp.size(), (size_t)default_mini_params.n_batch)),
-                 true);
+    llama_decode(
+        lctx,
+        llama_batch_get_one(
+            tmp.data(), std::min(tmp.size(), (size_t)config.backend.n_batch)),
+        true);
   }
 
   llama_kv_cache_clear(lctx);
@@ -253,20 +212,16 @@ int main(int argc, char **argv) {
   }
 
   // number of simultaneous "clients" to simulate
-  const int32_t n_clients = default_mini_params.n_parallel;
+  const int32_t n_clients = config.backend.n_parallel - 1;
 
-  // dedicate one sequence to the system prompt
-  // so as to reserve a kv cache slot for it
-  default_mini_params.n_parallel += 1;
-
-  const bool dump_kv_cache = default_mini_params.dump_kv_cache;
+  const bool dump_kv_cache = false;
 
   // init llama.cpp
   llama_backend_init();
   // llama_numa_init(params.numa);
 
   // load the target model
-  common_init_result llama_init = common_init_from_params_local();
+  common_init_result llama_init = common_init_from_params_local(config);
 
   llama_model   *model = llama_init.model.get();
   llama_context *ctx   = llama_init.context.get();
@@ -283,20 +238,14 @@ int main(int argc, char **argv) {
     client.smpl       = common_sampler_local_init(model, sparams);
   }
 
-  std::vector<llama_token> tokens_system;
-  tokens_system = common_tokenize(ctx, k_system, true);
-  if (default_mini_params.n_tokens_system != -1 &&
-      default_mini_params.n_tokens_system < (int)tokens_system.size()) {
-    tokens_system.resize(default_mini_params.n_tokens_system);
-  }
+  auto tokens_system = common_tokenize(ctx, config.model.system_prompt, true);
   const int32_t n_tokens_system = tokens_system.size();
 
   // the max batch size is as large as the context to handle cases where we get
   // very long input prompt from multiple users. regardless of the size, the
   // main loop will chunk the batch into a maximum of params.n_batch tokens at a
   // time
-  llama_batch batch =
-      llama_batch_init(n_ctx, 0, default_mini_params.n_parallel);
+  llama_batch batch = llama_batch_init(n_ctx, 0, config.backend.n_parallel);
 
   // int32_t n_total_prompt = 0;
   // int32_t n_total_gen    = 0;
@@ -381,7 +330,7 @@ int main(int argc, char **argv) {
       common_batch_add(batch, 0, n_tokens_system, {1}, false);
     }
 
-    if (default_mini_params.enable_debug) {
+    if (config.backend.debug) {
       // print batch percentage
       MPI_Barrier(MPI_COMM_WORLD);
       if (mpi_rank == 0) {
@@ -406,10 +355,9 @@ int main(int argc, char **argv) {
     GGML_ASSERT(batch.n_tokens != 0);
 
     // process in chunks of params.n_batch
-    int32_t n_batch = default_mini_params.n_batch;
-
-    for (int32_t i = 0; i < batch.n_tokens; i += n_batch) {
-      const int32_t n_tokens = std::min(n_batch, (batch.n_tokens - i));
+    int32_t cur_batch = config.backend.n_batch;
+    for (int32_t i = 0; i < batch.n_tokens; i += cur_batch) {
+      const int32_t n_tokens = std::min(cur_batch, (batch.n_tokens - i));
 
       llama_batch batch_view = {
           n_tokens,           batch.token + i,  nullptr,          batch.pos + i,
@@ -418,25 +366,25 @@ int main(int argc, char **argv) {
 
       const int ret = llama_decode(ctx, batch_view, true);
       if (ret != 0) {
-        if (n_batch == 1 || ret < 0) {
+        if (cur_batch == 1 || ret < 0) {
           // if you get here, it means the KV cache is full - try increasing it
           // via the context size
           fprintf(stderr,
                   "%s : failed to decode the batch, n_batch = %d, ret = %d\n",
-                  __func__, n_batch, ret);
+                  __func__, cur_batch, ret);
           return 1;
         }
 
         fprintf(stderr,
                 "%s : failed to decode the batch, retrying with n_batch = %d\n",
-                __func__, n_batch / 2);
+                __func__, cur_batch / 2);
 
         n_cache_miss += 1;
 
         // retry with half the batch size to try to find a free slot in the KV
         // cache
-        n_batch /= 2;
-        i -= n_batch;
+        cur_batch /= 2;
+        i -= cur_batch;
 
         continue;
       }
@@ -482,11 +430,9 @@ int main(int argc, char **argv) {
               return true;
             }
             // max tokens reached
-            if (default_mini_params.n_predict > 0) {
-              if (client.n_decoded + client.n_prompt >=
-                  default_mini_params.n_predict) {
-                return true;
-              }
+            if (client.n_decoded + client.n_prompt >=
+                config.backend.n_context) {
+              return true;
             }
             // find "User:"
             if (client.output_string.find("User:") != std::string::npos) {

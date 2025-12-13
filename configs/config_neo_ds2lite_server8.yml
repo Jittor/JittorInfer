@@ -1,4 +1,15 @@
 model:
+  model_path: "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf"
+  system_prompt: "Transcript of a never ending dialog, where the User interacts with an Assistant.\nThe Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.\nUser:"
+
+backend:
+  # mpi_dp_ep currently reserve one position to store system prompt
+  n_parallel: 17
+  n_context: 512
+  n_batch: 512
+  n_threads: 64
+  defrag_thold: 0.0
+  debug: false
 
 server:
   mode: server                            # Server mode

@@ -55,12 +55,49 @@ struct ServerConfig {
 };
 
 struct ModelConfig {
-    ModelConfig(const YAML::Node & config) {}
+    std::string model_path;
+    std::string system_prompt = R"(Transcript of a never ending dialog, where the User interacts with an Assistant.
+The Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.
+User:)";
+
+    ModelConfig(const YAML::Node & config) {
+        model_path    = config["model_path"].as<std::string>();
+        system_prompt = config["system_prompt"].as<std::string>(system_prompt);
+    }
+};
+
+struct BackendConfig {
+    // number of parallel sequences to process
+    uint32_t n_parallel = 1;
+    
+    // context length (for kv cache)
+    uint32_t n_context = 512;
+
+    // number of tokens to process in a batch
+    uint32_t n_batch = 512;
+
+    // number of threads to use for computation, for ggml-cpu
+    uint32_t n_threads = 64;
+
+    // defragmentation threshold, 0 means no defragmentation
+    float defrag_thold = 0;
+
+    bool debug = false;
+
+    BackendConfig(const YAML::Node & config) {
+        n_parallel   = config["n_parallel"].as<uint32_t>(n_parallel);
+        n_context    = config["n_context"].as<uint32_t>(n_context);
+        n_batch      = config["n_batch"].as<uint32_t>(n_batch);
+        n_threads    = config["n_threads"].as<uint32_t>(n_threads);
+        defrag_thold = config["defrag_thold"].as<float>(defrag_thold);
+        debug        = config["debug"].as<bool>(debug);
+    }
 };
 
 struct Config {
-    ModelConfig  model;
-    ServerConfig server;
+    ModelConfig   model;
+    BackendConfig backend;
+    ServerConfig  server;
 
-    Config(const YAML::Node & config) : model(config["model"]), server(config["server"]) {}
+    Config(const YAML::Node & config) : model(config["model"]), backend(config["backend"]), server(config["server"]) {}
 };
