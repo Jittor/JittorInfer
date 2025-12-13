@@ -133,7 +133,8 @@ void create_graph_input_tensor_es(
     // tensor_holder当前并没有提供SetPlacement方法，所以用下面这种方式绕一下；
     // TODO:EsTensorHolder提供SetPlacement方法
     ge::TensorDesc tensor_desc;
-    (void)tensor_holder.GetProducer()->GetOutputDesc(0, tensor_desc);
+    (void)tensor_holder.GetProducer()->GetOutputDesc(
+        tensor_holder.GetProducerOutIndex(), tensor_desc);
     tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
 
     // 使用辅助函数创建并绑定张量

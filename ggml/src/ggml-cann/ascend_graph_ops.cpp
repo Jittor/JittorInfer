@@ -1286,15 +1286,18 @@ ge::es::EsTensorHolder handle_rope_op_es(
     // 连接输入边
     // 输入 x (索引 0): es_perm_x
     ge::GNode *g_perm_x_node = es_perm_x.GetProducer();
-    graph->AddDataEdge(*g_perm_x_node, 0, g_rope_node, 0);  // x 输入
+    graph->AddDataEdge(*g_perm_x_node, es_perm_x.GetProducerOutIndex(),
+                       g_rope_node, 0);  // x 输入
 
     // 输入 cos (索引 1): es_gather_cos
     ge::GNode *g_gather_cos_node = es_gather_cos.GetProducer();
-    graph->AddDataEdge(*g_gather_cos_node, 0, g_rope_node, 1);  // cos 输入
+    graph->AddDataEdge(*g_gather_cos_node, es_gather_cos.GetProducerOutIndex(),
+                       g_rope_node, 1);  // cos 输入
 
     // 输入 sin (索引 2): es_gather_sin
     ge::GNode *g_gather_sin_node = es_gather_sin.GetProducer();
-    graph->AddDataEdge(*g_gather_sin_node, 0, g_rope_node, 2);  // sin 输入
+    graph->AddDataEdge(*g_gather_sin_node, es_gather_sin.GetProducerOutIndex(),
+                       g_rope_node, 2);  // sin 输入
 
     // 转换为 EsTensorHolder
     ge::es::EsTensorHolder es_rope_result(
