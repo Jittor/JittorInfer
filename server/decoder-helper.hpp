@@ -1,6 +1,6 @@
 #pragma once
 
-#include "arch_config.hpp"
+#include "../common/config.hpp"
 #include "channel.hpp"
 #include "common_def.hpp"
 #include "zmq.hpp"
@@ -16,12 +16,12 @@ protected:
 public:
   channel::mpsc<ipcm::DecoderRequest> request_buffer;
 
-  void init(const ArchConfig &config, int mpi_rank) {
+  void init(const Config &config, int mpi_rank) {
     zmq_ctx     = zmq::context_t(1);
     zmq_mailbox = zmq::socket_t(zmq_ctx, zmq::socket_type::pull);
-    zmq_mailbox.bind(config.decoders[mpi_rank].mailbox_addr);
+    zmq_mailbox.bind(config.server.decoders[mpi_rank].mailbox_addr);
     zmq_router = zmq::socket_t(zmq_ctx, zmq::socket_type::push);
-    zmq_router.connect(config.router.mailbox_addr);
+    zmq_router.connect(config.server.router->mailbox_addr);
     
     // printf mpi rank <-> pid for profiling and debugging
     int pid = static_cast<int>(getpid());

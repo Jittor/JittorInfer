@@ -7,7 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "arch_config.hpp"
+#include "../common/config.hpp"
 #include "channel.hpp"
 #include "common_def.hpp"
 #include "httplib.h"
@@ -137,11 +137,11 @@ inline void RunningTaskTable::finish(RunningTask &task) {
   std::unordered_map<int, RunningTask>::erase(task.id);
 }
 
-static void start(const ArchConfig &config) {
+static void start(const ServerConfig &config) {
   // PART: mailbox
   zmq::context_t zmq_ctx(1);
   zmq::socket_t  mailbox_socket(zmq_ctx, zmq::socket_type::pull);
-  mailbox_socket.bind(config.router.mailbox_addr);
+  mailbox_socket.bind(config.router->mailbox_addr);
 
   // PART: running task table
   RunningTaskTable running_task;
@@ -168,7 +168,7 @@ static void start(const ArchConfig &config) {
   // PART: http server
   auto svr = httplib::Server();
   // set thread pool with size `config.router.num_http_threads`
-  svr.new_task_queue = [num_http_threads = config.router.num_http_threads] {
+  svr.new_task_queue = [num_http_threads = config.router->num_http_threads] {
     return new httplib::ThreadPool(num_http_threads);
   };
 
@@ -245,7 +245,7 @@ static void start(const ArchConfig &config) {
   });
   // clang-format on
 
-  svr.listen(config.router.input_addr, config.router.input_port);
+  svr.listen(config.router->input_addr, config.router->input_port);
   mailbox_thread.join();
 }
 
