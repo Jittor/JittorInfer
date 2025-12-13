@@ -118,34 +118,6 @@ gert::Tensor create_bound_tensor_with_ptr(const ge::TensorDesc& tensor_desc,
  * 为给定的源张量创建对应的Ascend Tensor，并添加到图输入列表中
  *
  * @param src_tensor 源GGML张量
- * @param ggml_tensor_to_ge_op_map 张量到算子的映射
- * @param graph_inputs 图输入算子列表
- * @param input_init 输入张量初始化列表
- */
-void create_graph_input_tensor(
-    ggml_tensor* src_tensor,
-    std::map<ggml_tensor*, Operator>& ggml_tensor_to_ge_op_map,
-    std::vector<Operator>& graph_inputs,
-    std::vector<gert::Tensor>& input_init) {
-    // 将对应的Data操作符加入graph_inputs
-    graph_inputs.push_back(ggml_tensor_to_ge_op_map[src_tensor]);
-
-    // 获取输出描述符，使用输出端口0
-    ge::TensorDesc tensor_desc =
-        ggml_tensor_to_ge_op_map[src_tensor].GetOutputDesc(0);
-    tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
-
-    // 使用辅助函数创建并绑定张量
-    gert::Tensor input_tensor = create_bound_tensor_with_ptr(
-        tensor_desc, src_tensor->data, ggml_nbytes(src_tensor));
-    input_init.push_back(std::move(input_tensor));
-}
-/**
- * @brief 创建并配置图输入张量
- *
- * 为给定的源张量创建对应的Ascend Tensor，并添加到图输入列表中
- *
- * @param src_tensor 源GGML张量
  * @param ggml_tensor_to_es_tensor_map 张量映射
  * @param input_init 输入张量初始化列表
  */
@@ -224,96 +196,6 @@ ggml_tensor* find_last_op_node(ggml_cgraph* cgraph) {
     return last_op_node;
 }
 
-/**
- * @brief 创建输出张量列表
- *
- * @param graph_outputs 图输出操作符列表
- * @param last_op_node 最后一个操作节点
- * @param output_init 输出张量初始化列表
- */
-void create_output_tensors(const std::vector<Operator>& graph_outputs,
-                           ggml_tensor* last_op_node,
-                           std::vector<gert::Tensor>& output_init) {
-    if (!graph_outputs.empty() && last_op_node != nullptr) {
-        for (auto& output_op : graph_outputs) {
-            // 获取输出描述符
-            ge::TensorDesc tensor_desc = output_op.GetOutputDesc(0);
-            tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
-
-            // 使用辅助函数创建输出张量并绑定数据
-            gert::Tensor output_tensor = create_bound_tensor_with_ptr(
-                tensor_desc, last_op_node->data, ggml_nbytes(last_op_node));
-
-            // 添加到output_init
-            output_init.push_back(std::move(output_tensor));
-        }
-    }
-}
-
-/**
- * @brief 处理输入张量（支持构建模式和复用模式）
- *
- * @param tensor_array 张量数组指针
- * @param count 数组元素数量
- * @param input_init 输入张量初始化列表
- * @param build_mode
- * 是否为构建模式（需要创建算子），false为复用模式（只绑定数据）
- * @param name_prefix 算子名称前缀（仅构建模式使用）
- * @param index_offset 索引偏移量（仅构建模式使用）
- * @param graph Ascend图引用（仅构建模式使用）
- * @param ggml_tensor_to_ge_op_map 张量到算子的映射（仅构建模式使用）
- * @param graph_inputs 图输入算子列表（仅构建模式使用）
- */
-void process_input_tensors(
-    ggml_tensor** tensor_array, int count,
-    std::vector<gert::Tensor>& input_init, bool build_mode = true,
-    const std::string& name_prefix = "", int index_offset = 0,
-    Graph* graph = nullptr,
-    std::map<ggml_tensor*, Operator>* ggml_tensor_to_ge_op_map = nullptr,
-    std::vector<Operator>* graph_inputs = nullptr) {
-    auto create_data = [&](ggml_tensor* node) {
-        if (ggml_tensor_to_ge_op_map->find(node) !=
-            ggml_tensor_to_ge_op_map->end()) {
-            return;
-        }
-
-        if (build_mode) {
-            // 使用辅助函数创建张量描述符
-            ge::TensorDesc desc = create_tensor_desc_for_node(node);
-
-            // 为此输入创建数据算子
-            std::string name = name_prefix + std::string(node->name);
-            op::Data data_op(name.c_str());
-            data_op.update_output_desc_y(desc);
-
-            // 添加到图和映射中
-            graph->AddOp(data_op);
-            (*ggml_tensor_to_ge_op_map)[node] = data_op;
-            create_graph_input_tensor(node, *ggml_tensor_to_ge_op_map,
-                                      *graph_inputs, input_init);
-        } else {
-            ge::TensorDesc desc = create_tensor_desc_for_node(node);
-            gert::Tensor input_tensor = create_bound_tensor_with_ptr(
-                desc, node->data, ggml_nbytes(node));
-            input_init.push_back(std::move(input_tensor));
-        }
-    };
-    for (int i = 0; i < count; i++) {
-        ggml_tensor* node = tensor_array[i];
-        for (int j = 0; j < GGML_MAX_SRC; j++) {
-            ggml_tensor* src = node->src[j];
-            if (src == nullptr || ggml_is_empty(src) ||
-                src->op != GGML_OP_NONE) {
-                continue;
-            }
-            create_data(src);
-        }
-        if (ggml_is_empty(node) || node->op != GGML_OP_NONE) {
-            continue;
-        }
-        create_data(node);
-    }
-}
 namespace {
 // ES version helper function declarations
 void process_input_tensors_es(
