@@ -1,0 +1,135 @@
+[
+    {
+        "op": "MLAPrefill",
+        "input_desc": [
+            {
+                "name": "query",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "qRope",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "key",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "kRope",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "value",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "qSeqLen",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "int32"
+                ]
+            },
+            {
+                "name": "kvSeqLen",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "int32"
+                ]
+            },
+            {
+                "name": "mask",
+                "param_type": "optional",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            }
+        ],
+        "output_desc": [
+            {
+                "name": "attenOut",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            }
+        ],
+        "attr": [                                                                   
+            {
+                "name": "headNum",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "qkScale",
+                "param_type": "optional",
+                "type": "float",
+                "default_value": 1.0
+            },
+            {
+                "name": "kvHeadNum",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "maskType",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "calcType",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "cacheMode",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            }
+        ]
+    }
+]

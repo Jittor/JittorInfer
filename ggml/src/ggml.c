@@ -931,11 +931,12 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
 
     // helper
     "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
-    "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_GET_SLICE",
-    "GGML_OP_SCATTER_UPDATE", "GGML_OP_RMS_NORM_FUSED"
+    "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", 
+    "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_MLA_JITTOR", "GGML_OP_MLA_PREFILL_JITTOR" ,
+    "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE", "GGML_OP_RMS_NORM_FUSED"
 };
 
-static_assert(GGML_OP_COUNT == 94, "GGML_OP_COUNT != 94");
+static_assert(GGML_OP_COUNT == 96, "GGML_OP_COUNT != 96");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
@@ -1039,11 +1040,13 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "flash_attn_prompt(q, k, v)",
                                                       "flash_attn_prompt_cpu(q, k, v)",
                                                       "flash_attn_jittor_v1(q, k, v)",
+                                                      "mla_jittor(q, qrope, ctkv, krope)",
+                                                      "mla_prefill_jittor(q, qrope, k, krope, v)", 
                                                       "get_slice(x, i)",
                                                       "scatter_update(x, y, i)",
                                                       "rms_norm(x, w)" };
 
-static_assert(GGML_OP_COUNT == 94, "GGML_OP_COUNT != 94");
+static_assert(GGML_OP_COUNT == 96, "GGML_OP_COUNT != 96");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -2659,13 +2662,13 @@ struct ggml_tensor * ggml_flash_attn_prompt(struct ggml_context * ctx, struct gg
 }
 
 struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct ggml_tensor * query,
-                                               struct ggml_tensor * key, struct ggml_tensor * value,
-                                               struct ggml_tensor * attn_mask, int32_t batch_size, int32_t num_heads,
-                                               int32_t head_dim_kq, int32_t head_dim_v, int32_t key_num_heads,
-                                               int32_t sequence_lenth_q, int32_t sequence_lenth_kv,
-                                               struct ggml_tensor * length_q_tensor,
-                                               struct ggml_tensor * length_kv_tensor, float scaleValue) {
-    const int64_t        ne[4]  = { head_dim_v, sequence_lenth_q, num_heads, batch_size };
+    struct ggml_tensor * key, struct ggml_tensor * value,
+    struct ggml_tensor * attn_mask, int32_t batch_size,
+    int32_t num_heads, int32_t head_dim_kq,int32_t head_dim_v, int32_t key_num_heads,
+    int32_t sequence_lenth_q, int32_t sequence_lenth_kv,
+    struct ggml_tensor * length_q_tensor, struct ggml_tensor * length_kv_tensor,
+    float scaleValue) {
+    const int64_t ne[4]  = { head_dim_v, sequence_lenth_q, num_heads, batch_size };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 4, ne);
     result->op                  = GGML_OP_FLASH_ATTN_JITTOR_V1;
     result->src[0]              = query;
@@ -2676,33 +2679,109 @@ struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct
     // for other cases, these tensors will be ignored.
     result->src[4]              = length_q_tensor;
     result->src[5]              = length_kv_tensor;
-
     struct {
-        int     batch_size;
-        int     num_heads;
-        int     head_dim_kq;
-        int     head_dim_v;
-        int     key_num_heads;
-        int     sequence_lenth_q;
+        int batch_size;
+        int num_heads;
+        int head_dim_kq;
+        int head_dim_v;
+        int key_num_heads;
+        int sequence_lenth_q;
         int64_t sequence_lenth_kv;
-        float   scaleValue;
+        float scaleValue;
     } params;
-
-    params.batch_size        = batch_size;
-    params.num_heads         = num_heads;
-    params.head_dim_kq       = head_dim_kq;
-    params.head_dim_v        = head_dim_v;
-    params.key_num_heads     = key_num_heads;
+    params.batch_size = batch_size;
+    params.num_heads = num_heads;
+    params.head_dim_kq = head_dim_kq;
+    params.head_dim_v = head_dim_v;
+    params.key_num_heads = key_num_heads;
     // Because the precision mode of flash attention depends on the sequence length q,
     // the sequence length q is still required for ge.
     // For ge, it only works for initialize,
     // and the following compute will depend on the tensor length_q_tensor.
-    params.sequence_lenth_q  = sequence_lenth_q;
+    params.sequence_lenth_q = sequence_lenth_q;
     params.sequence_lenth_kv = sequence_lenth_kv;
-    params.scaleValue        = scaleValue;
+    params.scaleValue = scaleValue;
     memcpy(result->op_params, &params, sizeof(params));
     return result;
 }
+
+struct ggml_tensor * ggml_mla_jittor(
+    struct ggml_context * ctx, struct ggml_tensor * query,
+    struct ggml_tensor * query_rope, struct ggml_tensor * context_KV,
+    struct ggml_tensor * key_rope, struct ggml_tensor * block_table,
+    struct ggml_tensor * context_length, struct ggml_tensor * mask,
+    int32_t batchSize, int32_t tokenNum, int32_t headNum, int32_t kvHeadNum,
+    int32_t kSeqLen, float qkScale, int32_t blockSize)
+    {
+        const int64_t ne[3]  = { tokenNum, headNum, 512 };
+        struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 3, ne);
+        result->op                  = GGML_OP_MLA_JITTOR;
+        result->src[0]              = query;
+        result->src[1]              = query_rope;
+        result->src[2]              = context_KV;
+        result->src[3]              = key_rope;
+        result->src[4]              = block_table;
+        result->src[5]              = mask;
+        result->src[6]              = context_length;
+        struct {
+            int batchSize;
+            int tokenNum;
+            int headNum;
+            int kvHeadNum;
+            int kSeqLen;
+            float qkScale;
+            int blockSize;
+        } params;
+        params.batchSize = batchSize;
+        params.tokenNum = tokenNum;
+        params.headNum = headNum;
+        params.kvHeadNum = kvHeadNum;
+        params.kSeqLen = kSeqLen;
+        params.qkScale = qkScale;
+        params.blockSize = blockSize;
+        memcpy(result->op_params, &params, sizeof(params));
+        return result;
+    }
+
+
+struct ggml_tensor * ggml_mla_prefill_jittor(
+    struct ggml_context * ctx, struct ggml_tensor * query,
+    struct ggml_tensor * query_rope, struct ggml_tensor * key,
+    struct ggml_tensor * key_rope, struct ggml_tensor * value,
+    struct ggml_tensor * qSeq_length, struct ggml_tensor * kvSeq_length,
+    struct ggml_tensor * mask, int32_t batchSize, int32_t headNum, int32_t kvHeadNum,
+    int32_t embeddim, int32_t embeddimV, int32_t maxSeqLen, float qkScale)
+    {
+        const int64_t ne[2]  = { batchSize * maxSeqLen, headNum * embeddimV };
+        struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 2, ne);
+        result->op                  = GGML_OP_MLA_PREFILL_JITTOR;
+        result->src[0]              = query;
+        result->src[1]              = query_rope;
+        result->src[2]              = key;
+        result->src[3]              = key_rope;
+        result->src[4]              = value;
+        result->src[5]              = mask;
+        result->src[6]              = qSeq_length;
+        result->src[7]              = kvSeq_length;
+        struct {
+            int batchSize;
+            int headNum;
+            int kvHeadNum;
+            int embeddim;
+            int embeddimV;
+            int maxSeqLen;
+            float qkScale;
+        } params;
+        params.batchSize = batchSize;
+        params.headNum = headNum;
+        params.kvHeadNum = kvHeadNum;
+        params.embeddim = embeddim;
+        params.embeddimV = embeddimV;
+        params.maxSeqLen = maxSeqLen;
+        params.qkScale = qkScale;
+        memcpy(result->op_params, &params, sizeof(params));
+        return result;
+    }
 
 struct ggml_tensor * ggml_to_zero(struct ggml_context * ctx, struct ggml_tensor * a) {
     struct ggml_tensor * result = ggml_view_tensor(ctx, a);

@@ -1,0 +1,155 @@
+[
+    {
+        "op": "MLA",
+        "input_desc": [
+            {
+                "name": "qNope",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "qRope",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "ctKV",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "kRope",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "blockTables",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "int32"
+                ]
+            },
+            {
+                "name": "contextLens",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "int32"
+                ]
+            },
+            {
+                "name": "mask",
+                "param_type": "optional",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "qseqlen",
+                "param_type": "optional",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "int32"
+                ]
+            },
+            {
+                "name": "qkDescale",
+                "param_type": "optional",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            },
+            {
+                "name": "pvDescale",
+                "param_type": "optional",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            }
+        ],
+        "output_desc": [
+            {
+                "name": "attenOut",
+                "param_type": "required",
+                "format": [
+                    "ND"
+                ],
+                "type": [
+                    "float16"
+                ]
+            }
+        ],
+        "attr": [                                                                   
+            {
+                "name": "headNum",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "qkScale",
+                "param_type": "optional",
+                "type": "float",
+                "default_value": 1.0
+            },
+            {
+                "name": "kvHeadNum",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "maskType",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "calcType",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "cacheMode",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            }
+        ]
+    }
+]
