@@ -46,7 +46,6 @@
 #include <aclnnop/aclnn_silu.h>
 #include <aclnnop/aclnn_tanh.h>
 #include <aclnnop/aclnn_topk.h>
-
 #include "acl_tensor.h"
 #include "common.h"
 
@@ -260,7 +259,11 @@ void ggml_cann_flash_attn_prompt(ggml_backend_cann_context& ctx,
 
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
 void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
-                                    ggml_tensor* dst);
+                                 ggml_tensor* dst);
+void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx,
+                                 ggml_tensor* dst);
+void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
+                                 ggml_tensor* dst);                             
 #endif
 
 /**
@@ -674,36 +677,30 @@ void ggml_cann_activation(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyTensor(acl_dst));
 }
 
-static void ggml_cann_topk(ggml_backend_cann_context& ctx,
-                           const ggml_tensor* src, ggml_tensor* values,
-                           ggml_tensor* indices, int64_t k) {
+static void ggml_cann_topk(ggml_backend_cann_context & ctx, const ggml_tensor * src, ggml_tensor * values, ggml_tensor * indices, int64_t k) {
     GGML_ASSERT(indices->type == GGML_TYPE_I64);
     GGML_ASSERT(src->ne[0] >= k);
     GGML_ASSERT(values->ne[0] >= k);
     GGML_ASSERT(indices->ne[0] >= k);
 
-    aclTensor* acl_src = ggml_cann_create_tensor(src, src->ne, src->nb, 2);
-    aclTensor* acl_values =
-        ggml_cann_create_tensor(values, values->ne, values->nb, 2);
-    aclTensor* acl_indices =
-        ggml_cann_create_tensor(indices, indices->ne, indices->nb, 2);
+    aclTensor * acl_src = ggml_cann_create_tensor(src, src->ne, src->nb, 2);
+    aclTensor * acl_values = ggml_cann_create_tensor(values, values->ne, values->nb, 2);
+    aclTensor * acl_indices = ggml_cann_create_tensor(indices, indices->ne, indices->nb, 2);
 
     uint64_t workspaceSize = 0;
-    aclOpExecutor* executor;
-    void* workspaceAddr = nullptr;
+    aclOpExecutor * executor;
+    void * workspaceAddr = nullptr;
     ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
 
-    ACL_CHECK(aclnnTopkGetWorkspaceSize(acl_src, k, 1, true, true, acl_values,
-                                        acl_indices, &workspaceSize,
-                                        &executor));
+    ACL_CHECK(aclnnTopkGetWorkspaceSize(acl_src, k, 1, true, true, acl_values, acl_indices, &workspaceSize, &executor));
     if (workspaceSize > 0) {
         workspaceAddr = workspace_allocator.get();
     }
     GGML_ASSERT(workspaceAddr != nullptr || workspaceSize == 0);
-
+    
     aclrtStream main_stream = ctx.stream();
     ACL_CHECK(aclnnTopk(workspaceAddr, workspaceSize, executor, main_stream));
-
+    
     ACL_CHECK(aclDestroyTensor(acl_src));
     ACL_CHECK(aclDestroyTensor(acl_values));
     ACL_CHECK(aclDestroyTensor(acl_indices));

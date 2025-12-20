@@ -1,0 +1,240 @@
+[
+    {
+        "op": "JittorInferFlashAttention",
+        "input_desc": [
+            {
+                "name": "query",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "bfloat16",
+                    "int8"
+                ]
+            },
+            {
+                "name": "key",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "bfloat16",
+                    "int8"
+                ]
+            },
+            {
+                "name": "value",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "bfloat16",
+                    "int8"
+                ]
+            },
+            {
+                "name": "pseShift",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "bfloat16",
+                    "float16"
+                ]
+            },
+            {
+                "name": "attenMask",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "bool",
+                    "int8",
+                    "uint8"
+                ]
+            },
+            {
+                "name": "actualSeqLengths",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "int64",
+                    "int64",
+                    "int64"
+                ]
+            },
+            {
+                "name": "actualSeqLengthsKV",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "int64",
+                    "int64",
+                    "int64"
+                ]
+            },
+            {
+                "name": "deqScale1",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "uint64",
+                    "float32",
+                    "uint64"
+                ]
+            },
+            {
+                "name": "quantScale1",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float32",
+                    "float32",
+                    "float32"
+                ]
+            },
+            {
+                "name": "deqScale2",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "uint64",
+                    "float32",
+                    "uint64"
+                ]
+            },
+            {
+                "name": "quantScale2",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float32",
+                    "bfloat16",
+                    "float32"
+                ]
+            },
+            {
+                "name": "quantOffset2",
+                "param_type": "optional",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float32",
+                    "bfloat16",
+                    "float32"
+                ]
+            }
+        ],
+        "output_desc": [
+            {
+                "name": "attentionOut",
+                "param_type": "required",
+                "format": [
+                    "ND",
+                    "ND",
+                    "ND"
+                ],
+                "type": [
+                    "float16",
+                    "bfloat16",
+                    "int8"
+                ]
+            }
+        ],
+        "attr": [                                                                   
+            {
+                "name": "numHeads",
+                "param_type": "required",
+                "type": "int"
+            },
+            {
+                "name": "scaleValue",
+                "param_type": "optional",
+                "type": "float",
+                "default_value": 1.0
+            },
+            {
+                "name": "preTokens",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 214748647
+            },
+            {
+                "name": "nextTokens",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "inputLayout",
+                "param_type": "optional",
+                "type": "string",
+                "default_value": "BSH"
+            },
+            {
+                "name": "numKeyValueHeads",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "sparseMode",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 0
+            },
+            {
+                "name": "innerPrecise",
+                "param_type": "optional",
+                "type": "int",
+                "default_value": 1
+            }
+        ]
+    }
+]

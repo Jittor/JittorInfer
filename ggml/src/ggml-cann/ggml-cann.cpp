@@ -1543,6 +1543,12 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_FLASH_ATTN_JITTOR_V1:
             ggml_cann_flash_attn_jittor_v1(ctx, dst);
             break;
+        case GGML_OP_MLA_JITTOR:
+            ggml_cann_mla_jittor(ctx, dst);
+            break;
+        case GGML_OP_MLA_PREFILL_JITTOR:
+            ggml_cann_mla_prefill_jittor(ctx, dst);
+            break;
 #endif
         case GGML_OP_GET_SLICE:
             ggml_cann_get_slice(ctx, dst);
@@ -2131,6 +2137,8 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_FLASH_ATTN_PROMPT:
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
         case GGML_OP_FLASH_ATTN_JITTOR_V1:
+        case GGML_OP_MLA_JITTOR:
+        case GGML_OP_MLA_PREFILL_JITTOR:
 #endif
         case GGML_OP_TO_ZERO:
         case GGML_OP_SCATTER_UPDATE:
