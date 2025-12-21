@@ -8,6 +8,7 @@
 #include <cmath>  // 添加cmath以获取数学函数:log2, floor, powf
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 #include "ascend_graph_ops.h"
 #include "ascend_graph_ops_create.h"
@@ -2711,6 +2712,172 @@ ge::Operator handle_flash_attn_prompt_op(
         "flashattn_identity_" + std::to_string(op_index);
     ge::op::Identity identity_op(identity_name);
     identity_op.set_input_x_by_name(flash_attn_op, "attention_out");
+    identity_op.update_output_desc_y(desc_out);
+    graph.AddOp(identity_op);
+
+    return identity_op;
+}
+
+
+//  * @brief 处理 Flash Attention Jittor 操作的函数
+//  *
+//  * 在计算图中创建一个 Flash Attention Jittor 操作，基于 GE 算子实现
+//  *
+//  * @param graph 计算图引用
+//  * @param node 表示 Flash Attention Jittor 操作的张量节点
+//  * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+//  * @param op_index 用于生成唯一算子名称的索引
+//  * @return 创建的 Flash Attention Jittor 算子
+//  */
+ge::Operator handle_flash_attn_jittor_v1_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    // return op_sequence_length_kv;
+    // 获取输入张量
+
+    struct ggml_tensor *query = node->src[0];
+    struct ggml_tensor *key = node->src[1];
+    struct ggml_tensor *value = node->src[2];
+    struct ggml_tensor *attn_mask = node->src[3];
+    struct ggml_tensor *length_q_tensor = node->src[4];
+    struct ggml_tensor *length_kv_tensor = node->src[5];
+
+    // 数据类型和形状验证
+    GGML_ASSERT(query->type == GGML_TYPE_F16);
+    GGML_ASSERT(key->type == GGML_TYPE_F16);
+    GGML_ASSERT(value->type == GGML_TYPE_F16);
+    GGML_ASSERT(attn_mask->type == GGML_TYPE_I8);
+    // GGML_ASSERT(sequence_length_kv_tensor->type == GGML_TYPE_I32);  //
+    // 验证sequence_length_kv张量类型
+    GGML_ASSERT(node->type == GGML_TYPE_F16);
+
+    // 检查输入是否已经在映射中
+    ge::Operator op_query;
+    ge::Operator op_key;
+    ge::Operator op_value;
+    ge::Operator op_attn_mask;
+    ge::Operator op_length_q_tensor;
+    ge::Operator op_length_kv_tensor;
+
+    if (gmml_tensor_to_ge_op_map.find(query) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_query = gmml_tensor_to_ge_op_map[query];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(key) != gmml_tensor_to_ge_op_map.end()) {
+        op_key = gmml_tensor_to_ge_op_map[key];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(value) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_value = gmml_tensor_to_ge_op_map[value];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(attn_mask) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_attn_mask = gmml_tensor_to_ge_op_map[attn_mask];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(length_q_tensor) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_length_q_tensor = gmml_tensor_to_ge_op_map[length_q_tensor];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(length_kv_tensor) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_length_kv_tensor = gmml_tensor_to_ge_op_map[length_kv_tensor];
+    } else {
+        assert(false);
+    }
+
+    struct flash_attn_jittor_params {
+        int batch_size;
+        int num_heads;
+        int head_dim_kq;
+        int head_dim_v;
+        int key_num_heads;
+        int sequence_lenth_q;
+        int64_t sequence_lenth_kv;
+        float scaleValue;
+    };
+    flash_attn_jittor_params *params =
+        reinterpret_cast<flash_attn_jittor_params *>(node->op_params);
+
+    // 从参数中提取配置
+    int32_t batch_size = params->batch_size;
+    int32_t num_heads = params->num_heads;
+    int32_t head_dim_kq = params->head_dim_kq;
+    int32_t head_dim_v = params->head_dim_v;
+    int32_t key_num_heads = params->key_num_heads;
+    // 这个参数仅用于判断开启精度模式
+    int32_t sequence_length_q = params->sequence_lenth_q;
+    int64_t sequence_length_kv = params->sequence_lenth_kv;
+    float scale_value = params->scaleValue;
+
+    // 设置属性值，匹配 FlashAttentionJittor 算子的规范
+    int64_t num_key_value_heads = key_num_heads;
+    std::string input_layout = "BSND";  // 默认输入布局
+    int64_t pre_tokens = 2147483647;  // 匹配默认值 214748647 -> 2147483647
+    int64_t next_tokens = 0;
+    int64_t sparse_mode = 1;  // 拦截，非量化情况不考虑
+    int64_t inner_precise =
+        sequence_length_q > 1 ? 2 : 0;  // 高精度模式，开启行无效修正
+
+    // 创建 FlashAttentionJittor 算子
+    std::string flash_attn_name = "flash_attn_jittor_" + std::to_string(op_index);
+    ge::op::JittorInferFlashAttention flash_attn_jittor_op(flash_attn_name);
+
+    // 设置输入 - 必选输入
+    flash_attn_jittor_op.set_input_query(op_query);
+
+    // 设置key输入
+    flash_attn_jittor_op.set_input_key(op_key);
+
+    // 设置value输入
+    flash_attn_jittor_op.set_input_value(op_value);
+
+    // 设置可选输入
+    flash_attn_jittor_op.set_input_attenMask(op_attn_mask);
+    flash_attn_jittor_op.set_input_actualSeqLengths(op_length_q_tensor);
+    flash_attn_jittor_op.set_input_actualSeqLengthsKV(op_length_kv_tensor);
+
+    // 设置属性 - 按照 PromptFlashAttention 的接口规范
+    flash_attn_jittor_op.set_attr_numHeads(num_heads);        // 必选属性
+    flash_attn_jittor_op.set_attr_scaleValue(scale_value);          // 默认 1.0
+    flash_attn_jittor_op.set_attr_preTokens(pre_tokens);      // 默认 214748647
+    flash_attn_jittor_op.set_attr_nextTokens(next_tokens);    // 默认 0
+    flash_attn_jittor_op.set_attr_inputLayout(input_layout);  // 默认 "BSH"
+    flash_attn_jittor_op.set_attr_numKeyValueHeads(num_key_value_heads);  // 默认 0
+    flash_attn_jittor_op.set_attr_sparseMode(sparse_mode);      // 默认 0
+    flash_attn_jittor_op.set_attr_innerPrecise(inner_precise);  // 默认 1
+
+    // 计算输出形状
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+
+    // 设置输出描述
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    flash_attn_jittor_op.update_output_desc_attentionOut(desc_out);
+
+    // 添加算子到图中
+    graph.AddOp(flash_attn_jittor_op);
+
+    // 多一个Identity算子，仅保留flash attention的out部分
+    std::string identity_name =
+        "flashattn_identity_" + std::to_string(op_index);
+    ge::op::Identity identity_op(identity_name);
+    identity_op.set_input_x_by_name(flash_attn_jittor_op, "attentionOut");
     identity_op.update_output_desc_y(desc_out);
     graph.AddOp(identity_op);
 

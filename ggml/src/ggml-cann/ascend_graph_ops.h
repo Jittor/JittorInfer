@@ -121,6 +121,10 @@ ge::Operator handle_flash_attn_prompt_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+ge::Operator handle_flash_attn_jittor_v1_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
 
 ge::Operator handle_set_slice_op(
     ge::Graph &graph, struct ggml_tensor *node,

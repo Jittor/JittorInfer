@@ -65,9 +65,9 @@ if (CANN_INSTALL_DIR)
         ${CANN_INSTALL_DIR}/compiler/include/graph
         ${CANN_INSTALL_DIR}/compiler/include/ge
         ${CANN_INSTALL_DIR}/compiler/include
+        ${CANN_INSTALL_DIR}/opp/vendors/jittor_infer/op_proto/inc
         ${CANN_INSTALL_DIR}/opp/built-in/op_proto/inc
         ${CANN_INSTALL_DIR}/opp/vendors/customize/op_proto/inc
-        ${CANN_INSTALL_DIR}/opp/vendors/jittor_infer/op_proto/inc
     )
 
     if (LLAMA_USE_JITTOR_OPS)

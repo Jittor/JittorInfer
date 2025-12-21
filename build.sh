@@ -1,4 +1,7 @@
 cmake -B build -DGGML_CUDA=OFF -DGGML_CANN=on -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-O2" -DCMAKE_C_FLAGS="-O2" && cmake --build build -j64
+
+# cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -B build -DCMAKE_CXX_FLAGS="-w" -DLLAMA_USE_JITTOR_OPS=ON -DGGML_CANN=on -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1 && cmake --build build --config Debug -j64
+
 # cmake -B build \
 #     -DCMAKE_C_COMPILER=/usr/local/Ascend/ascend-toolkit/8.2.RC1.alpha001/aarch64-linux/ccec_compiler/bin/bisheng \
 #     -DCMAKE_CXX_COMPILER=/usr/local/Ascend/ascend-toolkit/8.2.RC1.alpha001/aarch64-linux/ccec_compiler/bin/bisheng \
