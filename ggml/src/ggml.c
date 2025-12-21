@@ -2668,7 +2668,7 @@ struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct
     int32_t sequence_lenth_q, int32_t sequence_lenth_kv,
     struct ggml_tensor * length_q_tensor, struct ggml_tensor * length_kv_tensor,
     float scaleValue) {
-    const int64_t ne[4]  = { head_dim_v, sequence_lenth_q, num_heads, batch_size };
+    const int64_t ne[4]  = { head_dim_v, num_heads, sequence_lenth_q, batch_size };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 4, ne);
     result->op                  = GGML_OP_FLASH_ATTN_JITTOR_V1;
     result->src[0]              = query;

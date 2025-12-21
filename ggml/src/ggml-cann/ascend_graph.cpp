@@ -623,6 +623,16 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 }
                 break;
             }
+            case GGML_OP_FLASH_ATTN_JITTOR_V1: {
+                Operator op_node = handle_flash_attn_jittor_v1_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+
+                ggml_tensor_to_ge_op_map[node] = op_node;
+                if (node == last_op_node) {
+                    graph_outputs.push_back(op_node);
+                }
+                break;
+            }
             case GGML_OP_GET_ROWS: {
                 // 处理获取行操作
                 Operator get_rows_op = handle_get_rows_op(
