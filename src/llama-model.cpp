@@ -543,7 +543,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     // there is very little benefit to offloading the input layer, so always keep it on the CPU
     if (params.offload_input) {
         if (enable_tensor_parallel) {
-            auto * dev        = devices.at(hparams.tp_id);
+            auto * dev       = devices.at(hparams.tp_id);
             pimpl->dev_input = { dev, &pimpl->gpu_buft_list.at(dev) };
         } else {
             pimpl->dev_input = get_layer_buft_list(0);

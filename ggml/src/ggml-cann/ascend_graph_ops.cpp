@@ -2859,8 +2859,7 @@ ge::Operator handle_get_rows_op(
 ge::Operator handle_allreduce_sum_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
-    int op_index){
-
+    int op_index) {
     std::string op_suffix = "_" + std::to_string(op_index);
     struct ggml_tensor *src = node->src[0];
 
@@ -2874,7 +2873,7 @@ ge::Operator handle_allreduce_sum_op(
     std::string op_name = "allreduce_sum_" + op_suffix;
     std::string group_name = "hccl_world_group";
     auto har_op = ge::op::HcomAllReduce(op_name.c_str());
-                      
+
     har_op.set_input_x(op_src);
     har_op.set_attr_reduction("sum");
     har_op.set_attr_group(group_name.c_str());

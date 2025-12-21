@@ -1848,7 +1848,8 @@ static enum ggml_status ggml_backend_cann_graph_compute(ggml_backend_t backend,
         const char* rank_table_file = std::getenv("RANKTABLEFILE");
         if (rank_table_file != nullptr && strlen(rank_table_file) > 0) {
             config["ge.exec.rankTableFile"] = AscendString(rank_table_file);
-            config["ge.exec.rankId"] = AscendString(std::to_string(cann_ctx->hccl_rank).c_str());
+            config["ge.exec.rankId"] =
+                AscendString(std::to_string(cann_ctx->hccl_rank).c_str());
         }
 
         // 初始化GE环境

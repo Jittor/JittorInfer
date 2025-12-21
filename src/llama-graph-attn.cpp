@@ -401,8 +401,8 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
         if (q->type != GGML_TYPE_F16) {
             q = ggml_cast(ctx, q, GGML_TYPE_F16);
         }
-        cur = ggml_flash_attn_prompt(ctx, q, k, v, kq_full, 1, n_head_local, pad_n_embd, pad_n_embd, n_head_kv_local, 
-                                    n_tokens, n_kv, length_q, length_kv, kq_scale);
+        cur = ggml_flash_attn_prompt(ctx, q, k, v, kq_full, 1, n_head_local, pad_n_embd, pad_n_embd, n_head_kv_local,
+                                     n_tokens, n_kv, length_q, length_kv, kq_scale);
         cur = ggml_reshape_3d(ctx, cur, pad_n_embd, n_head_local, n_tokens);
         cur = ggml_get_slice(ctx, cur, 0, n_embd_head_v, 0);
         cur = ggml_reshape_2d(ctx, cur, n_embd_head_v * n_head_local, n_tokens);

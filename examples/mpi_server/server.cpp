@@ -886,21 +886,21 @@ struct server_response {
 };
 
 static llama_model_params common_model_params_to_llama_local(common_params & params) {
-    auto mparams                   = llama_model_default_params();
-    mparams.main_gpu               = params.main_gpu;
-    mparams.split_mode             = params.split_mode;
-    mparams.tensor_split           = params.tensor_split;
-    mparams.use_mmap               = params.use_mmap;
-    mparams.use_mlock              = params.use_mlock;
-    mparams.check_tensors          = params.check_tensors;
-    mparams.n_gpu_layers           = params.n_gpu_layers;
+    auto mparams                        = llama_model_default_params();
+    mparams.main_gpu                    = params.main_gpu;
+    mparams.split_mode                  = params.split_mode;
+    mparams.tensor_split                = params.tensor_split;
+    mparams.use_mmap                    = params.use_mmap;
+    mparams.use_mlock                   = params.use_mlock;
+    mparams.check_tensors               = params.check_tensors;
+    mparams.n_gpu_layers                = params.n_gpu_layers;
     // 开启张量并行
-    mparams.enable_tensor_parallel = true;
-    mparams.enable_expert_parallel = params.enable_expert_parallel;
-    mparams.enable_fused_moe       = params.enable_fused_moe;
-    mparams.enable_mpi             = true;
+    mparams.enable_tensor_parallel      = true;
+    mparams.enable_expert_parallel      = params.enable_expert_parallel;
+    mparams.enable_fused_moe            = params.enable_fused_moe;
+    mparams.enable_mpi                  = true;
     mparams.enable_cann_flash_attention = params.enable_cann_flash_attention;
-    mparams.offload_input = params.offload_input;
+    mparams.offload_input               = params.offload_input;
 
 #ifdef LLAMA_MPI_SUPPORT
     if (mparams.enable_mpi) {
