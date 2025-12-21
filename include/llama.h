@@ -608,8 +608,6 @@ int32_t llama_decode(struct llama_context * ctx, struct llama_batch batch, bool 
 
 bool llama_empty_run(struct llama_context * ctx);
 
-int llama_all_processed_tokens(const struct llama_context * ctx);
-
 // Clear the KV cache - both cell info is erased and KV data is zeroed
 void llama_kv_cache_clear(struct llama_context * ctx);
 

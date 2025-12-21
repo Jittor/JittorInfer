@@ -1,0 +1,30 @@
+model:
+  model_path: "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf"
+  system_prompt: "Transcript of a never ending dialog, where the User interacts with an Assistant.\nThe Assistant is helpful, kind, honest, good at writing, and never fails to answer the User's requests immediately and with precision.\nUser:"
+
+backend:
+  # mpi_dp_ep currently reserve one position to store system prompt
+  n_parallel: 17
+  n_context: 512
+  n_batch: 512
+  n_threads: 64
+  defrag_thold: 0.0
+  debug: false
+
+server:
+  mode: server                            # Server mode
+  router:
+    input_addr: "127.0.0.1"               # Address to listen on for incoming HTTP requests
+    input_port: 8080                      # Port to listen on
+    num_http_threads: 128                 # Number of threads for the HTTP server
+    mailbox_addr: "tcp://127.0.0.1:5555"  # Address for the zmq mailbox
+
+  decoders:
+    - mailbox_addr: "tcp://127.0.0.1:6001"
+    - mailbox_addr: "tcp://127.0.0.1:6002"
+    - mailbox_addr: "tcp://127.0.0.1:6003"
+    - mailbox_addr: "tcp://127.0.0.1:6004"
+    - mailbox_addr: "tcp://127.0.0.1:6005"
+    - mailbox_addr: "tcp://127.0.0.1:6006"
+    - mailbox_addr: "tcp://127.0.0.1:6007"
+    - mailbox_addr: "tcp://127.0.0.1:6008"

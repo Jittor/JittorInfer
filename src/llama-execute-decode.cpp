@@ -8,6 +8,30 @@
 #include "llama-impl.h"
 #include "llama.h"
 
+#define OMPI_SKIP_MPICXX 1
+#include "mpi.h"
+
+template <int Id> __attribute__((noinline)) static int llama_debug_barrier() {
+    static double tot_time  = 0.0;
+    static int    tot_count = 0;
+
+    double t_before = MPI_Wtime();
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t_after = MPI_Wtime();
+
+    tot_time += t_after - t_before;
+    tot_count += 1;
+    if (tot_count == 32) {
+        // printf every 1024 calls
+        printf("Debug barrier<%d>: avg time = %.6f us over %d calls\n", Id, (tot_time / tot_count) * 1'000'000.0,
+               tot_count);
+        tot_time  = 0.0;
+        tot_count = 0;
+    }
+
+    return Id;
+}
+
 static int llama_prepare_sbatch(llama_context & lctx, const llama_batch & batch, uint32_t & n_outputs) {
     const auto & model   = lctx.model;
     const auto & hparams = model.hparams;
@@ -210,7 +234,6 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
             ggml_backend_sched_reset(lctx.sched.get());
             ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval,
                                                  lctx.cparams.cb_eval_user_data);
-
             if (sync_all_servers) {
                 llama_prepare_multiserver_data(lctx, ubatch.n_tokens);
             } else {

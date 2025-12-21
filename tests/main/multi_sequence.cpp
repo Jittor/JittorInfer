@@ -62,29 +62,29 @@ static std::vector<std::string> k_prompts = {
     "I want to learn how to play the piano.",
 };
 
-struct client {
-    ~client() {
+struct Client {
+    ~Client() {
         if (smpl) {
             common_sampler_local_free(smpl);
         }
     }
 
-    int32_t id = 0;
+    int32_t ith_client = 0;
 
-    llama_seq_id seq_id = -1;
+    llama_seq_id req_id = -1;
 
-    llama_token sampled;
+    llama_token last_token;
 
     int64_t t_start_prompt;
     int64_t t_start_gen;
 
     int32_t n_prompt  = 0;
     int32_t n_decoded = 0;
-    int32_t i_batch   = -1;
+    int32_t ith_batch   = -1;
 
-    std::string input;
-    std::string prompt;
-    std::string response;
+    std::string input_text;
+    std::string input_tokens;
+    std::string output_string;
 
     struct common_sampler_local * smpl = nullptr;
 };
@@ -277,10 +277,10 @@ int main() {
     const int n_ctx = llama_n_ctx(ctx);
 
     common_params_local_sampling sparams;
-    std::vector<client>          clients(n_clients);
+    std::vector<Client>          clients(n_clients);
     for (size_t i = 0; i < clients.size(); ++i) {
         auto & client = clients[i];
-        client.id     = i;
+        client.ith_client     = i;
         client.smpl   = common_sampler_local_init(model, sparams);
     }
 
@@ -357,14 +357,14 @@ int main() {
 
         // decode any currently ongoing sequences
         for (auto & client : clients) {
-            if (client.seq_id == -1) {
+            if (client.req_id == -1) {
                 continue;
             }
 
-            client.i_batch = batch.n_tokens;
+            client.ith_batch = batch.n_tokens;
 
-            common_batch_add(batch, client.sampled, n_tokens_system + client.n_prompt + client.n_decoded,
-                             { client.id + 1 }, true);
+            common_batch_add(batch, client.last_token, n_tokens_system + client.n_prompt + client.n_decoded,
+                             { client.ith_client + 1 }, true);
 
             client.n_decoded += 1;
         }
@@ -383,24 +383,24 @@ int main() {
         // insert new sequences for decoding
         if (cont_batching || batch.n_tokens == 0) {
             for (auto & client : clients) {
-                if (client.seq_id == -1 && g_seq_id < n_seq) {
-                    client.seq_id = g_seq_id;
+                if (client.req_id == -1 && g_seq_id < n_seq) {
+                    client.req_id = g_seq_id;
 
                     client.t_start_prompt = ggml_time_us();
                     client.t_start_gen    = 0;
 
-                    client.input    = k_prompts[rand() % k_prompts.size()];
-                    client.prompt   = client.input + "\nAssistant:";
-                    client.response = "";
+                    client.input_text    = k_prompts[rand() % k_prompts.size()];
+                    client.input_tokens   = client.input_text + "\nAssistant:";
+                    client.output_string = "";
 
                     common_sampler_reset(client.smpl);
 
                     // do not prepend BOS because we have a system prompt!
                     std::vector<llama_token> tokens_prompt;
-                    tokens_prompt = common_tokenize(ctx, client.prompt, false);
+                    tokens_prompt = common_tokenize(ctx, client.input_tokens, false);
 
                     for (size_t i = 0; i < tokens_prompt.size(); ++i) {
-                        common_batch_add(batch, tokens_prompt[i], i + n_tokens_system, { client.id + 1 }, false);
+                        common_batch_add(batch, tokens_prompt[i], i + n_tokens_system, { client.ith_client + 1 }, false);
                     }
 
                     // extract the logits only for the last token
@@ -410,9 +410,9 @@ int main() {
 
                     client.n_prompt  = tokens_prompt.size();
                     client.n_decoded = 0;
-                    client.i_batch   = batch.n_tokens - 1;
+                    client.ith_batch   = batch.n_tokens - 1;
 
-                    printf("\033[31mClient %3d, seq %4d, started decoding ...\033[0m\n", client.id, client.seq_id);
+                    printf("\033[31mClient %3d, seq %4d, started decoding ...\033[0m\n", client.ith_client, client.req_id);
 
                     g_seq_id += 1;
 
@@ -470,14 +470,14 @@ int main() {
             // LOG_DBG("%s : decoded batch of %d tokens\n", __func__, n_tokens);
 
             for (auto & client : clients) {
-                if (client.i_batch < (int) i || client.i_batch >= (int) (i + n_tokens)) {
+                if (client.ith_batch < (int) i || client.ith_batch >= (int) (i + n_tokens)) {
                     continue;
                 }
 
                 //printf("client %d, seq %d, token %d, pos %d, batch %d\n",
                 //        client.id, client.seq_id, client.sampled, client.n_decoded, client.i_batch);
 
-                const llama_token id = common_sampler_sample(client.smpl, ctx, client.i_batch - i);
+                const llama_token id = common_sampler_sample(client.smpl, ctx, client.ith_batch - i);
 
                 common_sampler_accept(client.smpl, id, true);
 
@@ -489,8 +489,8 @@ int main() {
 
                 const std::string token_str = common_token_to_piece(ctx, id);
 
-                client.response += token_str;
-                client.sampled = id;
+                client.output_string += token_str;
+                client.last_token = id;
 
                 //printf("client %d, seq %d, token %d, pos %d, batch %d: %s\n",
                 //        client.id, client.seq_id, id, client.n_decoded, client.i_batch, token_str.c_str());
@@ -498,35 +498,35 @@ int main() {
                 if (client.n_decoded > 2 && (llama_vocab_is_eog(vocab, id) ||
                                              (default_mini_params.n_predict > 0 &&
                                               client.n_decoded + client.n_prompt >= default_mini_params.n_predict) ||
-                                             client.response.find("User:") != std::string::npos ||
-                                             client.response.find('\n') != std::string::npos)) {
+                                             client.output_string.find("User:") != std::string::npos ||
+                                             client.output_string.find('\n') != std::string::npos)) {
                     // basic reverse prompt
-                    const size_t pos = client.response.find("User:");
+                    const size_t pos = client.output_string.find("User:");
                     if (pos != std::string::npos) {
-                        client.response = client.response.substr(0, pos);
+                        client.output_string = client.output_string.substr(0, pos);
                     }
 
                     // delete only the generated part of the sequence, i.e. keep the system prompt in the cache
-                    llama_kv_cache_seq_rm(ctx, client.id + 1, -1, -1);
-                    llama_kv_cache_seq_cp(ctx, 0, client.id + 1, -1, -1);
+                    llama_kv_cache_seq_rm(ctx, client.ith_client + 1, -1, -1);
+                    llama_kv_cache_seq_cp(ctx, 0, client.ith_client + 1, -1, -1);
 
                     const auto t_main_end = ggml_time_us();
 
                     printf(
                         "\033[31mClient %3d, seq %3d/%3d, prompt %4d t, response %4d t, time %5.2f s, speed %5.2f t/s, "
                         "cache miss %d \033[0m \n\nInput:    %s\n\033[35mResponse: %s\033[0m\n\n",
-                        client.id, client.seq_id, n_seq, client.n_prompt, client.n_decoded,
+                        client.ith_client, client.req_id, n_seq, client.n_prompt, client.n_decoded,
                         (t_main_end - client.t_start_prompt) / 1e6,
                         (double) (client.n_prompt + client.n_decoded) / (t_main_end - client.t_start_prompt) * 1e6,
-                        n_cache_miss, ::trim(client.input).c_str(), ::trim(client.response).c_str());
+                        n_cache_miss, ::trim(client.input_text).c_str(), ::trim(client.output_string).c_str());
 
                     n_total_prompt += client.n_prompt;
                     n_total_gen += client.n_decoded;
 
-                    client.seq_id = -1;
+                    client.req_id = -1;
                 }
 
-                client.i_batch = -1;
+                client.ith_batch = -1;
             }
         }
     }

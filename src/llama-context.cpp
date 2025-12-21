@@ -531,10 +531,6 @@ void llama_set_embeddings(struct llama_context * ctx, bool embeddings) {
     ctx->cparams.embeddings = embeddings;
 }
 
-int llama_all_processed_tokens(const struct llama_context * ctx) {
-    return ctx->all_processed_token;
-}
-
 void llama_prepare_multiserver_data(struct llama_context & lctx, int n_tokens) {
 #ifdef LLAMA_MPI_SUPPORT
     GGML_ASSERT(lctx.model.hparams.num_parallel <= MAX_PARALLEL_SERVERS);
@@ -549,7 +545,6 @@ void llama_prepare_multiserver_data(struct llama_context & lctx, int n_tokens) {
             lctx.self_token_offset += lctx.all_server_tokens[i];
         }
     }
-    lctx.all_processed_token += lctx.all_server_token_sum;
 #else
     GGML_ABORT("LLAMA_MPI_SUPPORT not enabled");
 #endif

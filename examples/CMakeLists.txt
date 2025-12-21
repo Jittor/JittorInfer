@@ -2,11 +2,6 @@
 
 find_package(Threads REQUIRED)
 
-# third-party
-
-# Add yaml-cpp
-add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/yaml-cpp ${CMAKE_BINARY_DIR}/yaml-cpp)
-
 # flags
 
 llama_add_compile_flags()
