@@ -634,6 +634,16 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 }
                 break;
             }
+            case GGML_OP_MLA_PREPROCESS: {
+                Operator mla_preprocess_op = handle_mla_preprocess_op(graph, node, ggml_tensor_to_ge_op_map, i);
+
+                ggml_tensor_to_ge_op_map[node] = mla_preprocess_op;
+
+                if (node == last_op_node) {
+                    graph_outputs.push_back(mla_preprocess_op);
+                }
+                break;
+            }
             default:
                 // 未处理的操作类型
                 std::cerr << "Unhandled operation type: " << node->op

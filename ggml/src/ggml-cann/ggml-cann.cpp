@@ -2136,6 +2136,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_SCATTER_UPDATE:
         case GGML_OP_GET_SLICE:
         case GGML_OP_RMS_NORM_FUSED:
+        case GGML_OP_MLA_PREPROCESS:
             return true;
         default:
             return false;

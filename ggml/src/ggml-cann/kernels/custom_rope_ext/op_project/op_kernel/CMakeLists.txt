@@ -57,12 +57,12 @@ endif()
 
 # install kernel file
 if (${ENABLE_SOURCE_PACKAGE})
-    file(GLOB KERNEL_FILES
-         ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
-         ${CMAKE_CURRENT_SOURCE_DIR}/*.h
-         ${CMAKE_CURRENT_SOURCE_DIR}/*.py
-    )
-    install(FILES ${KERNEL_FILES}
+    # file(GLOB KERNEL_FILES
+    #      ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
+    #      ${CMAKE_CURRENT_SOURCE_DIR}/*.h
+    #      ${CMAKE_CURRENT_SOURCE_DIR}/*.py
+    # )
+    install(DIRECTORY  ${CMAKE_CURRENT_SOURCE_DIR}/
             DESTINATION packages/vendors/${vendor_name}/op_impl/ai_core/tbe/${vendor_name}_impl/dynamic
     )
 endif()

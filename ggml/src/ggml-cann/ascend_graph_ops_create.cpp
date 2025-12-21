@@ -228,3 +228,19 @@ ge::Operator create_cast_op(ge::Graph& graph, const std::string& prefix,
     graph.AddOp(cast_op);
     return cast_op;
 }
+
+ge::Operator create_concat_op(ge::Graph& graph, const std::string& prefix, const std::string& suffix, 
+std::vector<ge::Operator>&& op_list, int axis)
+{
+    std::string op_name = prefix + "concat" + suffix;
+    ge::op::Concat concat_op(op_name.c_str());
+    concat_op.create_dynamic_input_x(op_list.size());
+    for(int i = 0; i < op_list.size(); i++)
+    {
+        concat_op.set_dynamic_input_x(i, op_list[i]);
+    }
+    ge::Operator aixs_op = create_const_int32_op(graph, prefix + "concat_", suffix, {1}, ge::DT_INT32, axis);
+    concat_op.set_input_concat_dim(aixs_op).set_attr_N(op_list.size());
+    graph.AddOp(concat_op);
+    return concat_op;
+}
