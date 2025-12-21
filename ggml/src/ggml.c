@@ -932,8 +932,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     // helper
     "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
     "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_GET_SLICE",
-    "GGML_OP_SCATTER_UPDATE", "GGML_OP_RMS_NORM_FUSED",
-    "GGML_OP_MLA_PREPROCESS"
+    "GGML_OP_SCATTER_UPDATE", "GGML_OP_RMS_NORM_FUSED", "GGML_OP_MLA_PREPROCESS"
 };
 
 static_assert(GGML_OP_COUNT == 95, "GGML_OP_COUNT != 95");
@@ -1042,7 +1041,8 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "flash_attn_jittor_v1(q, k, v)",
                                                       "get_slice(x, i)",
                                                       "scatter_update(x, y, i)",
-                                                      "rms_norm(x, w)", "mla_preprocess(x, ...)" };
+                                                      "rms_norm(x, w)",
+                                                      "mla_preprocess(x, ...)" };
 
 static_assert(GGML_OP_COUNT == 95, "GGML_OP_COUNT != 95");
 
@@ -4564,13 +4564,20 @@ struct ggml_tensor * ggml_cross_entropy_loss_back(struct ggml_context * ctx, str
     return result;
 }
 
-
-struct ggml_tensor * ggml_mla_preprocess(struct ggml_context* ctx, struct ggml_tensor* hiddenState, struct ggml_tensor* gamma1, struct ggml_tensor* beta1, struct ggml_tensor* quantScale1, struct ggml_tensor* quantOffset1, struct ggml_tensor* wdqkv, struct ggml_tensor* bias1, struct ggml_tensor* gamma2, struct ggml_tensor* beta2, struct ggml_tensor* quantScale2, struct ggml_tensor* quantOffset2, struct ggml_tensor* gamma3, struct ggml_tensor* sin1, struct ggml_tensor* cos1, struct ggml_tensor* keycache, struct ggml_tensor* slotMapping, struct ggml_tensor* wuq, struct ggml_tensor* bias2, struct ggml_tensor* wuk, struct ggml_tensor* descale1, struct ggml_tensor* descale2, struct ggml_tensor* ctkvScale, struct ggml_tensor* qnopeScale, int32_t N, int32_t headNum, int32_t cacheMode, int32_t quantMode, struct ggml_tensor* q1, struct ggml_tensor* q2)
-{
+struct ggml_tensor * ggml_mla_preprocess(
+    struct ggml_context * ctx, struct ggml_tensor * hiddenState, struct ggml_tensor * gamma1,
+    struct ggml_tensor * beta1, struct ggml_tensor * quantScale1, struct ggml_tensor * quantOffset1,
+    struct ggml_tensor * wdqkv, struct ggml_tensor * bias1, struct ggml_tensor * gamma2, struct ggml_tensor * beta2,
+    struct ggml_tensor * quantScale2, struct ggml_tensor * quantOffset2, struct ggml_tensor * gamma3,
+    struct ggml_tensor * sin1, struct ggml_tensor * cos1, struct ggml_tensor * keycache,
+    struct ggml_tensor * slotMapping, struct ggml_tensor * wuq, struct ggml_tensor * bias2, struct ggml_tensor * wuk,
+    struct ggml_tensor * descale1, struct ggml_tensor * descale2, struct ggml_tensor * ctkvScale,
+    struct ggml_tensor * qnopeScale, int32_t N, int32_t headNum, int32_t cacheMode, int32_t quantMode,
+    struct ggml_tensor * q1, struct ggml_tensor * q2) {
     assert(hiddenState->type == GGML_TYPE_F16);
     const int64_t        ne[4]  = { 512 + 64, headNum, N, 1 };
     struct ggml_tensor * result = ggml_new_tensor(ctx, hiddenState->type, 4, ne);
-    result->op = GGML_OP_MLA_PREPROCESS;
+    result->op                  = GGML_OP_MLA_PREPROCESS;
     ggml_set_op_params_i32(result, 0, N);
     ggml_set_op_params_i32(result, 1, headNum);
     ggml_set_op_params_i32(result, 2, cacheMode);

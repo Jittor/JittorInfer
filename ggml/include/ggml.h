@@ -1566,8 +1566,16 @@ GGML_API struct ggml_tensor * ggml_cross_entropy_loss_back(
     struct ggml_tensor *  b,  // labels
     struct ggml_tensor *  c);  // gradients of cross_entropy_loss result
 
-
-GGML_API struct ggml_tensor * ggml_mla_preprocess(struct ggml_context* ctx, struct ggml_tensor* hiddenState, struct ggml_tensor* gamma1, struct ggml_tensor* beta1, struct ggml_tensor* quantScale1, struct ggml_tensor* quantOffset1, struct ggml_tensor* wdqkv, struct ggml_tensor* bias1, struct ggml_tensor* gamma2, struct ggml_tensor* beta2, struct ggml_tensor* quantScale2, struct ggml_tensor* quantOffset2, struct ggml_tensor* gamma3, struct ggml_tensor* sin1, struct ggml_tensor* cos1, struct ggml_tensor* keycache, struct ggml_tensor* slotMapping, struct ggml_tensor* wuq, struct ggml_tensor* bias2, struct ggml_tensor* wuk, struct ggml_tensor* descale1, struct ggml_tensor* descale2, struct ggml_tensor* ctkvScale, struct ggml_tensor* qnopeScale, int32_t N, int32_t headNum, int32_t cacheMode, int32_t quantMode, struct ggml_tensor* q1, struct ggml_tensor* q2);
+GGML_API struct ggml_tensor * ggml_mla_preprocess(
+    struct ggml_context * ctx, struct ggml_tensor * hiddenState, struct ggml_tensor * gamma1,
+    struct ggml_tensor * beta1, struct ggml_tensor * quantScale1, struct ggml_tensor * quantOffset1,
+    struct ggml_tensor * wdqkv, struct ggml_tensor * bias1, struct ggml_tensor * gamma2, struct ggml_tensor * beta2,
+    struct ggml_tensor * quantScale2, struct ggml_tensor * quantOffset2, struct ggml_tensor * gamma3,
+    struct ggml_tensor * sin1, struct ggml_tensor * cos1, struct ggml_tensor * keycache,
+    struct ggml_tensor * slotMapping, struct ggml_tensor * wuq, struct ggml_tensor * bias2, struct ggml_tensor * wuk,
+    struct ggml_tensor * descale1, struct ggml_tensor * descale2, struct ggml_tensor * ctkvScale,
+    struct ggml_tensor * qnopeScale, int32_t N, int32_t headNum, int32_t cacheMode, int32_t quantMode,
+    struct ggml_tensor * q1, struct ggml_tensor * q2);
 
 //
 // automatic differentiation
