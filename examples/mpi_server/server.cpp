@@ -896,9 +896,11 @@ static llama_model_params common_model_params_to_llama_local(common_params & par
     mparams.n_gpu_layers           = params.n_gpu_layers;
     // 开启张量并行
     mparams.enable_tensor_parallel = true;
-    mparams.enable_expert_parallel = true;
-    mparams.enable_fused_moe       = true;
+    mparams.enable_expert_parallel = params.enable_expert_parallel;
+    mparams.enable_fused_moe       = params.enable_fused_moe;
     mparams.enable_mpi             = true;
+    mparams.enable_cann_flash_attention = params.enable_cann_flash_attention;
+    mparams.offload_input = params.offload_input;
 
 #ifdef LLAMA_MPI_SUPPORT
     if (mparams.enable_mpi) {
@@ -922,6 +924,7 @@ static llama_context_params common_context_params_to_llama_local(common_params &
     cparams.n_threads_batch = params.n_threads_batch;
     cparams.defrag_thold    = params.defrag_thold;
     cparams.no_perf         = params.no_perf;
+    cparams.enable_ge       = params.enable_ge;
     return cparams;
 }
 
@@ -1645,6 +1648,19 @@ struct server_context {
                 n_batch /= 2;
                 i -= n_batch;
                 continue;  // continue loop of n_batch
+            }
+
+            if (params_base.display_chat) {
+                for (auto & slot : slots) {
+                    std::string str       = common_detokenize(ctx, slot.cache_tokens);
+                    int         start_idx = str.find_last_of('\n') + 1;
+                    if (start_idx == std::string::npos) {
+                        start_idx = 0;
+                    }
+                    str = str.substr(start_idx);
+                    printf("slot[%d] : %s\n", slot.id, str.c_str());
+                }
+                std::cout << "\033[2J\033[1;1H";
             }
 
             for (auto & slot : slots) {

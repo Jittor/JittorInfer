@@ -168,6 +168,7 @@ struct common_params {
     bool                  enable_ge         = false;  // use GraphEngine
     bool                  display_chat      = false;  // display chat
     int                   presample_count   = -1;     // CANN NPU presampling count, -1 for not use
+    bool                  enable_expert_parallel = false; // enable expert parallel
 
     bool enable_mla                  = false;
     bool enable_fused_moe            = true;
@@ -257,6 +258,9 @@ struct common_params {
             }
             if (config["display_chat"]) {
                 display_chat = config["display_chat"].as<bool>();
+            }
+            if (config["enable_expert_parallel"]) {
+                enable_expert_parallel = config["enable_expert_parallel"].as<bool>();
             }
 
             // Load generation parameters

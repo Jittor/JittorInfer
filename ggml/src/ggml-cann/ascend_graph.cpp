@@ -634,6 +634,16 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 }
                 break;
             }
+            case GGML_OP_ALL_REDUCE_SUM: {
+                Operator get_rows_op = handle_allreduce_sum_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = get_rows_op;
+
+                if (node == last_op_node) {
+                    graph_outputs.push_back(get_rows_op);
+                }
+                break;
+            }
             default:
                 // 未处理的操作类型
                 std::cerr << "Unhandled operation type: " << node->op

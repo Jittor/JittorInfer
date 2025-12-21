@@ -1,0 +1,23 @@
+{
+    "server_count": "1",
+    "version": "1.0",
+    "status": "completed",
+    "server_list": [
+        {
+            "device": [
+                {
+                    "device_ip": "192.168.20.191",
+                    "device_id": "4",
+                    "rank_id": "0"
+                },
+                {
+                    "device_ip": "192.168.20.192",
+                    "device_id": "5",
+                    "rank_id": "1"
+                }
+            ],
+            "server_id": "192.168.20.191",
+            "host_nic_ip": "reserve"
+        }
+    ]
+}

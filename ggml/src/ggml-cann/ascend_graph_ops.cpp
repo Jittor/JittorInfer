@@ -2845,3 +2845,47 @@ ge::Operator handle_get_rows_op(
     op_cast_result.UpdateOutputDesc((uint32_t)0, result_desc);
     return op_cast_result;
 }
+
+/**
+ * @brief 处理AllReduce操作的函数
+ *
+ *
+ * @param graph 计算图引用
+ * @param node 表示AllReduce操作的张量节点
+ * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的hcom_AllReduce算子
+ */
+ge::Operator handle_allreduce_sum_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index){
+
+    std::string op_suffix = "_" + std::to_string(op_index);
+    struct ggml_tensor *src = node->src[0];
+
+    ge::Operator op_src;
+    if (gmml_tensor_to_ge_op_map.find(src) != gmml_tensor_to_ge_op_map.end()) {
+        op_src = gmml_tensor_to_ge_op_map[src];
+    } else {
+        assert(false && "get_rows: input tensor not found in map");
+    }
+
+    std::string op_name = "allreduce_sum_" + op_suffix;
+    std::string group_name = "hccl_world_group";
+    auto har_op = ge::op::HcomAllReduce(op_name.c_str());
+                      
+    har_op.set_input_x(op_src);
+    har_op.set_attr_reduction("sum");
+    har_op.set_attr_group(group_name.c_str());
+    har_op.set_attr_fusion(0);
+
+    // 设置输出描述
+    auto output_shape = build_output_shape(node);
+    ge::DataType data_type = get_data_type(node->type);
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, data_type);
+    har_op.update_output_desc_y(desc_out);
+
+    graph.AddOp(har_op);
+    return har_op;
+}

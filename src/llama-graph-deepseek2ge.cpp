@@ -46,6 +46,9 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     const uint32_t kv_lora_rank        = hparams.n_lora_kv;
 
     // params changed in parallel
+    const int64_t n_head_act      = (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ?
+                                        n_head / lctx.model.params.num_parallel :
+                                        n_head;
     const int64_t expert_group_id = hparams.enable_expert_parallel ? lctx.model.params.tp_id : 0;
     const int64_t n_expert_groups = hparams.enable_expert_parallel ? lctx.model.params.num_parallel : 1;
     const bool    run_mlp_only    = lctx.enable_dp_gather && lctx.self_token_size == 0;
@@ -58,7 +61,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     struct ggml_tensor * length_kv;
 
     GGML_ASSERT(!run_mlp_only);
-    GGML_ASSERT(!hparams.enable_tensor_parallel);
+    // GGML_ASSERT(!hparams.enable_tensor_parallel);
     GGML_ASSERT(!hparams.enable_data_parallel);
     GGML_ASSERT(!hparams.enable_expert_parallel);
 
@@ -104,7 +107,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 cb(q, "q", il);
             }
 
-            q = ggml_reshape_3d(ctx0, q, n_embd_head_k, n_head, n_tokens);
+            q = ggml_reshape_3d(ctx0, q, n_embd_head_k, n_head_act, n_tokens);
             GGML_ASSERT(n_embd_head_k == n_embd_head_qk_nope + n_embd_head_qk_rope);
 
             // q_nope = q[:, :, :n_embd_head_qk_nope]
@@ -138,7 +141,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             } else {
                 // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_tokens} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_tokens}
                 struct ggml_tensor * kv = ggml_mul_mat_fp16(ctx0, model.layers[il].wkv_b, kv_compressed);
-                kv = ggml_reshape_3d(ctx0, kv, n_embd_head_qk_nope + n_embd_head_v, n_head, n_tokens);
+                kv = ggml_reshape_3d(ctx0, kv, n_embd_head_qk_nope + n_embd_head_v, n_head_act, n_tokens);
                 cb(kv, "kv", il);
 
                 // k_nope = kv[:, :, :n_embd_head_qk_nope]
@@ -148,7 +151,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 // v_states = kv[:, :, n_embd_head_qk_nope:]
                 struct ggml_tensor * v_states =
                     ggml_get_slice(ctx0, kv, n_embd_head_qk_nope, n_embd_head_qk_nope + n_embd_head_v, 0);
-                v_states = ggml_reshape_2d(ctx0, v_states, n_embd_head_v * n_head, n_tokens);
+                v_states = ggml_reshape_2d(ctx0, v_states, n_embd_head_v * n_head_act, n_tokens);
                 ggml_set_name(v_states, "v_states");
 
                 // cast q_pe to fp32
