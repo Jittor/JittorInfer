@@ -377,7 +377,7 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 }
                 break;
             }
-            
+
             case GGML_OP_DIV: {
                 // 处理除法操作
                 Operator div_op =
@@ -429,8 +429,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
 
             case GGML_OP_SUM_ROWS: {
                 // 处理SUM_ROWS操作（沿最后一个维度求和）
-                Operator sum_rows_op =
-                    handle_sum_rows_op(graph, node, ggml_tensor_to_ge_op_map, i);
+                Operator sum_rows_op = handle_sum_rows_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
                 ggml_tensor_to_ge_op_map[node] = sum_rows_op;
 
                 if (node == last_op_node) {

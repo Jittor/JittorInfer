@@ -529,7 +529,7 @@ llama_model_loader::llama_model_loader(const std::string & fname, std::vector<st
     uint16_t n_split = 0;
     get_key(llm_kv(LLM_KV_SPLIT_COUNT), n_split, false);
 
-    // !!! hack !!! 
+    // !!! hack !!!
     // n_split = 1;
 
     // Load additional GGML contexts

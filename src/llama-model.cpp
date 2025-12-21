@@ -947,7 +947,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                 }
                 break;
             case LLM_ARCH_QWEN3:
-                {                    
+                {
                     tok_embd =
                         create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), 0);
 
@@ -981,7 +981,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                                  tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
                         layer.wo = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
                                                  tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
-                        
+
                         layer.ffn_norm =
                             create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
 
@@ -996,7 +996,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                 break;
             case LLM_ARCH_QWEN3MOE:
                 {
-                    const int64_t n_ff_exp        = hparams.n_ff_exp;                 
+                    const int64_t n_ff_exp = hparams.n_ff_exp;
                     tok_embd =
                         create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), 0);
 
@@ -1006,7 +1006,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     output_norm = create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), 0);
                     // output      = create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_OUTPUT, "weight"),
                     //                            TENSOR_NOT_REQUIRED);
-                    
+
                     // if output is NULL, init from the input tok embed
                     if (output == NULL) {
                         output = create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT,
@@ -1029,29 +1029,29 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.attn_k_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0);
 
-                        layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
-                        layer.wo = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
+                        layer.wv            = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                                                            tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+                        layer.wo            = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
+                                                            tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
                         // todo: some condition: load dense ffn
-                        layer.ffn_gate_exps = 
-                            create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0);
-                                
-                        layer.ffn_down_exps =
-                            create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0);
-                                
-                        layer.ffn_up_exps =
-                            create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0);
-                        
-                        layer.ffn_gate_inp = 
-                            create_tensor({ n_embd, n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), 0);
+                        layer.ffn_gate_exps = create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_REPEAT,
+                                                            tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0);
+
+                        layer.ffn_down_exps = create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_REPEAT,
+                                                            tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0);
+
+                        layer.ffn_up_exps = create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_REPEAT,
+                                                          tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0);
+
+                        layer.ffn_gate_inp = create_tensor({ n_embd, n_expert }, LLM_SPLIT_REPEAT,
+                                                           tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), 0);
 
                         layer.ffn_exp_probs_b =
-                            create_tensor({ n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_EXP_PROBS_B, "bias", i), TENSOR_NOT_REQUIRED);
+                            create_tensor({ n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_EXP_PROBS_B, "bias", i),
+                                          TENSOR_NOT_REQUIRED);
 
                         layer.ffn_norm =
                             create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
-                        
                     }
                 }
                 break;
@@ -1471,7 +1471,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 }
             }
             break;
-        
+
         default:
             throw std::runtime_error("unsupported model architecture");
     }

@@ -534,7 +534,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_QWEN3MOE,        {
+     LLM_ARCH_QWEN3MOE,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -559,7 +559,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_SHEXP, "blk.%d.ffn_up_shexp" },
         }, },
     {
-     LLM_ARCH_PHI2,                    {
+     LLM_ARCH_PHI2,         {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -573,7 +573,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_PHI3,         {
+     LLM_ARCH_PHI3,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -590,7 +590,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_PHIMOE,                    {
+     LLM_ARCH_PHIMOE,   {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -609,7 +609,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_EXPS, "blk.%d.ffn_up_exps" },
         }, },
     {
-     LLM_ARCH_PLAMO,   {
+     LLM_ARCH_PLAMO,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -625,7 +625,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_CODESHELL,                    {
+     LLM_ARCH_CODESHELL, {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -643,7 +643,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_ORION, {
+     LLM_ARCH_ORION,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -660,7 +660,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_INTERNLM2,                    {
+     LLM_ARCH_INTERNLM2,        {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -675,7 +675,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_MINICPM,        {
+     LLM_ARCH_MINICPM,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -698,7 +698,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_EXP, "blk.%d.ffn_up.%d" },
         }, },
     {
-     LLM_ARCH_MINICPM3,                    {
+     LLM_ARCH_MINICPM3,     {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -719,7 +719,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_DOWN, "blk.%d.ffn_down" },
         }, },
     {
-     LLM_ARCH_GEMMA,     {
+     LLM_ARCH_GEMMA,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_ATTN_NORM, "blk.%d.attn_norm" },
@@ -733,7 +733,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_GEMMA2,                    {
+     LLM_ARCH_GEMMA2,         {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_ATTN_NORM, "blk.%d.attn_norm" },
@@ -749,7 +749,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_POST_NORM, "blk.%d.post_ffw_norm" },
         }, },
     {
-     LLM_ARCH_STARCODER2,         {
+     LLM_ARCH_STARCODER2,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -765,7 +765,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_MAMBA,                    {
+     LLM_ARCH_MAMBA,        {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -779,7 +779,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_SSM_OUT, "blk.%d.ssm_out" },
         }, },
     {
-     LLM_ARCH_XVERSE,        {
+     LLM_ARCH_XVERSE,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -796,7 +796,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_COMMAND_R,                    {
+     LLM_ARCH_COMMAND_R,      {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_ATTN_NORM, "blk.%d.attn_norm" },
@@ -811,7 +811,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ATTN_K_NORM, "blk.%d.attn_k_norm" },
         }, },
     {
-     LLM_ARCH_COHERE2,      {
+     LLM_ARCH_COHERE2,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_ATTN_NORM, "blk.%d.attn_norm" },
@@ -824,7 +824,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_DBRX,                    {
+     LLM_ARCH_DBRX,     {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -838,7 +838,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_EXPS, "blk.%d.ffn_up_exps" },
         }, },
     {
-     LLM_ARCH_OLMO,     {
+     LLM_ARCH_OLMO,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT, "output" },
             { LLM_TENSOR_ATTN_Q, "blk.%d.attn_q" },
@@ -850,7 +850,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_OLMO2,                    {
+     LLM_ARCH_OLMO2,        {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -867,7 +867,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_OLMOE,        {
+     LLM_ARCH_OLMOE,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -885,7 +885,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_EXPS, "blk.%d.ffn_up_exps" },
         }, },
     {
-     LLM_ARCH_OPENELM,                    {
+     LLM_ARCH_OPENELM,     {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_ATTN_NORM, "blk.%d.attn_norm" },
@@ -899,7 +899,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_ARCTIC,         {
+     LLM_ARCH_ARCTIC,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -919,7 +919,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_EXPS, "blk.%d.ffn_up_exps" },
         }, },
     {
-     LLM_ARCH_DEEPSEEK,                    {
+     LLM_ARCH_DEEPSEEK,         {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -944,7 +944,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_SHEXP, "blk.%d.ffn_up_shexp" },
         }, },
     {
-     LLM_ARCH_DEEPSEEK2,         {
+     LLM_ARCH_DEEPSEEK2,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -972,7 +972,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_EXP_PROBS_B, "blk.%d.exp_probs_b" },
         }, },
     {
-     LLM_ARCH_CHATGLM,                    {
+     LLM_ARCH_CHATGLM,         {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_ROPE_FREQS, "rope_freqs" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
@@ -988,7 +988,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_DOWN, "blk.%d.ffn_down" },
         }, },
     {
-     LLM_ARCH_BITNET,       {
+     LLM_ARCH_BITNET,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_ATTN_Q, "blk.%d.attn_q" },
@@ -1004,7 +1004,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_SUB_NORM, "blk.%d.ffn_sub_norm" },
         }, },
     {
-     LLM_ARCH_T5,                    {
+     LLM_ARCH_T5,       {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT, "output" },
             { LLM_TENSOR_DEC_OUTPUT_NORM, "dec.output_norm" },
@@ -1037,7 +1037,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ENC_FFN_UP, "enc.blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_T5ENCODER,        {
+     LLM_ARCH_T5ENCODER,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT, "output" },
             { LLM_TENSOR_ENC_OUTPUT_NORM, "enc.output_norm" },
@@ -1053,7 +1053,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ENC_FFN_UP, "enc.blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_JAIS,                    {
+     LLM_ARCH_JAIS,        {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1066,7 +1066,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_DOWN, "blk.%d.ffn_down" },
         }, },
     {
-     LLM_ARCH_NEMOTRON,    {
+     LLM_ARCH_NEMOTRON,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1082,7 +1082,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_EXAONE,                    {
+     LLM_ARCH_EXAONE,    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1099,7 +1099,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_RWKV6,        {
+     LLM_ARCH_RWKV6,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_TOKEN_EMBD_NORM, "token_embd_norm" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
@@ -1132,7 +1132,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_CHANNEL_MIX_RECEPTANCE, "blk.%d.channel_mix_receptance" },
         }, },
     {
-     LLM_ARCH_RWKV6QWEN2,                    {
+     LLM_ARCH_RWKV6QWEN2,        {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1156,7 +1156,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_GRANITE,    {
+     LLM_ARCH_GRANITE,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1171,7 +1171,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP, "blk.%d.ffn_up" },
         }, },
     {
-     LLM_ARCH_GRANITE_MOE,                    {
+     LLM_ARCH_GRANITE_MOE,    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1187,7 +1187,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_FFN_UP_EXPS, "blk.%d.ffn_up_exps" },
         }, },
     {
-     LLM_ARCH_CHAMELEON,      {
+     LLM_ARCH_CHAMELEON,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_OUTPUT_NORM, "output_norm" },
             { LLM_TENSOR_OUTPUT, "output" },
@@ -1204,7 +1204,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ATTN_K_NORM, "blk.%d.attn_k_norm" },
         }, },
     {
-     LLM_ARCH_WAVTOKENIZER_DEC,                    {
+     LLM_ARCH_WAVTOKENIZER_DEC,      {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
             { LLM_TENSOR_TOKEN_EMBD_NORM, "token_embd_norm" },
             { LLM_TENSOR_CONV1D, "conv1d" },
@@ -1227,7 +1227,7 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_POS_NET_ATTN_OUT, "posnet.%d.attn_output" },
         }, },
     {
-     LLM_ARCH_UNKNOWN,     {
+     LLM_ARCH_UNKNOWN,                    {
             { LLM_TENSOR_TOKEN_EMBD, "token_embd" },
         }, },
 };

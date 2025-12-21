@@ -71,7 +71,7 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
             cb(Kcur, "Kcur", il);
 
             cur = llm_build_kv_ge(ctx0, lctx, kv_self, gf, model.layers[il].wo, model.layers[il].bo, Kcur, Vcur, Qcur,
-                               indices, length_q, length_kv, n_tokens, n_kv, kq_scale, cb, il, true);
+                                  indices, length_q, length_kv, n_tokens, n_kv, kq_scale, cb, il, true);
         }
 
         // if (il == n_layer - 1) {
@@ -87,31 +87,24 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
         // feed-forward network
         cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il, true);
         cb(cur, "ffn_norm", il);
-        
+
         bool use_moe = 1;
-        
-        if(use_moe){
+
+        if (use_moe) {
             // moe
-            cur = llm_build_moe_ffn(ctx0, lctx, cur,
-                model.layers[il].ffn_gate_inp, 
-                model.layers[il].ffn_up_exps, 
-                model.layers[il].ffn_gate_exps,
-                model.layers[il].ffn_down_exps, 
-                nullptr,
-                n_expert, n_expert_used, 
-                expert_group_id, n_expert_groups, 
-                LLM_FFN_SILU, hparams.enable_fused_moe, 
-                true, 
-                false, 0.0,
-                LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX, cb, il);
+            cur = llm_build_moe_ffn(ctx0, lctx, cur, model.layers[il].ffn_gate_inp, model.layers[il].ffn_up_exps,
+                                    model.layers[il].ffn_gate_exps, model.layers[il].ffn_down_exps, nullptr, n_expert,
+                                    n_expert_used, expert_group_id, n_expert_groups, LLM_FFN_SILU,
+                                    hparams.enable_fused_moe, true, false, 0.0, LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX,
+                                    cb, il);
             cb(cur, "ffn_moe_out", il);
-        }else{
+        } else {
             // mlp
-            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL, NULL,
-                            model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
+            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL,
+                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
             cb(cur, "ffn_out", il);
         }
-        
+
         ggml_build_forward_expand(gf, cur);
         // cast cur to fp16
         if (cur->type != GGML_TYPE_F16) {
@@ -148,9 +141,9 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
     return gf;
 }
 
-
 struct ggml_cgraph * llm_build_qwen3moe_ge(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
-                                     const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case, int print_layer) {
+                                           const llama_ubatch & ubatch, llm_build_cb & cb, bool worst_case,
+                                           int print_layer) {
     struct ggml_cgraph * result = NULL;
 
     llm_qwen3moe_context_ge llm(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);

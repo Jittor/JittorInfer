@@ -2409,11 +2409,11 @@ ge::Operator handle_moe_fused_op(
     finalize_op.set_input_expert_idx(expert_idx_squeeze_op,
                                      0);  // 使用第3个输出 expanded_expert_idx
 
-// 设置 MoeFinalizeRouting 的输出描述 (2D)
+    // 设置 MoeFinalizeRouting 的输出描述 (2D)
     // 参考 ggml_cann_moe_fused: f_dst_ne[2] = {hidden_dim, seq_len}
     std::vector<int64_t> finalize_shape = {hidden_dim, seq_len};
     ge::TensorDesc finalize_desc(ge::Shape(finalize_shape), ge::FORMAT_ND,
-                              get_data_type(node->type));
+                                 get_data_type(node->type));
     finalize_op.update_output_desc_y(finalize_desc);
     graph.AddOp(finalize_op);
 
@@ -2422,8 +2422,9 @@ ge::Operator handle_moe_fused_op(
     // 在 GE 中维度是反转的，所以是 [1, 1, n_tokens, n_embd]
     std::vector<int64_t> output_shape = build_output_shape(node);
     std::string reshape_name = "moe_output_reshape" + op_suffix;
-    ge::Operator output_reshape_op = create_reshape_op(
-        graph, finalize_op, output_shape, reshape_name, get_data_type(node->type));
+    ge::Operator output_reshape_op =
+        create_reshape_op(graph, finalize_op, output_shape, reshape_name,
+                          get_data_type(node->type));
 
     return output_reshape_op;
 }
@@ -3021,7 +3022,6 @@ ge::Operator handle_get_rows_op(
     return op_cast_result;
 }
 
-
 /**
  * @brief 处理DIV（除法）操作的函数
  *
@@ -3130,11 +3130,13 @@ ge::Operator handle_sum_rows_op(
     // 计算输入张量的实际维度数，然后使用最后一个维度的正索引
     std::vector<int64_t> input_shape = build_output_shape(src);
     int32_t last_dim_idx = static_cast<int32_t>(input_shape.size() - 1);
-    
+
     std::string reduce_axes_const_name = "sum_rows_axes_const_" + op_suffix;
     ge::op::Const reduce_axes_const_op(reduce_axes_const_name);
-    std::vector<int32_t> reduce_axes = {last_dim_idx};  // 动态计算最后一个维度的索引
-    ge::TensorDesc reduce_axes_desc(ge::Shape({1}), ge::FORMAT_ND, ge::DT_INT32);
+    std::vector<int32_t> reduce_axes = {
+        last_dim_idx};  // 动态计算最后一个维度的索引
+    ge::TensorDesc reduce_axes_desc(ge::Shape({1}), ge::FORMAT_ND,
+                                    ge::DT_INT32);
     ge::Tensor reduce_axes_tensor(
         reduce_axes_desc, reinterpret_cast<uint8_t *>(reduce_axes.data()),
         reduce_axes.size() * sizeof(int32_t));
