@@ -99,13 +99,13 @@ int main() {
     int64_t batch_size = 1;
     int64_t num_heads = 16;  // Reduced from 128 to a smaller value
 
-    int64_t head_dims_kq = 256;  // Reduced from 192 to a smaller value  // 576 
-    int64_t head_dims_v = 256;  // Reduced from 192 to a smaller value   // 512
+    int64_t head_dims_kq = 192;  // Reduced from 192 to a smaller value  // 576 
+    int64_t head_dims_v = 192;  // Reduced from 192 to a smaller value   // 512
     int64_t key_num_heads = 16;                                   // 1
 
-    int64_t sequence_lenth_q = 64;
-    int64_t sequence_lenth_kv = 128;
-    float scaleValue = 1.0f / std::sqrt(static_cast<float>(head_dims_kq));
+    int64_t sequence_lenth_q = 4;
+    int64_t sequence_lenth_kv = 2048;
+    float scaleValue = 1.0f / std::sqrt(static_cast<float>(76));
 
     std::cout << "Dimensions: batch_size=" << batch_size 
               << ", num_heads=" << num_heads 

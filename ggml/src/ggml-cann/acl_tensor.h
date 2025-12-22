@@ -65,11 +65,10 @@ aclDataType ggml_cann_type_mapping(ggml_type type);
  * @param   offset      Offset in bytes for the ACL tensor data. Defaults to 0.
  * @return  Pointer to the created ACL tensor.
  */
-aclTensor* ggml_cann_create_tensor(const ggml_tensor* tensor,
-                                   const int64_t* ne = nullptr,
-                                   const size_t* nb = nullptr, int64_t dims = 0,
-                                   aclFormat format = ACL_FORMAT_ND,
-                                   size_t offset = 0);
+aclTensor* ggml_cann_create_tensor(const ggml_tensor* tensor, const int64_t* ne = nullptr,
+                             const size_t* nb = nullptr, int64_t dims = 0,
+                             aclFormat format = ACL_FORMAT_ND,
+                             size_t offset = 0);
 aclTensor* ggml_cann_create_tensor_with_custom_shape(
     const ggml_tensor* tensor, int64_t* ne = nullptr, size_t* nb = nullptr,
     int64_t dims = 0, aclFormat format = ACL_FORMAT_ND, size_t offset = 0);

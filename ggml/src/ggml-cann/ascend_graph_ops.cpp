@@ -8,6 +8,7 @@
 #include <cmath>  // 添加cmath以获取数学函数:log2, floor, powf
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 #include "ascend_graph_ops.h"
 #include "ascend_graph_ops_create.h"
@@ -2717,6 +2718,172 @@ ge::Operator handle_flash_attn_prompt_op(
     return identity_op;
 }
 
+
+//  * @brief 处理 Flash Attention Jittor 操作的函数
+//  *
+//  * 在计算图中创建一个 Flash Attention Jittor 操作，基于 GE 算子实现
+//  *
+//  * @param graph 计算图引用
+//  * @param node 表示 Flash Attention Jittor 操作的张量节点
+//  * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+//  * @param op_index 用于生成唯一算子名称的索引
+//  * @return 创建的 Flash Attention Jittor 算子
+//  */
+ge::Operator handle_flash_attn_jittor_v1_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    // return op_sequence_length_kv;
+    // 获取输入张量
+
+    struct ggml_tensor *query = node->src[0];
+    struct ggml_tensor *key = node->src[1];
+    struct ggml_tensor *value = node->src[2];
+    struct ggml_tensor *attn_mask = node->src[3];
+    struct ggml_tensor *length_q_tensor = node->src[4];
+    struct ggml_tensor *length_kv_tensor = node->src[5];
+
+    // 数据类型和形状验证
+    GGML_ASSERT(query->type == GGML_TYPE_F16);
+    GGML_ASSERT(key->type == GGML_TYPE_F16);
+    GGML_ASSERT(value->type == GGML_TYPE_F16);
+    GGML_ASSERT(attn_mask->type == GGML_TYPE_I8);
+    // GGML_ASSERT(sequence_length_kv_tensor->type == GGML_TYPE_I32);  //
+    // 验证sequence_length_kv张量类型
+    GGML_ASSERT(node->type == GGML_TYPE_F16);
+
+    // 检查输入是否已经在映射中
+    ge::Operator op_query;
+    ge::Operator op_key;
+    ge::Operator op_value;
+    ge::Operator op_attn_mask;
+    ge::Operator op_length_q_tensor;
+    ge::Operator op_length_kv_tensor;
+
+    if (gmml_tensor_to_ge_op_map.find(query) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_query = gmml_tensor_to_ge_op_map[query];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(key) != gmml_tensor_to_ge_op_map.end()) {
+        op_key = gmml_tensor_to_ge_op_map[key];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(value) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_value = gmml_tensor_to_ge_op_map[value];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(attn_mask) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_attn_mask = gmml_tensor_to_ge_op_map[attn_mask];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(length_q_tensor) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_length_q_tensor = gmml_tensor_to_ge_op_map[length_q_tensor];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(length_kv_tensor) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_length_kv_tensor = gmml_tensor_to_ge_op_map[length_kv_tensor];
+    } else {
+        assert(false);
+    }
+
+    struct flash_attn_jittor_params {
+        int batch_size;
+        int num_heads;
+        int head_dim_kq;
+        int head_dim_v;
+        int key_num_heads;
+        int sequence_lenth_q;
+        int64_t sequence_lenth_kv;
+        float scaleValue;
+    };
+    flash_attn_jittor_params *params =
+        reinterpret_cast<flash_attn_jittor_params *>(node->op_params);
+
+    // 从参数中提取配置
+    int32_t batch_size = params->batch_size;
+    int32_t num_heads = params->num_heads;
+    int32_t head_dim_kq = params->head_dim_kq;
+    int32_t head_dim_v = params->head_dim_v;
+    int32_t key_num_heads = params->key_num_heads;
+    // 这个参数仅用于判断开启精度模式
+    int32_t sequence_length_q = params->sequence_lenth_q;
+    int64_t sequence_length_kv = params->sequence_lenth_kv;
+    float scale_value = params->scaleValue;
+
+    // 设置属性值，匹配 FlashAttentionJittor 算子的规范
+    int64_t num_key_value_heads = key_num_heads;
+    std::string input_layout = "BSND";  // 默认输入布局
+    int64_t pre_tokens = 2147483647;  // 匹配默认值 214748647 -> 2147483647
+    int64_t next_tokens = 0;
+    int64_t sparse_mode = 1;  // 拦截，非量化情况不考虑
+    int64_t inner_precise =
+        sequence_length_q > 1 ? 2 : 0;  // 高精度模式，开启行无效修正
+
+    // 创建 FlashAttentionJittor 算子
+    std::string flash_attn_name = "flash_attn_jittor_" + std::to_string(op_index);
+    ge::op::JittorInferFlashAttention flash_attn_jittor_op(flash_attn_name);
+
+    // 设置输入 - 必选输入
+    flash_attn_jittor_op.set_input_query(op_query);
+
+    // 设置key输入
+    flash_attn_jittor_op.set_input_key(op_key);
+
+    // 设置value输入
+    flash_attn_jittor_op.set_input_value(op_value);
+
+    // 设置可选输入
+    flash_attn_jittor_op.set_input_attenMask(op_attn_mask);
+    flash_attn_jittor_op.set_input_actualSeqLengths(op_length_q_tensor);
+    flash_attn_jittor_op.set_input_actualSeqLengthsKV(op_length_kv_tensor);
+
+    // 设置属性 - 按照 PromptFlashAttention 的接口规范
+    flash_attn_jittor_op.set_attr_numHeads(num_heads);        // 必选属性
+    flash_attn_jittor_op.set_attr_scaleValue(scale_value);          // 默认 1.0
+    flash_attn_jittor_op.set_attr_preTokens(pre_tokens);      // 默认 214748647
+    flash_attn_jittor_op.set_attr_nextTokens(next_tokens);    // 默认 0
+    flash_attn_jittor_op.set_attr_inputLayout(input_layout);  // 默认 "BSH"
+    flash_attn_jittor_op.set_attr_numKeyValueHeads(num_key_value_heads);  // 默认 0
+    flash_attn_jittor_op.set_attr_sparseMode(sparse_mode);      // 默认 0
+    flash_attn_jittor_op.set_attr_innerPrecise(inner_precise);  // 默认 1
+
+    // 计算输出形状
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+
+    // 设置输出描述
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    flash_attn_jittor_op.update_output_desc_attentionOut(desc_out);
+
+    // 添加算子到图中
+    graph.AddOp(flash_attn_jittor_op);
+
+    // 多一个Identity算子，仅保留flash attention的out部分
+    std::string identity_name =
+        "flashattn_jittor_identity_" + std::to_string(op_index);
+    ge::op::Identity identity_op(identity_name);
+    identity_op.set_input_x_by_name(flash_attn_jittor_op, "attentionOut");
+    identity_op.update_output_desc_y(desc_out);
+    graph.AddOp(identity_op);
+
+    return identity_op;
+}
+
 /**
  * @brief 处理Pad操作的函数
  *
@@ -2844,4 +3011,450 @@ ge::Operator handle_get_rows_op(
         get_data_type(node->type));
     op_cast_result.UpdateOutputDesc((uint32_t)0, result_desc);
     return op_cast_result;
+}
+
+
+
+#define GET_TENSOR_AND_OP(name, i, op_name) \
+    struct ggml_tensor *name = node->src[i]; \
+    ge::Operator op_##name; \
+    do {\
+        if (gmml_tensor_to_ge_op_map.find(name) != gmml_tensor_to_ge_op_map.end()) { \
+            op_##name = gmml_tensor_to_ge_op_map[name]; \
+        } else { \
+            assert(false && #op_name ": input tensor not found in map"); \
+        } \
+    } while(0)
+
+
+#define SQUEEZE_OP(op, prefix, ...) \
+    ge::Operator squeezed_##op = create_squeeze_op(graph, #prefix#op "_", op_suffix, op, {__VA_ARGS__})
+
+#define SQUEEZE_MLAPO_OP(op, ...) SQUEEZE_OP(op, mla_preprocess_, __VA_ARGS__)
+
+
+ge::Operator handle_mla_preprocess_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index)
+{
+    std::string op_suffix = "_" + std::to_string(op_index);
+    GET_TENSOR_AND_OP(hiddenState,   0,  mla_preprocess);
+    GET_TENSOR_AND_OP(gamma1,        1,  mla_preprocess);
+    GET_TENSOR_AND_OP(beta1,         2,  mla_preprocess);
+    GET_TENSOR_AND_OP(quantScale1,   3,  mla_preprocess);
+    GET_TENSOR_AND_OP(quantOffset1,  4,  mla_preprocess);
+    GET_TENSOR_AND_OP(wdqkv,         5,  mla_preprocess);
+    GET_TENSOR_AND_OP(bias1,         6,  mla_preprocess);
+    GET_TENSOR_AND_OP(gamma2,        7,  mla_preprocess);
+    GET_TENSOR_AND_OP(beta2,         8,  mla_preprocess);
+    GET_TENSOR_AND_OP(quantScale2,   9,  mla_preprocess);
+    GET_TENSOR_AND_OP(quantOffset2,  10, mla_preprocess);
+    GET_TENSOR_AND_OP(gamma3,        11, mla_preprocess);
+    GET_TENSOR_AND_OP(sin1,          12, mla_preprocess);
+    GET_TENSOR_AND_OP(cos1,          13, mla_preprocess);
+    GET_TENSOR_AND_OP(keycache,      14, mla_preprocess);
+    GET_TENSOR_AND_OP(slotMapping,   15, mla_preprocess);
+    GET_TENSOR_AND_OP(wuq,           16, mla_preprocess);
+    GET_TENSOR_AND_OP(bias2,         17, mla_preprocess);
+    GET_TENSOR_AND_OP(wuk,           18, mla_preprocess);
+    GET_TENSOR_AND_OP(descale1,      19, mla_preprocess);
+    GET_TENSOR_AND_OP(descale2,      20, mla_preprocess);
+    GET_TENSOR_AND_OP(ctkvScale,     21, mla_preprocess);
+    GET_TENSOR_AND_OP(qnopeScale,    22, mla_preprocess);
+    int64_t N = static_cast<int64_t>(node->op_params[0]);
+    int64_t headNum = static_cast<int64_t>(node->op_params[1]);
+    int64_t cacheMode = static_cast<int64_t>(node->op_params[2]);
+    int64_t quantMode = static_cast<int64_t>(node->op_params[3]);
+    ge::op::MLAPreprocess mla_preprocess_op(("mla_preprocess" + op_suffix).c_str());
+    assert(N == 32);
+    assert(headNum == 128);
+    assert(cacheMode == 1);
+    assert(quantMode == 0);
+
+    SQUEEZE_MLAPO_OP(op_hiddenState, 0, 1);
+    SQUEEZE_MLAPO_OP(op_gamma1, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_beta1, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_quantScale1, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_quantOffset1, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_wdqkv, 0, 1);
+    SQUEEZE_MLAPO_OP(op_bias1, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_gamma2, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_beta2, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_quantScale2, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_quantOffset2, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_gamma3, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_sin1, 0, 1);
+    SQUEEZE_MLAPO_OP(op_cos1, 0, 1);
+    SQUEEZE_MLAPO_OP(op_slotMapping, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_wuq, 0, 1);
+    SQUEEZE_MLAPO_OP(op_bias2, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_wuk, 0);
+    SQUEEZE_MLAPO_OP(op_descale1, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_descale2, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_ctkvScale, 0, 1, 2);
+    SQUEEZE_MLAPO_OP(op_qnopeScale, 0, 1, 2);
+
+    // TODO: 适配完FRACTAL_NZ格式之后需注释下面的TransData，修改下面的mla_preprocess_op输入绑定
+    // ge::op::TransData wuq_trans(("wuq_trans" + op_suffix).c_str());
+    // wuq_trans.set_input_src(squeezed_op_wuq)
+    // .set_attr_src_format("ND")
+    // .set_attr_dst_format("FRACTAL_NZ");
+    // ge::op::TransData wdqkv_trans(("wdpkv_trans" + op_suffix).c_str());
+    // wdqkv_trans.set_input_src(squeezed_op_wuq)
+    // .set_attr_src_format("ND")
+    // .set_attr_dst_format("FRACTAL_NZ");
+    // ge::TensorDesc wdqkv_desc = squeezed_op_wdqkv.GetInputDescByName("x");
+    // wdqkv_desc.SetOriginFormat(ge::FORMAT_FRACTAL_NZ);
+    // squeezed_op_wdqkv.UpdateInputDesc("x", wdqkv_desc);
+
+    // ge::TensorDesc wuq_desc = squeezed_op_wuq.GetInputDescByName("x");
+    // wuq_desc.SetOriginFormat(ge::FORMAT_FRACTAL_NZ);
+    // squeezed_op_wuq.UpdateInputDesc("x", wuq_desc);
+
+    print_op_shape(op_hiddenState);
+    print_op_shape(op_gamma1);
+    print_op_shape(op_beta1);
+    print_op_shape(op_quantScale1);
+    print_op_shape(op_quantOffset1);
+    print_op_shape(op_wdqkv);
+    print_op_shape(op_bias1);
+    print_op_shape(op_gamma2);
+    print_op_shape(op_beta2);
+    print_op_shape(op_quantScale2);
+    print_op_shape(op_quantOffset2);
+    print_op_shape(op_gamma3);
+    print_op_shape(op_sin1);
+    print_op_shape(op_cos1);
+    print_op_shape(op_keycache);
+    print_op_shape(op_slotMapping);
+    print_op_shape(op_wuq);
+    print_op_shape(op_bias2);
+    print_op_shape(op_wuk);
+    print_op_shape(op_descale1);
+    print_op_shape(op_descale2);
+    print_op_shape(op_ctkvScale);
+    print_op_shape(op_qnopeScale);
+    // ge::TensorDesc wdqkv_desc(ge::Shape({2112, 7168}), ge::FORMAT_FRACTAL_NZ, ge::DT_INT8);
+    // ge::TensorDesc wuq_desc(ge::Shape({headNum * 192, 48 * 32}), ge::FORMAT_FRACTAL_NZ, ge::DT_INT8);
+
+    // squeezed_op_wdqkv.UpdateOutputDesc((uint32_t)0, wdqkv_desc);
+    // squeezed_op_wuq.UpdateOutputDesc((uint32_t)0, wuq_desc);
+    mla_preprocess_op
+    .set_input_hiddenState(squeezed_op_hiddenState)
+    .set_input_gamma1(squeezed_op_gamma1)
+    .set_input_beta1(squeezed_op_beta1)
+    .set_input_quantScale1(squeezed_op_quantScale1)
+    .set_input_quantOffset1(squeezed_op_quantOffset1)
+    // .set_input_wdqkv(wdqkv_trans)
+    .set_input_wdqkv(squeezed_op_wdqkv)
+    .set_input_bias1(squeezed_op_bias1)
+    .set_input_gamma2(squeezed_op_gamma2)
+    .set_input_beta2(squeezed_op_beta2)
+    .set_input_quantScale2(squeezed_op_quantScale2)
+    .set_input_quantOffset2(squeezed_op_quantOffset2)
+    .set_input_gamma3(squeezed_op_gamma3)
+    .set_input_sin1(squeezed_op_sin1)
+    .set_input_cos1(squeezed_op_cos1)
+    .set_input_keycache(op_keycache)
+    .set_input_slotMapping(squeezed_op_slotMapping)
+    // .set_input_wuq(wuq_trans)
+    .set_input_wuq(squeezed_op_wuq)
+    .set_input_bias2(squeezed_op_bias2)
+    .set_input_wuk(squeezed_op_wuk)
+    .set_input_descale1(squeezed_op_descale1)
+    .set_input_descale2(squeezed_op_descale2)
+    .set_input_ctkvScale(squeezed_op_ctkvScale)
+    .set_input_qnopeScale(squeezed_op_qnopeScale)
+    .set_attr_N(N)
+    .set_attr_headNum(headNum)
+    .set_attr_cacheMode(cacheMode)
+    .set_attr_quantMode(quantMode);
+    
+    graph.AddOp(mla_preprocess_op);
+
+    ge::Operator q1_identity_op = create_identity_op_by_name(graph, "mla_preprocess_q1_", op_suffix, mla_preprocess_op, "q1");
+    ge::Operator q2_identity_op = create_identity_op_by_name(graph, "mla_preprocess_q2_", op_suffix, mla_preprocess_op, "q2");
+
+    ge::Operator concat_op = create_concat_op(graph, "mla_preprocess_", op_suffix, {q1_identity_op, q2_identity_op}, 2);
+
+    ge::DataType data_type = get_data_type(node->type);
+    ge::TensorDesc desc_out(ge::Shape({N, headNum, 512 + 64}), ge::FORMAT_ND, data_type);
+    concat_op.UpdateOutputDesc((uint32_t)0, desc_out);
+    return concat_op;
+}
+
+ge::Operator handle_mla_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index)
+{
+    struct ggml_tensor *query = node->src[0];
+    struct ggml_tensor *query_rope = node->src[1];
+    struct ggml_tensor *context_kv = node->src[2];
+    struct ggml_tensor *key_rope = node->src[3];
+    struct ggml_tensor *block_tables = node->src[4];
+    struct ggml_tensor *mask = node->src[5];
+    struct ggml_tensor *context_length = node->src[6];
+
+    GGML_ASSERT(query->type == GGML_TYPE_F16);
+    GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
+    GGML_ASSERT(context_kv->type == GGML_TYPE_F16);
+    GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
+    GGML_ASSERT(block_tables->type == GGML_TYPE_I32);
+    GGML_ASSERT(mask->type == GGML_TYPE_F16);
+    GGML_ASSERT(context_length->type == GGML_TYPE_I64);
+
+    ge::Operator op_query;
+    ge::Operator op_query_rope;
+    ge::Operator op_context_kv;
+    ge::Operator op_key_rope;
+    ge::Operator op_block_tables;
+    ge::Operator op_mask;
+    ge::Operator op_context_length;
+
+    if (gmml_tensor_to_ge_op_map.find(query) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_query = gmml_tensor_to_ge_op_map[query];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(query_rope) != gmml_tensor_to_ge_op_map.end()) {
+        op_query_rope = gmml_tensor_to_ge_op_map[query_rope];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(context_kv) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_context_kv = gmml_tensor_to_ge_op_map[context_kv];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(key_rope) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_key_rope = gmml_tensor_to_ge_op_map[key_rope];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(block_tables) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_block_tables = gmml_tensor_to_ge_op_map[block_tables];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(mask) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_mask = gmml_tensor_to_ge_op_map[mask];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(context_length) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_context_length = gmml_tensor_to_ge_op_map[context_length];
+    } else {
+        assert(false);
+    }
+
+    struct mla_params {
+        int batchSize;
+        int tokenNum;
+        int headNum;
+        int kvHeadNum;
+        int kSeqLen;
+        float qkScale;
+        int blockSize;
+    };
+    mla_params *params =
+        reinterpret_cast<mla_params *>(node->op_params);
+
+    int batchSize = params->batchSize;
+    int tokenNum = params->tokenNum;
+    int headNum = params->headNum;
+    int kvHeadNum = params->kvHeadNum;
+    int kSeqLen = params->kSeqLen;
+    float qkScale = params->qkScale;
+    int blockSize = params->blockSize;
+
+    std::string mla_name = "mla_" + std::to_string(op_index);
+    ge::op::MLA mla_op(mla_name);
+
+    mla_op.set_input_qNope(op_query);
+    mla_op.set_input_qRope(op_query_rope);
+    mla_op.set_input_ctKV(op_context_kv);
+    mla_op.set_input_kRope(op_key_rope);
+    mla_op.set_input_blockTables(op_block_tables);
+    mla_op.set_input_mask(op_mask);
+    mla_op.set_input_contextLens(op_context_length);
+
+    mla_op.set_attr_headNum(headNum);
+    mla_op.set_attr_qkScale(qkScale);
+    mla_op.set_attr_kvHeadNum(kvHeadNum);
+    mla_op.set_attr_maskType(0);
+    mla_op.set_attr_calcType(0);
+    mla_op.set_attr_cacheMode(0);
+
+    // 计算输出形状
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+
+    // 设置输出描述
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    mla_op.update_output_desc_attenOut(desc_out);
+
+    // 添加算子到图中
+    graph.AddOp(mla_op);
+
+    std::string identity_name =
+        "mla_identity_" + std::to_string(op_index);
+    ge::op::Identity identity_op(identity_name);
+    identity_op.set_input_x_by_name(mla_op, "attenOut");
+    identity_op.update_output_desc_y(desc_out);
+    graph.AddOp(identity_op);
+
+    return identity_op;
+}
+
+ge::Operator handle_mla_prefill_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index)
+{
+    struct ggml_tensor *query = node->src[0];
+    struct ggml_tensor *query_rope = node->src[1];
+    struct ggml_tensor *key = node->src[2];
+    struct ggml_tensor *key_rope = node->src[3];
+    struct ggml_tensor *value = node->src[4];
+    struct ggml_tensor *mask = node->src[5];
+    struct ggml_tensor *qSeq_length = node->src[6];
+    struct ggml_tensor *kvSeq_length = node->src[7];
+
+    GGML_ASSERT(query->type == GGML_TYPE_F16);
+    GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
+    GGML_ASSERT(key->type == GGML_TYPE_F16);
+    GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
+    GGML_ASSERT(value->type == GGML_TYPE_F16);
+    GGML_ASSERT(mask->type == GGML_TYPE_F16);
+    GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64);
+    GGML_ASSERT(kvSeq_length->type == GGML_TYPE_I64);
+
+    ge::Operator op_query;
+    ge::Operator op_query_rope;
+    ge::Operator op_key;
+    ge::Operator op_key_rope;
+    ge::Operator op_value;
+    ge::Operator op_mask;
+    ge::Operator op_qSeq_length;
+    ge::Operator op_kvSeq_length;
+
+    if (gmml_tensor_to_ge_op_map.find(query) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_query = gmml_tensor_to_ge_op_map[query];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(query_rope) != gmml_tensor_to_ge_op_map.end()) {
+        op_query_rope = gmml_tensor_to_ge_op_map[query_rope];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(key) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_key = gmml_tensor_to_ge_op_map[key];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(key_rope) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_key_rope = gmml_tensor_to_ge_op_map[key_rope];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(value) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_value = gmml_tensor_to_ge_op_map[value];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(mask) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_mask = gmml_tensor_to_ge_op_map[mask];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(qSeq_length) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_qSeq_length = gmml_tensor_to_ge_op_map[qSeq_length];
+    } else {
+        assert(false);
+    }
+
+    if (gmml_tensor_to_ge_op_map.find(kvSeq_length) !=
+        gmml_tensor_to_ge_op_map.end()) {
+        op_kvSeq_length = gmml_tensor_to_ge_op_map[kvSeq_length];
+    } else {
+        assert(false);
+    }
+
+    struct mla_prefill_params {
+        int headNum;
+        int kvHeadNum;
+        float qkScale;
+    };
+    mla_prefill_params *params =
+        reinterpret_cast<mla_prefill_params *>(node->op_params);
+
+    int headNum = params->headNum;
+    int kvHeadNum = params->kvHeadNum;
+    float qkScale = params->qkScale;
+
+    std::string mla_prefill_name = "mla_prefill_" + std::to_string(op_index);
+    ge::op::MLAPrefill mla_prefill_op(mla_prefill_name);
+
+    mla_prefill_op.set_input_query(op_query);
+    mla_prefill_op.set_input_qRope(op_query_rope);
+    mla_prefill_op.set_input_key(op_key);
+    mla_prefill_op.set_input_kRope(op_key_rope);
+    mla_prefill_op.set_input_value(op_value);
+    mla_prefill_op.set_input_qSeqLen(op_qSeq_length);
+    mla_prefill_op.set_input_kvSeqLen(op_kvSeq_length);
+    mla_prefill_op.set_input_mask(op_mask);
+
+    mla_prefill_op.set_attr_headNum(headNum);
+    mla_prefill_op.set_attr_qkScale(qkScale);
+    mla_prefill_op.set_attr_kvHeadNum(kvHeadNum);
+    mla_prefill_op.set_attr_maskType(4);
+    mla_prefill_op.set_attr_calcType(2);
+    mla_prefill_op.set_attr_cacheMode(0);
+
+    // 计算输出形状
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+
+    // 设置输出描述
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    mla_prefill_op.update_output_desc_attenOut(desc_out);
+
+    // 添加算子到图中
+    graph.AddOp(mla_prefill_op);
+
+    std::string identity_name =
+        "mla_prefill_identity_" + std::to_string(op_index);
+    ge::op::Identity identity_op(identity_name);
+    identity_op.set_input_x_by_name(mla_prefill_op, "attenOut");
+    identity_op.update_output_desc_y(desc_out);
+    graph.AddOp(identity_op);
+
+    return identity_op;
 }
