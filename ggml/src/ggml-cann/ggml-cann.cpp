@@ -2139,6 +2139,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_FLASH_ATTN_JITTOR_V1:
         case GGML_OP_MLA_JITTOR:
         case GGML_OP_MLA_PREFILL_JITTOR:
+        case GGML_OP_MLA_PREPROCESS:
 #endif
         case GGML_OP_TO_ZERO:
         case GGML_OP_SCATTER_UPDATE:

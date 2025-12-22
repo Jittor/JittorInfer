@@ -10,13 +10,13 @@
  * See the Mulan PSL v2 for more details.
  */
 
- #include "../utils/kernel/common.h"
- #include "../utils/kernel/common_func.h"
- #include "../utils/kernel/simd.h"
- #include "../utils/kernel/iterator.h"
- #include "../utils/kernel/mma.h"
- #include "../utils/kernel/utils.h"
- #include "../utils/kernel/fa_common.cpp"
+ #include "mlapo.utils/common.h"
+ #include "mlapo.utils/common_func.h"
+ #include "mlapo.utils/simd.h"
+ #include "mlapo.utils/iterator.h"
+ #include "mlapo.utils/mma.h"
+ #include "mlapo.utils/utils.h"
+ #include "mlapo.utils/fa_common.cpp"
  #include "kernel_operator.h"
  #include "lib/matmul_intf.h"
  
