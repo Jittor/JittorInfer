@@ -1549,6 +1549,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_MLA_PREFILL_JITTOR:
             ggml_cann_mla_prefill_jittor(ctx, dst);
             break;
+        case GGML_OP_MLA_PREPROCESS:
+            ggml_cann_mla_preprocess(ctx, dst);
+            break;
 #endif
         case GGML_OP_GET_SLICE:
             ggml_cann_get_slice(ctx, dst);

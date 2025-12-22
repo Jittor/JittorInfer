@@ -82,6 +82,16 @@ aclTensor* ggml_cann_create_tensor_transpose(void* data_ptr, aclDataType dtype,
                                              size_t* nb, int64_t dims,
                                              aclFormat format,
                                              size_t offset = 0);
+
+template <typename TYPE>
+aclTensor* ggml_cann_create_tensor(void* data_ptr, aclDataType dtype,
+                                   TYPE type_size, std::vector<int64_t>&& ne, std::vector<TYPE>&& nb,
+                                   int64_t dims,
+                                   aclFormat format = ACL_FORMAT_ND,
+                                   size_t offset = 0)
+{
+    ggml_cann_create_tensor(data_ptr, dtype, type_size, ne.data(), nb.data(), dims, format, offset);
+}
 /**
  * @brief   Template for creating an ACL tensor from provided parameters.
  * typename TYPE should be size_t or float.
