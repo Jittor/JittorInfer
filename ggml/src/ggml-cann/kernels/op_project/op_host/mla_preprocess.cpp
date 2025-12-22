@@ -521,7 +521,7 @@ void MlaPreprocessTiling::SetTilingKey(gert::TilingContext* context,
     tilingKey = (tilingKey << 2) +
                 static_cast<uint64_t>(quantMode);  // 2bit for quantMode.
     context->SetTilingKey(tilingKey);
-    std::cout << "tilingKey is: " << tilingKey << std::endl;
+    // std::cout << "tilingKey is: " << tilingKey << std::endl;
 }
 
 std::ostream& operator<<(std::ostream& os,
@@ -699,7 +699,7 @@ void MlaPreprocessTiling::Init(gert::TilingContext* context) {
                                    false,                  // enDequant
                                    deqOnTheFly, context);  // in bf16.cce?
     mm3TilingApi.GetTilingData(tilingData.mm3);
-    std::cout << tilingData << std::endl;
+    // std::cout << tilingData << std::endl;
     SetMlapoWorkSpace(inDtype, *cacheMode, *headNum, *quantMode, context);
     context->SetBlockDim(aicNum);
     SetTilingKey(context, *cacheMode, *quantMode);

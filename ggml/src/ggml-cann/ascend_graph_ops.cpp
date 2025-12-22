@@ -3094,59 +3094,35 @@ ge::Operator handle_mla_preprocess_op(
     SQUEEZE_MLAPO_OP(op_ctkvScale, 0, 1, 2);
     SQUEEZE_MLAPO_OP(op_qnopeScale, 0, 1, 2);
 
-    // TODO:
-    // 适配完FRACTAL_NZ格式之后需注释下面的TransData，修改下面的mla_preprocess_op输入绑定
-    // ge::op::TransData wuq_trans(("wuq_trans" + op_suffix).c_str());
-    // wuq_trans.set_input_src(squeezed_op_wuq)
-    // .set_attr_src_format("ND")
-    // .set_attr_dst_format("FRACTAL_NZ");
-    // ge::op::TransData wdqkv_trans(("wdpkv_trans" + op_suffix).c_str());
-    // wdqkv_trans.set_input_src(squeezed_op_wuq)
-    // .set_attr_src_format("ND")
-    // .set_attr_dst_format("FRACTAL_NZ");
-    // ge::TensorDesc wdqkv_desc = squeezed_op_wdqkv.GetInputDescByName("x");
-    // wdqkv_desc.SetOriginFormat(ge::FORMAT_FRACTAL_NZ);
-    // squeezed_op_wdqkv.UpdateInputDesc("x", wdqkv_desc);
+    // print_op_shape(op_hiddenState);
+    // print_op_shape(op_gamma1);
+    // print_op_shape(op_beta1);
+    // print_op_shape(op_quantScale1);
+    // print_op_shape(op_quantOffset1);
+    // print_op_shape(op_wdqkv);
+    // print_op_shape(op_bias1);
+    // print_op_shape(op_gamma2);
+    // print_op_shape(op_beta2);
+    // print_op_shape(op_quantScale2);
+    // print_op_shape(op_quantOffset2);
+    // print_op_shape(op_gamma3);
+    // print_op_shape(op_sin1);
+    // print_op_shape(op_cos1);
+    // print_op_shape(op_keycache);
+    // print_op_shape(op_slotMapping);
+    // print_op_shape(op_wuq);
+    // print_op_shape(op_bias2);
+    // print_op_shape(op_wuk);
+    // print_op_shape(op_descale1);
+    // print_op_shape(op_descale2);
+    // print_op_shape(op_ctkvScale);
+    // print_op_shape(op_qnopeScale);
 
-    // ge::TensorDesc wuq_desc = squeezed_op_wuq.GetInputDescByName("x");
-    // wuq_desc.SetOriginFormat(ge::FORMAT_FRACTAL_NZ);
-    // squeezed_op_wuq.UpdateInputDesc("x", wuq_desc);
-
-    print_op_shape(op_hiddenState);
-    print_op_shape(op_gamma1);
-    print_op_shape(op_beta1);
-    print_op_shape(op_quantScale1);
-    print_op_shape(op_quantOffset1);
-    print_op_shape(op_wdqkv);
-    print_op_shape(op_bias1);
-    print_op_shape(op_gamma2);
-    print_op_shape(op_beta2);
-    print_op_shape(op_quantScale2);
-    print_op_shape(op_quantOffset2);
-    print_op_shape(op_gamma3);
-    print_op_shape(op_sin1);
-    print_op_shape(op_cos1);
-    print_op_shape(op_keycache);
-    print_op_shape(op_slotMapping);
-    print_op_shape(op_wuq);
-    print_op_shape(op_bias2);
-    print_op_shape(op_wuk);
-    print_op_shape(op_descale1);
-    print_op_shape(op_descale2);
-    print_op_shape(op_ctkvScale);
-    print_op_shape(op_qnopeScale);
-    // ge::TensorDesc wdqkv_desc(ge::Shape({2112, 7168}), ge::FORMAT_FRACTAL_NZ,
-    // ge::DT_INT8); ge::TensorDesc wuq_desc(ge::Shape({headNum * 192, 48 *
-    // 32}), ge::FORMAT_FRACTAL_NZ, ge::DT_INT8);
-
-    // squeezed_op_wdqkv.UpdateOutputDesc((uint32_t)0, wdqkv_desc);
-    // squeezed_op_wuq.UpdateOutputDesc((uint32_t)0, wuq_desc);
     mla_preprocess_op.set_input_hiddenState(squeezed_op_hiddenState)
         .set_input_gamma1(squeezed_op_gamma1)
         .set_input_beta1(squeezed_op_beta1)
         .set_input_quantScale1(squeezed_op_quantScale1)
         .set_input_quantOffset1(squeezed_op_quantOffset1)
-        // .set_input_wdqkv(wdqkv_trans)
         .set_input_wdqkv(squeezed_op_wdqkv)
         .set_input_bias1(squeezed_op_bias1)
         .set_input_gamma2(squeezed_op_gamma2)
@@ -3158,7 +3134,6 @@ ge::Operator handle_mla_preprocess_op(
         .set_input_cos1(squeezed_op_cos1)
         .set_input_keycache(op_keycache)
         .set_input_slotMapping(squeezed_op_slotMapping)
-        // .set_input_wuq(wuq_trans)
         .set_input_wuq(squeezed_op_wuq)
         .set_input_bias2(squeezed_op_bias2)
         .set_input_wuk(squeezed_op_wuk)

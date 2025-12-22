@@ -264,6 +264,9 @@ void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
 void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
                                   ggml_tensor* dst);
+
+void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
 #endif
 
 /**
