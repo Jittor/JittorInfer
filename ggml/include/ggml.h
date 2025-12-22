@@ -1005,31 +1005,29 @@ GGML_API struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ct
                                                         int32_t sequence_lenth_kv, struct ggml_tensor * length_q_tensor,
                                                         struct ggml_tensor * length_kv_tensor, float scaleValue);
 
-GGML_API struct ggml_tensor * ggml_mla_jittor(
-    struct ggml_context * ctx, struct ggml_tensor * query,
-    struct ggml_tensor * query_rope, struct ggml_tensor * context_KV,
-    struct ggml_tensor * key_rope, struct ggml_tensor * block_table,
-    struct ggml_tensor * context_length, struct ggml_tensor * mask,
-    int32_t batchSize, int32_t tokenNum, int32_t headNum, int32_t kvHeadNum,
-    int32_t kSeqLen, float qkScale, int32_t blockSize);
+GGML_API struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tensor * query,
+                                              struct ggml_tensor * query_rope, struct ggml_tensor * context_KV,
+                                              struct ggml_tensor * key_rope, struct ggml_tensor * block_table,
+                                              struct ggml_tensor * context_length, struct ggml_tensor * mask,
+                                              int32_t batchSize, int32_t tokenNum, int32_t headNum, int32_t kvHeadNum,
+                                              int32_t kSeqLen, float qkScale, int32_t blockSize);
 
 GGML_API struct ggml_tensor * ggml_mla_prefill_jittor(
-    struct ggml_context * ctx, struct ggml_tensor * query,
-    struct ggml_tensor * query_rope, struct ggml_tensor * key,
-    struct ggml_tensor * key_rope, struct ggml_tensor * value,
-    struct ggml_tensor * qSeq_length, struct ggml_tensor * kvSeq_length,
-    struct ggml_tensor * mask, int32_t batchSize, int32_t headNum, int32_t kvHeadNum,
+    struct ggml_context * ctx, struct ggml_tensor * query, struct ggml_tensor * query_rope, struct ggml_tensor * key,
+    struct ggml_tensor * key_rope, struct ggml_tensor * value, struct ggml_tensor * qSeq_length,
+    struct ggml_tensor * kvSeq_length, struct ggml_tensor * mask, int32_t batchSize, int32_t headNum, int32_t kvHeadNum,
     int32_t embeddim, int32_t embeddimV, int32_t maxSeqLen, float qkScale);
 
-
-GGML_API struct ggml_tensor * ggml_mla_preprocess(struct ggml_context* ctx, struct ggml_tensor* hiddenState, struct ggml_tensor* gamma1, 
-    struct ggml_tensor* beta1, struct ggml_tensor* quantScale1, struct ggml_tensor* quantOffset1, struct ggml_tensor* wdqkv, 
-    struct ggml_tensor* bias1, struct ggml_tensor* gamma2, struct ggml_tensor* beta2, struct ggml_tensor* quantScale2, 
-    struct ggml_tensor* quantOffset2, struct ggml_tensor* gamma3, struct ggml_tensor* sin1, struct ggml_tensor* cos1, 
-    struct ggml_tensor* keycache, struct ggml_tensor* slotMapping, struct ggml_tensor* wuq, struct ggml_tensor* bias2, 
-    struct ggml_tensor* wuk, struct ggml_tensor* descale1, struct ggml_tensor* descale2, struct ggml_tensor* ctkvScale, 
-    struct ggml_tensor* qnopeScale, int32_t N, int32_t headNum, int32_t cacheMode, int32_t quantMode, 
-    struct ggml_tensor* q1, struct ggml_tensor* q2);
+GGML_API struct ggml_tensor * ggml_mla_preprocess(
+    struct ggml_context * ctx, struct ggml_tensor * hiddenState, struct ggml_tensor * gamma1,
+    struct ggml_tensor * beta1, struct ggml_tensor * quantScale1, struct ggml_tensor * quantOffset1,
+    struct ggml_tensor * wdqkv, struct ggml_tensor * bias1, struct ggml_tensor * gamma2, struct ggml_tensor * beta2,
+    struct ggml_tensor * quantScale2, struct ggml_tensor * quantOffset2, struct ggml_tensor * gamma3,
+    struct ggml_tensor * sin1, struct ggml_tensor * cos1, struct ggml_tensor * keycache,
+    struct ggml_tensor * slotMapping, struct ggml_tensor * wuq, struct ggml_tensor * bias2, struct ggml_tensor * wuk,
+    struct ggml_tensor * descale1, struct ggml_tensor * descale2, struct ggml_tensor * ctkvScale,
+    struct ggml_tensor * qnopeScale, int32_t N, int32_t headNum, int32_t cacheMode, int32_t quantMode,
+    struct ggml_tensor * q1, struct ggml_tensor * q2);
 
 // fused moe for deepseek v2
 GGML_API struct ggml_tensor * ggml_to_zero(struct ggml_context * ctx, struct ggml_tensor * a);

@@ -1,11 +1,13 @@
 /**
  * Copyright (c) Huawei Technologies Co., Ltd. 2024. All rights reserved.
  * This file is a part of the CANN Open Software.
- * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
- * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
- * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
- * See LICENSE in the root of the software repository for the full text of the License.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the
+ * "License"). Please refer to the License for details. You may not use this
+ * file except in compliance with the License. THIS SOFTWARE IS PROVIDED ON AN
+ * "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS
+ * FOR A PARTICULAR PURPOSE. See LICENSE in the root of the software repository
+ * for the full text of the License.
  */
 
 /*!
@@ -15,23 +17,25 @@
 #ifndef JITTOR_INFER_FLASH_ATTENTION_TILING_CONTEXT_H
 #define JITTOR_INFER_FLASH_ATTENTION_TILING_CONTEXT_H
 #include <cstdint>
-#include <vector>
 #include <queue>
-#include "exe_graph/runtime/tiling_context.h"
-#include "../utils/inc/tiling/data_copy_transpose_tiling_def.h"
+#include <vector>
+
+#include "../utils/inc/error/ops_error.h"
 #include "../utils/inc/tiling/data_copy_transpose_tiling.h"
+#include "../utils/inc/tiling/data_copy_transpose_tiling_def.h"
+#include "exe_graph/runtime/tiling_context.h"
+#include "register/op_def_registry.h"
 #include "register/tilingdata_base.h"
 #include "tiling/tiling_api.h"
-#include "../utils/inc/error/ops_error.h"
-#include "register/op_def_registry.h"
 
 namespace optiling {
 
 /*
-contextParams is a new structured defined for the use of FusedInferAttentionScore op.
-It is meant to catch and organize all the necessary variables passed by FIAS tilling function.
-It will be used as the input to the new 'runBigKernelWithParams' function in PFA tilling.
-The old PFA tillingContext will also be transformed to this structure in the future.
+contextParams is a new structured defined for the use of
+FusedInferAttentionScore op. It is meant to catch and organize all the necessary
+variables passed by FIAS tilling function. It will be used as the input to the
+new 'runBigKernelWithParams' function in PFA tilling. The old PFA tillingContext
+will also be transformed to this structure in the future.
 */
 struct ContextParamsForPFATiling {
     const gert::Tensor *pseShift;
@@ -89,6 +93,6 @@ struct ContextParamsForPFATiling {
     size_t defaultSysWorkspaceSize;
 };
 
-} // namespace optiling
+}  // namespace optiling
 
-#endif // JITTOR_INFER_FLASH_ATTENTION_TILING_CONTEXT_H
+#endif  // JITTOR_INFER_FLASH_ATTENTION_TILING_CONTEXT_H

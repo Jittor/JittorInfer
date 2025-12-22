@@ -1,11 +1,13 @@
 /**
  * Copyright (c) 2023-2024 Huawei Technologies Co., Ltd.
  * This file is a part of the CANN Open Software.
- * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
- * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
- * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
- * See LICENSE in the root of the software repository for the full text of the License.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the
+ * "License"). Please refer to the License for details. You may not use this
+ * file except in compliance with the License. THIS SOFTWARE IS PROVIDED ON AN
+ * "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS
+ * FOR A PARTICULAR PURPOSE. See LICENSE in the root of the software repository
+ * for the full text of the License.
  */
 
 /*!
@@ -15,10 +17,12 @@
 
 #pragma once
 
-#include <sstream>
 #include <exe_graph/runtime/tiling_context.h>
 #include <graph/utils/type_utils.h>
 #include <tiling/platform/platform_ascendc.h>
+
+#include <sstream>
+
 #include "log/ops_log.h"
 
 #ifdef ASCENDC_OP_TEST
@@ -52,21 +56,20 @@ struct FlashAttentionScoreGradCompileInfo {
 };
 
 class TilingBaseClass {
-public:
+   public:
     TilingBaseClass() = default;
 
-    explicit TilingBaseClass(gert::TilingContext *context) : context_(context)
-    {
-    }
+    explicit TilingBaseClass(gert::TilingContext *context)
+        : context_(context) {}
 
     virtual ~TilingBaseClass() = default;
 
     // Tiling执行框架
     //     1、GRAPH_SUCCESS: 成功，并且不需要继续执行后续Tiling类的实现
     //     2、GRAPH_FAILED: 失败，中止整个Tiling流程
-    //     3、GRAPH_PARAM_INVALID: 本类不支持，需要继续往下执行其他Tiling类的实现
-    ge::graphStatus DoTiling()
-    {
+    //     3、GRAPH_PARAM_INVALID:
+    //     本类不支持，需要继续往下执行其他Tiling类的实现
+    ge::graphStatus DoTiling() {
         auto ret = GetShapeAttrsInfo();
         if (ret != ge::GRAPH_SUCCESS) {
             return ret;
@@ -100,12 +103,9 @@ public:
     }
 
     // 更新 context
-    virtual void Reset(gert::TilingContext *context)
-    {
-        context_ = context;
-    }
+    virtual void Reset(gert::TilingContext *context) { context_ = context; }
 
-protected:
+   protected:
     virtual bool IsCapable() = 0;
     // 1、获取平台信息比如CoreNum、UB/L1/L0C资源大小
     virtual ge::graphStatus GetPlatformInfo() = 0;
@@ -122,20 +122,21 @@ protected:
     // 7、保存Tiling数据
     virtual ge::graphStatus PostTiling() = 0;
     // 8、Dump Tiling数据
-    virtual void DumpTilingInfo()
-    {
-        int32_t enable = AlogCheckDebugLevel(static_cast<int32_t>(OP), DLOG_DEBUG);
+    virtual void DumpTilingInfo() {
+        int32_t enable =
+            AlogCheckDebugLevel(static_cast<int32_t>(OP), DLOG_DEBUG);
         if (enable != 1) {
             return;
         }
         auto buf = (uint32_t *)context_->GetRawTilingData()->GetData();
         auto bufLen = context_->GetRawTilingData()->GetDataSize();
         std::ostringstream oss;
-        oss << "Start to dump tiling info. tilingkey:" << GetTilingKey() << ", tiling data size:" << bufLen
-            << ", content:";
+        oss << "Start to dump tiling info. tilingkey:" << GetTilingKey()
+            << ", tiling data size:" << bufLen << ", content:";
         for (size_t i = 0; i < bufLen / sizeof(uint32_t); i++) {
             oss << *(buf + i) << ",";
-            if (oss.str().length() > 640) { // Split according to 640 to avoid truncation
+            if (oss.str().length() >
+                640) {  // Split according to 640 to avoid truncation
                 OPS_LOG_D(context_, "%s", oss.str().c_str());
                 oss.str("");
             }
@@ -143,8 +144,8 @@ protected:
         OPS_LOG_D(context_, "%s", oss.str().c_str());
     }
 
-    static uint32_t CalcTschBlockDim(uint32_t sliceNum, uint32_t aicCoreNum, uint32_t aivCoreNum)
-    {
+    static uint32_t CalcTschBlockDim(uint32_t sliceNum, uint32_t aicCoreNum,
+                                     uint32_t aivCoreNum) {
         uint32_t ration;
         if (aicCoreNum == 0 || aivCoreNum == 0 || aicCoreNum > aivCoreNum) {
             return sliceNum;
@@ -153,8 +154,8 @@ protected:
         return (sliceNum + (ration - 1)) / ration;
     }
 
-    template <typename T> [[nodiscard]] std::string GetShapeDebugStr(const T &shape) const
-    {
+    template <typename T>
+    [[nodiscard]] std::string GetShapeDebugStr(const T &shape) const {
         std::ostringstream oss;
         oss << "[";
         if (shape.GetDimNum() > 0) {
@@ -167,41 +168,48 @@ protected:
         return oss.str();
     }
 
-    [[nodiscard]] std::string GetTensorDebugStr(const gert::StorageShape *shape,
-                                                const gert::CompileTimeTensorDesc *tensor)
-    {
+    [[nodiscard]] std::string GetTensorDebugStr(
+        const gert::StorageShape *shape,
+        const gert::CompileTimeTensorDesc *tensor) {
         if (shape == nullptr || tensor == nullptr) {
             return "nil ";
         }
         std::ostringstream oss;
-        oss << "(dtype: " << ge::TypeUtils::DataTypeToSerialString(tensor->GetDataType()) << "),";
-        oss << "(shape:" << GetShapeDebugStr(shape->GetStorageShape()) << "),";
-        oss << "(ori_shape:" << GetShapeDebugStr(shape->GetOriginShape()) << "),";
-        oss << "(format: "
-            << ge::TypeUtils::FormatToSerialString(
-                   static_cast<ge::Format>(ge::GetPrimaryFormat(tensor->GetStorageFormat())))
+        oss << "(dtype: "
+            << ge::TypeUtils::DataTypeToSerialString(tensor->GetDataType())
             << "),";
-        oss << "(ori_format: " << ge::TypeUtils::FormatToSerialString(tensor->GetOriginFormat()) << ") ";
+        oss << "(shape:" << GetShapeDebugStr(shape->GetStorageShape()) << "),";
+        oss << "(ori_shape:" << GetShapeDebugStr(shape->GetOriginShape())
+            << "),";
+        oss << "(format: "
+            << ge::TypeUtils::FormatToSerialString(static_cast<ge::Format>(
+                   ge::GetPrimaryFormat(tensor->GetStorageFormat())))
+            << "),";
+        oss << "(ori_format: "
+            << ge::TypeUtils::FormatToSerialString(tensor->GetOriginFormat())
+            << ") ";
         return oss.str();
     }
 
-    [[nodiscard]] std::string GetTilingContextDebugStr()
-    {
+    [[nodiscard]] std::string GetTilingContextDebugStr() {
         std::ostringstream oss;
-        for (size_t i = 0; i < context_->GetComputeNodeInfo()->GetInputsNum(); ++i) {
+        for (size_t i = 0; i < context_->GetComputeNodeInfo()->GetInputsNum();
+             ++i) {
             oss << "input" << i << ": ";
-            oss << GetTensorDebugStr(context_->GetInputShape(i), context_->GetInputDesc(i));
+            oss << GetTensorDebugStr(context_->GetInputShape(i),
+                                     context_->GetInputDesc(i));
         }
 
-        for (size_t i = 0; i < context_->GetComputeNodeInfo()->GetOutputsNum(); ++i) {
+        for (size_t i = 0; i < context_->GetComputeNodeInfo()->GetOutputsNum();
+             ++i) {
             oss << "output" << i << ": ";
-            oss << GetTensorDebugStr(context_->GetOutputShape(i), context_->GetOutputDesc(i));
+            oss << GetTensorDebugStr(context_->GetOutputShape(i),
+                                     context_->GetOutputDesc(i));
         }
         return oss.str();
     }
 
-    [[nodiscard]] std::string GetTilingDataDebugStr() const
-    {
+    [[nodiscard]] std::string GetTilingDataDebugStr() const {
         auto rawTilingData = context_->GetRawTilingData();
         auto rawTilingDataSize = rawTilingData->GetDataSize();
         auto data = reinterpret_cast<const int32_t *>(rawTilingData->GetData());
@@ -213,13 +221,14 @@ protected:
         return oss.str();
     }
 
-protected:
+   protected:
     gert::TilingContext *context_ = nullptr;
-    std::unique_ptr<platform_ascendc::PlatformAscendC> ascendcPlatform_{nullptr};
+    std::unique_ptr<platform_ascendc::PlatformAscendC> ascendcPlatform_{
+        nullptr};
     uint32_t blockDim_{0};
     uint64_t workspaceSize_{0};
     uint64_t tilingKey_{0};
     AiCoreParams aicoreParams_{0, 0, 0, 0, 0, 0, 0};
 };
 
-} // namespace optiling
+}  // namespace optiling

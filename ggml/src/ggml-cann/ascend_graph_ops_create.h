@@ -55,6 +55,7 @@ ge::Operator create_cast_op(ge::Graph& graph, const std::string& prefix,
                             const std::string& suffix, ge::Operator src,
                             ge::DataType dst_type);
 
-ge::Operator create_concat_op(ge::Graph& graph, const std::string& prefix, const std::string& suffix, 
-    std::vector<ge::Operator>&& op_list, int axis);
+ge::Operator create_concat_op(ge::Graph& graph, const std::string& prefix,
+                              const std::string& suffix,
+                              std::vector<ge::Operator>&& op_list, int axis);
 #endif  // _ASCEND_GRAPH_OPS_CREATE_H_
