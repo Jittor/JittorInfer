@@ -3095,7 +3095,6 @@ ge::Operator handle_get_rows_op(
     return op_cast_result;
 }
 
-
 /**
  * @brief 处理SUM_ROWS操作的函数
  *
