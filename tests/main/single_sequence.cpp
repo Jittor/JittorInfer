@@ -25,14 +25,12 @@
 static const char * DEFAULT_SYSTEM_MESSAGE = "You are a helpful assistant";
 static bool         is_interacting         = false;
 
-const int         num_inputs         = 2;
+const int         num_inputs         = 1;
 const std::string inputs[num_inputs] = {
-    "write code of quick sort algorithm in python",
-    "add a test case",
+    // "write code of quick sort algorithm in python",
+    // "add a test case",
     // "please tell me a story about a cat.\n",
-    // "I'm thinking a number between 1 and 20, please guess it.don't ask me any questions, just guess the number.\n",
-    // "it's too small.\n",
-    // "it's too large.\n",
+    "I'm thinking a number between 1 and 20, please guess it.don't ask me any questions, just guess the number.\n",
 };
 
 static struct local_cpu_params {
@@ -58,10 +56,10 @@ static struct DefaultMiniParams {
     // std::string model = "/root/data/qwen2-0_5b-instruct-fp16.gguf";  // Will be set from command line argument
     // std::string model = "/root/data/qwen2-7b-instruct-fp16.gguf";  // Will be set from command line argument
     // std::string model = "/root/data/Qwen2.5-7B-Instruct-f16.gguf";  // Will be set from command line argument
-    // std::string model = "/root/data/Qwen3-4B-Instruct-2507-F16.gguf";  // Will be set from command line argument
-    std::string model = "/root/data/Qwen3-30B-A3B-f16-merged.gguf";
-    // std::string model = "/root/data/Qwen3-32B";
-    // std::string model = "/root/data/Qwen.Qwen3-30B-A3B.f16-00002-of-00002.gguf"; 
+    // std::string model = "/root/data/Qwen3-8B-f16.gguf";  // Will be set from command line argument
+    std::string model = "/root/data/qwen3-8b-merged-fp16.gguf";  // Will be set from command line argument
+    // std::string model = "/root/data/Qwen3-30B-A3B-f16/Qwen.Qwen3-30B-A3B.f16-00001-of-00002.gguf";  // Will be set from command line argument
+    // std::string model = "/root/data/root/data/Qwen3-30B-A3B.f16.gguf";  // Will be set from command line argument
     // std::string model = "/root/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-fp16.gguf";  // Will be set from command line argument
 
     uint32_t n_ctx = 32768;                                            // context size

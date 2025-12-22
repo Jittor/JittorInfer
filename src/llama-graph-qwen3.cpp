@@ -138,15 +138,43 @@ struct ggml_cgraph * llm_qwen3_context::build_qwen3() {
 
         // self-attention
         {
-            // compute Q and K and RoPE them
-            struct ggml_tensor * Qcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
+            // compute Q, K, V using merged QKV weight for better performance
+            struct ggml_tensor * Qcur;
+            struct ggml_tensor * Kcur;
+            struct ggml_tensor * Vcur;
 
-            struct ggml_tensor * Kcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
+            if (model.layers[il].wqkv != nullptr) {
+                // Use merged QKV weight
+                const int64_t n_embd_head = hparams.n_embd_head_k;
+                const int64_t q_dim = n_embd_head * n_head;
+                const int64_t k_dim = n_embd_head * n_head_kv;
+                const int64_t v_dim = n_embd_head * n_head_kv;
 
-            struct ggml_tensor * Vcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
+                struct ggml_tensor * QKVcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wqkv, cur);
+                cb(QKVcur, "QKVcur", il);
+
+                // Split QKV into Q, K, V
+                // QKVcur shape: [qkv_dim, n_tokens]
+                // Use ggml_cont to make views contiguous for CANN backend compatibility
+                Qcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, q_dim, n_tokens, QKVcur->nb[1], 0));
+                cb(Qcur, "Qcur", il);
+
+                Kcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, k_dim, n_tokens, QKVcur->nb[1], q_dim * ggml_element_size(QKVcur)));
+                cb(Kcur, "Kcur", il);
+
+                Vcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, v_dim, n_tokens, QKVcur->nb[1], (q_dim + k_dim) * ggml_element_size(QKVcur)));
+                cb(Vcur, "Vcur", il);
+            } else {
+                // Fallback to separate Q, K, V weights
+                Qcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wq, cur);
+                cb(Qcur, "Qcur", il);
+
+                Kcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wk, cur);
+                cb(Kcur, "Kcur", il);
+
+                Vcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wv, cur);
+                cb(Vcur, "Vcur", il);
+            }
 
             Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head_k, n_head, n_tokens);
             Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, cb, il);
@@ -182,9 +210,40 @@ struct ggml_cgraph * llm_qwen3_context::build_qwen3() {
         cur = llm_build_norm(ctx0, ffn_inp, hparams, model.layers[il].ffn_norm, NULL, LLM_NORM_RMS, cb, il);
         cb(cur, "ffn_norm", il);
 
-        cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL, NULL,
-                            model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
-        cb(cur, "ffn_out", il);
+        // Use merged gate-up weight if available for better performance
+        if (model.layers[il].ffn_gate_up != nullptr) {
+            // Use merged FFN gate-up weight
+            struct ggml_tensor * gate_up = llm_build_lora_mm(lctx, ctx0, model.layers[il].ffn_gate_up, cur);
+            cb(gate_up, "ffn_gate_up", il);
+
+            // Split gate_up into gate and up
+            // gate_up shape: [2*n_ff, n_tokens]
+            const int64_t n_ff = hparams.n_ff();
+            struct ggml_tensor * gate = ggml_cont(ctx0, ggml_view_2d(ctx0, gate_up, n_ff, gate_up->ne[1], 
+                                                                      gate_up->nb[1], 0));
+            cb(gate, "ffn_gate", il);
+
+            struct ggml_tensor * up = ggml_cont(ctx0, ggml_view_2d(ctx0, gate_up, n_ff, gate_up->ne[1], 
+                                                                    gate_up->nb[1], n_ff * ggml_element_size(gate_up)));
+            cb(up, "ffn_up", il);
+
+            // Apply activation to gate
+            gate = ggml_silu(ctx0, gate);
+            cb(gate, "ffn_silu", il);
+
+            // Multiply gate and up
+            cur = ggml_mul(ctx0, gate, up);
+            cb(cur, "ffn_gate_par", il);
+
+            // Down projection
+            cur = llm_build_lora_mm(lctx, ctx0, model.layers[il].ffn_down, cur);
+            cb(cur, "ffn_out", il);
+        } else {
+            // Fallback to separate gate and up weights
+            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL, NULL,
+                                model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
+            cb(cur, "ffn_out", il);
+        }
 
         cur = ggml_add(ctx0, cur, ffn_inp);
         // TODO(critical): 我们暂时没有使用adapter!

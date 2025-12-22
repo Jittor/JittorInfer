@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <vector>
 
+#include "ggml-alloc.h"
 #include "ggml-backend.h"
 #include "ggml-cpp.h"
 #include "ggml-cpu.h"
@@ -963,34 +965,36 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];
+                        layer.wqkv = create_tensor({ n_embd, n_embd_head_k * n_head+n_embd_gqa+n_embd_gqa }, LLM_SPLIT_REPEAT,
+                                                 tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0);
 
+                        // layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_REPEAT,
+                        //                          tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
+                        // layer.wk          = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                        //                                   tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
+                        // layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                        //                          tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+                                                 
                         layer.attn_norm =
                             create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0);
-                        layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
-
                         layer.attn_q_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), 0);
-
-                        layer.wk          = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
                         layer.attn_k_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0);
-
-                        layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
                         layer.wo = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
                                                  tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
 
                         layer.ffn_norm =
                             create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
 
-                        layer.ffn_gate =
-                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE, "weight", i), 0);
+                        layer.ffn_gate_up =
+                            create_tensor({ n_embd, n_ff+n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE_UP, "weight", i), 0);
+                        // layer.ffn_gate =
+                        //     create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE, "weight", i), 0);
+                        // layer.ffn_up =
+                        //     create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_UP, "weight", i), 0);
                         layer.ffn_down =
                             create_tensor({ n_ff, n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0);
-                        layer.ffn_up =
-                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_UP, "weight", i), 0);
                     }
                 }
                 break;
@@ -1213,6 +1217,12 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
             pimpl->mappings.emplace_back(std::move(mapping));
         }
     }
+
+    // // Merge QKV weights for architectures that benefit from it (e.g., QWEN3)
+    // merge_qkv_weights(*this, pimpl->ctxs, pimpl->bufs);
+    
+    // // Merge FFN gate-up weights for architectures that benefit from it (e.g., QWEN3)
+    // merge_ffn_gate_up_weights(*this, pimpl->ctxs, pimpl->bufs);
 
     return true;
 }

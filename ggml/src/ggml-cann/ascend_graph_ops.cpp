@@ -329,6 +329,77 @@ ge::Operator handle_mul_op(
 }
 
 /**
+ * @brief 处理DIV（除法）操作的函数
+ *
+ * 在计算图中创建一个除法操作，计算 x1/x2
+ * 支持形状不同时的广播处理
+ *
+ * @param graph 计算图引用
+ * @param node 表示DIV操作的张量节点
+ * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的DIV算子
+ */
+ge::Operator handle_div_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    ggml_tensor *src0 = node->src[0];
+    ggml_tensor *src1 = node->src[1];
+
+    ge::Operator op_x1, op_x2;
+    // 处理src0 - 获取现有算子
+    if (gmml_tensor_to_ge_op_map.find(src0) != gmml_tensor_to_ge_op_map.end()) {
+        op_x1 = gmml_tensor_to_ge_op_map[src0];
+    } else {
+        assert(false);
+    }
+
+    // 处理src1 - 获取现有算子
+    if (gmml_tensor_to_ge_op_map.find(src1) != gmml_tensor_to_ge_op_map.end()) {
+        op_x2 = gmml_tensor_to_ge_op_map[src1];
+    } else {
+        assert(false);
+    }
+
+    // 处理广播情况
+    int64_t out_ne[GGML_MAX_DIMS], nb0[GGML_MAX_DIMS], nb1[GGML_MAX_DIMS];
+    bool need_tile0[GGML_MAX_DIMS], need_tile1[GGML_MAX_DIMS];
+    bcast_shape(src0, src1, out_ne, nb0, nb1, need_tile0, need_tile1);
+
+    // 处理需要平铺的情况
+    if (std::any_of(need_tile0, need_tile0 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        op_x1 =
+            handle_repeat_op(graph, node, gmml_tensor_to_ge_op_map, op_index);
+    }
+    if (std::any_of(need_tile1, need_tile1 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        ggml_tensor *saved = node->src[0];
+        node->src[0] = node->src[1];
+        op_x2 =
+            handle_repeat_op(graph, node, gmml_tensor_to_ge_op_map, op_index);
+        node->src[0] = saved;
+    }
+
+    // 创建除法算子
+    std::string div_name = "div_" + std::to_string(op_index);
+    ge::op::Div div_op(div_name);
+    div_op.set_input_x1(op_x1);
+    div_op.set_input_x2(op_x2);
+
+    // 设置输出形状和数据类型
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+    ge::TensorDesc desc(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    div_op.update_output_desc_y(desc);
+
+    // 将算子添加到图中
+    graph.AddOp(div_op);
+    return div_op;
+}
+
+/**
  * @brief 处理矩阵乘法(MATMUL)操作的函数
  *
  * 在计算图中创建一个矩阵乘法操作
@@ -1098,7 +1169,6 @@ ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
     ge::op::Const const_op(name);
     ge::TensorDesc desc(ge::Shape({(int64_t)values.size()}), ge::FORMAT_ND,
                         type);
-    ge::Tensor tensor(desc);
 
     if (type == ge::DT_INT32) {
         std::vector<int32_t> int32_values;
@@ -1106,15 +1176,18 @@ ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
         for (int64_t val : values) {
             int32_values.push_back(static_cast<int32_t>(val));
         }
-        tensor.SetData(reinterpret_cast<uint8_t *>(int32_values.data()),
-                       int32_values.size() * sizeof(int32_t));
+        // 使用构造函数直接创建 Tensor，确保数据被立即拷贝
+        ge::Tensor tensor(desc,
+                         reinterpret_cast<uint8_t *>(int32_values.data()),
+                         int32_values.size() * sizeof(int32_t));
+        const_op.set_attr_value(tensor);
     } else {  // Default to INT64
-        // Create a mutable copy for SetData
-        std::vector<int64_t> mutable_values = values;
-        tensor.SetData(reinterpret_cast<uint8_t *>(mutable_values.data()),
-                       mutable_values.size() * sizeof(int64_t));
+        // 直接使用 values 的 const 引用，使用构造函数确保数据被立即拷贝
+        ge::Tensor tensor(desc,
+                         reinterpret_cast<const uint8_t *>(values.data()),
+                         values.size() * sizeof(int64_t));
+        const_op.set_attr_value(tensor);
     }
-    const_op.set_attr_value(tensor);
     graph.AddOp(const_op);
     return const_op;
 }

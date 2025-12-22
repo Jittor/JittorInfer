@@ -88,6 +88,7 @@ struct server_task {
         params.stream              = json_value(data, "stream", false);
         params.post_sampling_probs = json_value(data, "post_sampling_probs", defaults.post_sampling_probs);
         params.n_keep              = json_value(data, "n_keep", defaults.n_keep);
+        params.n_predict = json_value(data, "max_tokens", -1);
 
         params.sampling.top_k   = json_value(data, "top_k", defaults.sampling.top_k);
         params.sampling.top_p   = json_value(data, "top_p", defaults.sampling.top_p);
