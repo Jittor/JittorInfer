@@ -71,9 +71,9 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
             if (model.layers[il].wqkv != nullptr) {
                 // Use merged QKV weight
                 const int64_t n_embd_head = hparams.n_embd_head_k;
-                const int64_t q_dim = n_embd_head * n_head;
-                const int64_t k_dim = n_embd_head * n_head_kv;
-                const int64_t v_dim = n_embd_head * n_head_kv;
+                const int64_t q_dim       = n_embd_head * n_head;
+                const int64_t k_dim       = n_embd_head * n_head_kv;
+                const int64_t v_dim       = n_embd_head * n_head_kv;
 
                 struct ggml_tensor * QKVcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wqkv, cur);
                 cb(QKVcur, "QKVcur", il);
@@ -137,7 +137,7 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
 
             // Split gate_up into gate and up using ggml_get_slice (GE backend doesn't support view)
             // gate_up shape: [2*n_ff, n_tokens]
-            const int64_t n_ff = hparams.n_ff();
+            const int64_t        n_ff = hparams.n_ff();
             struct ggml_tensor * gate = ggml_get_slice(ctx0, gate_up, 0, n_ff, 0);
             cb(gate, "ffn_gate", il);
 
@@ -157,8 +157,9 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
             cb(cur, "ffn_out", il);
         } else {
             // Fallback to separate gate and up weights
-            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL, NULL,
-                                model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il, false);
+            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL,
+                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il,
+                                false);
             cb(cur, "ffn_out", il);
         }
 

@@ -146,9 +146,9 @@ struct ggml_cgraph * llm_qwen3_context::build_qwen3() {
             if (model.layers[il].wqkv != nullptr) {
                 // Use merged QKV weight
                 const int64_t n_embd_head = hparams.n_embd_head_k;
-                const int64_t q_dim = n_embd_head * n_head;
-                const int64_t k_dim = n_embd_head * n_head_kv;
-                const int64_t v_dim = n_embd_head * n_head_kv;
+                const int64_t q_dim       = n_embd_head * n_head;
+                const int64_t k_dim       = n_embd_head * n_head_kv;
+                const int64_t v_dim       = n_embd_head * n_head_kv;
 
                 struct ggml_tensor * QKVcur = llm_build_lora_mm(lctx, ctx0, model.layers[il].wqkv, cur);
                 cb(QKVcur, "QKVcur", il);
@@ -159,10 +159,12 @@ struct ggml_cgraph * llm_qwen3_context::build_qwen3() {
                 Qcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, q_dim, n_tokens, QKVcur->nb[1], 0));
                 cb(Qcur, "Qcur", il);
 
-                Kcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, k_dim, n_tokens, QKVcur->nb[1], q_dim * ggml_element_size(QKVcur)));
+                Kcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, k_dim, n_tokens, QKVcur->nb[1],
+                                                    q_dim * ggml_element_size(QKVcur)));
                 cb(Kcur, "Kcur", il);
 
-                Vcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, v_dim, n_tokens, QKVcur->nb[1], (q_dim + k_dim) * ggml_element_size(QKVcur)));
+                Vcur = ggml_cont(ctx0, ggml_view_2d(ctx0, QKVcur, v_dim, n_tokens, QKVcur->nb[1],
+                                                    (q_dim + k_dim) * ggml_element_size(QKVcur)));
                 cb(Vcur, "Vcur", il);
             } else {
                 // Fallback to separate Q, K, V weights
@@ -218,13 +220,13 @@ struct ggml_cgraph * llm_qwen3_context::build_qwen3() {
 
             // Split gate_up into gate and up
             // gate_up shape: [2*n_ff, n_tokens]
-            const int64_t n_ff = hparams.n_ff();
-            struct ggml_tensor * gate = ggml_cont(ctx0, ggml_view_2d(ctx0, gate_up, n_ff, gate_up->ne[1], 
-                                                                      gate_up->nb[1], 0));
+            const int64_t        n_ff = hparams.n_ff();
+            struct ggml_tensor * gate =
+                ggml_cont(ctx0, ggml_view_2d(ctx0, gate_up, n_ff, gate_up->ne[1], gate_up->nb[1], 0));
             cb(gate, "ffn_gate", il);
 
-            struct ggml_tensor * up = ggml_cont(ctx0, ggml_view_2d(ctx0, gate_up, n_ff, gate_up->ne[1], 
-                                                                    gate_up->nb[1], n_ff * ggml_element_size(gate_up)));
+            struct ggml_tensor * up = ggml_cont(ctx0, ggml_view_2d(ctx0, gate_up, n_ff, gate_up->ne[1], gate_up->nb[1],
+                                                                   n_ff * ggml_element_size(gate_up)));
             cb(up, "ffn_up", il);
 
             // Apply activation to gate
@@ -240,8 +242,8 @@ struct ggml_cgraph * llm_qwen3_context::build_qwen3() {
             cb(cur, "ffn_out", il);
         } else {
             // Fallback to separate gate and up weights
-            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL, NULL,
-                                model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
+            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL,
+                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
             cb(cur, "ffn_out", il);
         }
 
