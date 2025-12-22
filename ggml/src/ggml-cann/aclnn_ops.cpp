@@ -5876,31 +5876,31 @@ void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
     ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
 }
 
-void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx, ggml_tensor* dst)
-{
-    struct ggml_tensor* hiddenState  = dst->src[0];
-    struct ggml_tensor* gamma1       = dst->src[1];
-    struct ggml_tensor* beta1        = dst->src[2];
-    struct ggml_tensor* quantScale1  = dst->src[3];
+void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx,
+                              ggml_tensor* dst) {
+    struct ggml_tensor* hiddenState = dst->src[0];
+    struct ggml_tensor* gamma1 = dst->src[1];
+    struct ggml_tensor* beta1 = dst->src[2];
+    struct ggml_tensor* quantScale1 = dst->src[3];
     struct ggml_tensor* quantOffset1 = dst->src[4];
-    struct ggml_tensor* wdqkv        = dst->src[5];
-    struct ggml_tensor* bias1        = dst->src[6];
-    struct ggml_tensor* gamma2       = dst->src[7];
-    struct ggml_tensor* beta2        = dst->src[8];
-    struct ggml_tensor* quantScale2  = dst->src[9];
+    struct ggml_tensor* wdqkv = dst->src[5];
+    struct ggml_tensor* bias1 = dst->src[6];
+    struct ggml_tensor* gamma2 = dst->src[7];
+    struct ggml_tensor* beta2 = dst->src[8];
+    struct ggml_tensor* quantScale2 = dst->src[9];
     struct ggml_tensor* quantOffset2 = dst->src[10];
-    struct ggml_tensor* gamma3       = dst->src[11];
-    struct ggml_tensor* sin1         = dst->src[12];
-    struct ggml_tensor* cos1         = dst->src[13];
-    struct ggml_tensor* keycache     = dst->src[14];
-    struct ggml_tensor* slotMapping  = dst->src[15];
-    struct ggml_tensor* wuq          = dst->src[16];
-    struct ggml_tensor* bias2        = dst->src[17];
-    struct ggml_tensor* wuk          = dst->src[18];
-    struct ggml_tensor* descale1     = dst->src[19];
-    struct ggml_tensor* descale2     = dst->src[20];
-    struct ggml_tensor* ctkvScale    = dst->src[21];
-    struct ggml_tensor* qnopeScale   = dst->src[22];
+    struct ggml_tensor* gamma3 = dst->src[11];
+    struct ggml_tensor* sin1 = dst->src[12];
+    struct ggml_tensor* cos1 = dst->src[13];
+    struct ggml_tensor* keycache = dst->src[14];
+    struct ggml_tensor* slotMapping = dst->src[15];
+    struct ggml_tensor* wuq = dst->src[16];
+    struct ggml_tensor* bias2 = dst->src[17];
+    struct ggml_tensor* wuk = dst->src[18];
+    struct ggml_tensor* descale1 = dst->src[19];
+    struct ggml_tensor* descale2 = dst->src[20];
+    struct ggml_tensor* ctkvScale = dst->src[21];
+    struct ggml_tensor* qnopeScale = dst->src[22];
 
     int64_t N = static_cast<int64_t>(dst->op_params[0]);
     int64_t headNum = static_cast<int64_t>(dst->op_params[1]);
@@ -5910,130 +5910,112 @@ void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx, ggml_tensor* dst)
     auto blockNum = keycache->ne[3];
     auto blockSize = keycache->ne[2];
 
-    aclTensor* acl_hiddenState =
-    ggml_cann_create_tensor(hiddenState, nullptr, nullptr,
-                            2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_hiddenState = ggml_cann_create_tensor(
+        hiddenState, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_gamma1 =
-        ggml_cann_create_tensor(gamma1, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(gamma1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_beta1 =
-        ggml_cann_create_tensor(beta1, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(beta1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_quantScale1 =
-        ggml_cann_create_tensor(quantScale1, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_quantScale1 = ggml_cann_create_tensor(
+        quantScale1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_quantOffset1 =
-        ggml_cann_create_tensor(quantOffset1, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_quantOffset1 = ggml_cann_create_tensor(
+        quantOffset1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_wdqkv =
-        ggml_cann_create_tensor(wdqkv, nullptr, nullptr,
-                                2, ACL_FORMAT_FRACTAL_NZ, 0);
+    aclTensor* acl_wdqkv = ggml_cann_create_tensor(wdqkv, nullptr, nullptr, 2,
+                                                   ACL_FORMAT_FRACTAL_NZ, 0);
 
     aclTensor* acl_bias1 =
-        ggml_cann_create_tensor(bias1, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(bias1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_gamma2 =
-        ggml_cann_create_tensor(gamma2, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(gamma2, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_beta2 =
-        ggml_cann_create_tensor(beta2, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(beta2, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_quantScale2 =
-        ggml_cann_create_tensor(quantScale2, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_quantScale2 = ggml_cann_create_tensor(
+        quantScale2, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_quantOffset2 =
-        ggml_cann_create_tensor(quantOffset2, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_quantOffset2 = ggml_cann_create_tensor(
+        quantOffset2, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_gamma3 =
-        ggml_cann_create_tensor(gamma3, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(gamma3, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_sin1 =
-        ggml_cann_create_tensor(sin1, nullptr, nullptr,
-                                2, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(sin1, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_cos1 =
-        ggml_cann_create_tensor(cos1, nullptr, nullptr,
-                                2, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(cos1, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_keycache =
-        ggml_cann_create_tensor(keycache, nullptr, nullptr,
-                                4, ACL_FORMAT_ND, 0);
+    aclTensor* acl_keycache = ggml_cann_create_tensor(
+        keycache, nullptr, nullptr, 4, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_slotMapping =
-        ggml_cann_create_tensor(slotMapping, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_slotMapping = ggml_cann_create_tensor(
+        slotMapping, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_wuq =
-        ggml_cann_create_tensor(wuq, nullptr, nullptr,
-                                2, ACL_FORMAT_FRACTAL_NZ, 0);
+    aclTensor* acl_wuq = ggml_cann_create_tensor(wuq, nullptr, nullptr, 2,
+                                                 ACL_FORMAT_FRACTAL_NZ, 0);
 
     aclTensor* acl_bias2 =
-        ggml_cann_create_tensor(bias2, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(bias2, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
     aclTensor* acl_wuk =
-        ggml_cann_create_tensor(wuk, nullptr, nullptr,
-                                3, ACL_FORMAT_ND, 0);
+        ggml_cann_create_tensor(wuk, nullptr, nullptr, 3, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_descale1 =
-        ggml_cann_create_tensor(descale1, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_descale1 = ggml_cann_create_tensor(
+        descale1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_descale2 =
-        ggml_cann_create_tensor(descale2, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_descale2 = ggml_cann_create_tensor(
+        descale2, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_ctkvScale =
-        ggml_cann_create_tensor(ctkvScale, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_ctkvScale = ggml_cann_create_tensor(
+        ctkvScale, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
 
-    aclTensor* acl_qnopeScale =
-        ggml_cann_create_tensor(qnopeScale, nullptr, nullptr,
-                                1, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_qnopeScale = ggml_cann_create_tensor(
+        qnopeScale, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+
     size_t element_size = ggml_element_size(hiddenState);
-    ggml_cann_pool_alloc q1_allocator(
-        ctx.pool(), N * headNum * 512 * element_size);
+    ggml_cann_pool_alloc q1_allocator(ctx.pool(),
+                                      N * headNum * 512 * element_size);
     void* q1_buffer = q1_allocator.get();
     aclTensor* q1_tensor = ggml_cann_create_tensor(
-        q1_buffer, ggml_cann_type_mapping(hiddenState->type),
-        element_size, {512, headNum, N}, 
-        {element_size, element_size * 512, element_size * 512 * headNum}, 
-        3, ACL_FORMAT_ND);
+        q1_buffer, ggml_cann_type_mapping(hiddenState->type), element_size,
+        {512, headNum, N},
+        {element_size, element_size * 512, element_size * 512 * headNum}, 3,
+        ACL_FORMAT_ND);
 
-    ggml_cann_pool_alloc cache1_allocator(ctx.pool(), blockNum * blockSize * 512 * element_size);
+    ggml_cann_pool_alloc cache1_allocator(
+        ctx.pool(), blockNum * blockSize * 512 * element_size);
     void* cache1_buffer = cache1_allocator.get();
     aclTensor* cache1_tensor = ggml_cann_create_tensor(
-        cache1_buffer, ggml_cann_type_mapping(hiddenState->type),
-        element_size, {512, 1, blockSize, blockNum}, 
-        {element_size, element_size * 512, element_size * 512, element_size * 512 * blockSize}, 
+        cache1_buffer, ggml_cann_type_mapping(hiddenState->type), element_size,
+        {512, 1, blockSize, blockNum},
+        {element_size, element_size * 512, element_size * 512,
+         element_size * 512 * blockSize},
         4, ACL_FORMAT_ND);
 
-    ggml_cann_pool_alloc q2_allocator(ctx.pool(), N * headNum * 64 * element_size);
+    ggml_cann_pool_alloc q2_allocator(ctx.pool(),
+                                      N * headNum * 64 * element_size);
     void* q2_buffer = q2_allocator.get();
     aclTensor* q2_tensor = ggml_cann_create_tensor(
-        q2_buffer, ggml_cann_type_mapping(hiddenState->type),
-        element_size, {64, headNum, N}, 
-        {element_size, element_size * 64, element_size * 64 * headNum}, 
-        3, ACL_FORMAT_ND);
-    
-    ggml_cann_pool_alloc cache2_allocator(ctx.pool(), blockNum * blockSize * 64 * element_size);
+        q2_buffer, ggml_cann_type_mapping(hiddenState->type), element_size,
+        {64, headNum, N},
+        {element_size, element_size * 64, element_size * 64 * headNum}, 3,
+        ACL_FORMAT_ND);
+
+    ggml_cann_pool_alloc cache2_allocator(
+        ctx.pool(), blockNum * blockSize * 64 * element_size);
     void* cache2_buffer = cache2_allocator.get();
     aclTensor* cache2_tensor = ggml_cann_create_tensor(
-        cache2_buffer, ggml_cann_type_mapping(hiddenState->type),
-        element_size, {64, 1, blockSize, blockNum}, 
-        {element_size, element_size * 64, element_size * 64, element_size * 64 * blockSize}, 
+        cache2_buffer, ggml_cann_type_mapping(hiddenState->type), element_size,
+        {64, 1, blockSize, blockNum},
+        {element_size, element_size * 64, element_size * 64,
+         element_size * 64 * blockSize},
         4, ACL_FORMAT_ND);
 
     uint64_t workspaceSize = 0;
@@ -6041,45 +6023,20 @@ void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx, ggml_tensor* dst)
     void* workspaceAddr = nullptr;
 
     ACL_CHECK(aclnnMLAPreprocessGetWorkspaceSize(
-        acl_hiddenState,
-        acl_gamma1,
-        acl_beta1,
-        acl_quantScale1,
-        acl_quantOffset1,
-        acl_wdqkv,
-        acl_bias1,
-        acl_gamma2,
-        acl_beta2,
-        acl_quantScale2,
-        acl_quantOffset2,
-        acl_gamma3,
-        acl_sin1,
-        acl_cos1,
-        acl_keycache,
-        acl_slotMapping,
-        acl_wuq,
-        acl_bias2,
-        acl_wuk,
-        acl_descale1,
-        acl_descale2,
-        acl_ctkvScale,
-        acl_qnopeScale,
-        N,
-        headNum,
-        cacheMode,
-        quantMode,
-        q1_tensor,
-        cache1_tensor,
-        q2_tensor,
-        cache2_tensor,
-        &workspaceSize, &executor));
+        acl_hiddenState, acl_gamma1, acl_beta1, acl_quantScale1,
+        acl_quantOffset1, acl_wdqkv, acl_bias1, acl_gamma2, acl_beta2,
+        acl_quantScale2, acl_quantOffset2, acl_gamma3, acl_sin1, acl_cos1,
+        acl_keycache, acl_slotMapping, acl_wuq, acl_bias2, acl_wuk,
+        acl_descale1, acl_descale2, acl_ctkvScale, acl_qnopeScale, N, headNum,
+        cacheMode, quantMode, q1_tensor, cache1_tensor, q2_tensor,
+        cache2_tensor, &workspaceSize, &executor));
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
     ACL_CHECK(aclnnMLAPreprocess(workspaceAddr, workspaceSize, executor,
-                                        ctx.stream()));
-    
+                                 ctx.stream()));
+
     aclTensor* tensors[] = {q1_tensor, q2_tensor};
     aclTensorList* tensorList = aclCreateTensorList(tensors, 2);
     aclTensor* acl_dst = ggml_cann_create_tensor(dst, nullptr, nullptr, 3);

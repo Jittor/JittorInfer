@@ -29,10 +29,10 @@ enum class CopyTransposeType {
                            // format:"NZ"}-->{ shape:[B, A2, A3 / 16, A1 / 16,
                            // 16, 16], origin_shape:[B, A2, A1, A3],
                            // format:"NZ"}
-    TRANSPOSE_NZ2NZ_012_WITH_N,  // { shape:[B, H / 16, S / 16, 16, 16],
-                                 // format:"NZ"}-->{ shape:[B, N, H/N/16, S /
-                                 // 16, 16, 16], ori_shape:[B, N, S, H/N],
-                                 // format:"NZ"}
+    TRANSPOSE_NZ2NZ_012_WITH_N,     // { shape:[B, H / 16, S / 16, 16, 16],
+                                    // format:"NZ"}-->{ shape:[B, N, H/N/16, S /
+                                    // 16, 16, 16], ori_shape:[B, N, S, H/N],
+                                    // format:"NZ"}
     TRANSPOSE_NZ2ND_012_WITH_N,     // { shape:[B, H / 16, S / 16, 16, 16],
                                     // format:"NZ"}-->{ shape:[B, N, S, H/N],
                                     // ori_shape:[B, N, S, H/N], format:"ND"}
