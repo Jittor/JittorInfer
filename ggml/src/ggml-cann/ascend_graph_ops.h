@@ -121,6 +121,10 @@ ge::Operator handle_flash_attn_prompt_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+ge::Operator handle_flash_attn_jittor_v1_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
 
 ge::Operator handle_set_slice_op(
     ge::Graph &graph, struct ggml_tensor *node,
@@ -140,6 +144,21 @@ ge::Operator handle_pad_op(
 ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
                                 const std::vector<int64_t> &values,
                                 ge::DataType type);
+
+ge::Operator handle_mla_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
+ge::Operator handle_mla_prefill_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
+ge::Operator handle_mla_preprocess_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
 
 /**
  * @brief 创建通用的Reshape操作

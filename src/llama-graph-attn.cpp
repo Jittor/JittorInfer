@@ -1,6 +1,7 @@
 #include "ggml.h"
 #include "llama-context.h"
 #include "llama-graph-utils.h"
+#include <cstdio>
 
 static void llm_build_kv_store(struct ggml_context * ctx, const llama_hparams & hparams, const llama_cparams & cparams,
                                const llama_kv_cache & kv, struct ggml_cgraph * graph, struct ggml_tensor * k_cur,
@@ -100,6 +101,11 @@ static struct ggml_tensor * llm_build_kqv(struct ggml_context * ctx, struct llam
                                      nullptr, nullptr, kq_scale);
         cur = ggml_view_3d(ctx, cur, n_embd_head_v, n_head, n_tokens, ggml_row_size(cur->type, pad_n_embd),
                            ggml_row_size(cur->type, n_embd_v_gqa), 0);
+        // cur = ggml_flash_attn_jittor_v1(ctx, q, k, v, kq_full, 1, n_head, pad_n_embd, pad_n_embd, n_head, n_tokens, n_kv, nullptr, nullptr, kq_scale);
+        // cur = ggml_view_3d(ctx, cur, n_embd_head_v, n_tokens, n_head, ggml_row_size(cur->type, pad_n_embd),
+        //                 ggml_row_size(cur->type, pad_n_embd * n_tokens), 0);
+        // cur = ggml_permute(ctx, cur, 0, 2, 1, 3);
+
         cur = ggml_cont_2d(ctx, cur, n_embd_head_v * n_head, n_tokens);
         cur = ggml_cast(ctx, cur, GGML_TYPE_F32);
     } else if (cparams.flash_attn) {
@@ -396,6 +402,20 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
         if (q->type != GGML_TYPE_F16) {
             q = ggml_cast(ctx, q, GGML_TYPE_F16);
         }
+    
+        // q = ggml_permute(ctx, q, 0, 2, 1, 3);
+        // k = ggml_permute(ctx, k, 0, 2, 1, 3);
+        // v = ggml_permute(ctx, v, 0, 2, 1, 3);
+        
+        // printf("Q: %d, %d, %d, %d\n", q->ne[0], q->ne[1], q->ne[2], q->ne[3]);
+        // printf("K: %d, %d, %d, %d\n", k->ne[0], k->ne[1], k->ne[2], k->ne[3]);
+        // printf("V: %d, %d, %d, %d\n", v->ne[0], v->ne[1], v->ne[2], v->ne[3]);
+        // cur = ggml_flash_attn_jittor_v1(ctx, q, k, v, kq_full, 1, n_head, pad_n_embd, pad_n_embd, n_head, n_tokens, n_kv,
+        //                             length_q, length_kv, kq_scale);
+        // cur = ggml_permute(ctx, cur, 0, 2, 1, 3);
+        // cur = ggml_cont(ctx, cur);
+        // printf("Res: %d, %d, %d, %d\n", cur->ne[0], cur->ne[1], cur->ne[2], cur->ne[3]);
+
         cur = ggml_flash_attn_prompt(ctx, q, k, v, kq_full, 1, n_head, pad_n_embd, pad_n_embd, n_head, n_tokens, n_kv,
                                      length_q, length_kv, kq_scale);
         cur = ggml_reshape_3d(ctx, cur, pad_n_embd, n_head, n_tokens);

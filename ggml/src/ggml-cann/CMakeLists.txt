@@ -65,6 +65,7 @@ if (CANN_INSTALL_DIR)
         ${CANN_INSTALL_DIR}/compiler/include/graph
         ${CANN_INSTALL_DIR}/compiler/include/ge
         ${CANN_INSTALL_DIR}/compiler/include
+        ${CANN_INSTALL_DIR}/opp/vendors/jittor_infer/op_proto/inc
         ${CANN_INSTALL_DIR}/opp/built-in/op_proto/inc
         ${CANN_INSTALL_DIR}/opp/vendors/customize/op_proto/inc
     )
@@ -77,16 +78,41 @@ if (CANN_INSTALL_DIR)
     add_subdirectory(kernels)
 
     if (LLAMA_USE_JITTOR_OPS)
-        # Add CANN-OPS-ADV library with full path first
+        file(MAKE_DIRECTORY ${JITTOR_OPS_LIB_DIR})
+        
+        message(STATUS "install customized operators...")
+        execute_process(
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/kernels/op_project/install.sh
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/kernels/op_project
+            RESULT_VARIABLE install_result
+            OUTPUT_VARIABLE install_output
+            ERROR_VARIABLE install_error
+        )
+        
+        if(NOT install_result EQUAL "0")
+            message(WARNING "customized operators install failed: ${install_error}")
+        else()
+            message(STATUS "customized operators installed")
+        endif()
+        
+        execute_process(
+            COMMAND ls -la ${JITTOR_OPS_LIB_DIR}
+            OUTPUT_VARIABLE ls_output
+        )
+        message(STATUS "custom ops ${JITTOR_OPS_LIB_DIR} : ${ls_output}")
+        
         find_library(JITTOR_OPS_LIB
             NAMES cust_opapi
             PATHS ${JITTOR_OPS_LIB_DIR}
             NO_DEFAULT_PATH
-            REQUIRED
         )
-        message(STATUS "Found jittor_ops library: ${JITTOR_OPS_LIB}")
-
-        list(APPEND CANN_LIBRARIES ${JITTOR_OPS_LIB})
+        
+        if(NOT JITTOR_OPS_LIB)
+            message(WARNING "cust_opapi not found")
+        else()
+            message(STATUS "found jittor_ops : ${JITTOR_OPS_LIB}")
+            list(APPEND CANN_LIBRARIES ${JITTOR_OPS_LIB})
+        endif()
     endif()
     
     # Add CANN-OPS-ADV library first to ensure its symbols take precedence
@@ -120,13 +146,6 @@ if (CANN_INSTALL_DIR)
     message(STATUS "CANN: CANN_INCLUDE_DIRS =  ${CANN_INCLUDE_DIRS}")
     message(STATUS "CANN: CANN_LIBRARIES =  ${CANN_LIBRARIES}")
 
-    add_custom_target(custom_rope_ext 
-        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom_rope_ext/op_project/install.sh
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom_rope_ext/op_project
-        COMMENT "Running custom_rope_ext build script..."
-    )
-
-    add_dependencies(ggml-cann custom_rope_ext)
 else()
     message(FATAL_ERROR "CANN: Can't find CANN_INSTALL_DIR, did you forget to source set_var.sh?")
 endif()
