@@ -624,8 +624,9 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 break;
             }
             case GGML_OP_FLASH_ATTN_JITTOR_V1: {
-                Operator flash_attn_jittor_v1_op = handle_flash_attn_jittor_v1_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
+                Operator flash_attn_jittor_v1_op =
+                    handle_flash_attn_jittor_v1_op(graph, node,
+                                                   ggml_tensor_to_ge_op_map, i);
 
                 ggml_tensor_to_ge_op_map[node] = flash_attn_jittor_v1_op;
                 if (node == last_op_node) {
@@ -645,7 +646,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 break;
             }
             case GGML_OP_MLA_JITTOR: {
-                Operator mla_op = handle_mla_op(graph, node, ggml_tensor_to_ge_op_map, i);
+                Operator mla_op =
+                    handle_mla_op(graph, node, ggml_tensor_to_ge_op_map, i);
 
                 ggml_tensor_to_ge_op_map[node] = mla_op;
 
@@ -655,7 +657,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 break;
             }
             case GGML_OP_MLA_PREFILL_JITTOR: {
-                Operator mla_prefill_op = handle_mla_prefill_op(graph, node, ggml_tensor_to_ge_op_map, i);
+                Operator mla_prefill_op = handle_mla_prefill_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
 
                 ggml_tensor_to_ge_op_map[node] = mla_prefill_op;
 
@@ -665,7 +668,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 break;
             }
             case GGML_OP_MLA_PREPROCESS: {
-                Operator mla_preprocess_op = handle_mla_preprocess_op(graph, node, ggml_tensor_to_ge_op_map, i);
+                Operator mla_preprocess_op = handle_mla_preprocess_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
 
                 ggml_tensor_to_ge_op_map[node] = mla_preprocess_op;
 

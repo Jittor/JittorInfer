@@ -1,7 +1,8 @@
+#include <cstdio>
+
 #include "ggml.h"
 #include "llama-context.h"
 #include "llama-graph-utils.h"
-#include <cstdio>
 
 static void llm_build_kv_store(struct ggml_context * ctx, const llama_hparams & hparams, const llama_cparams & cparams,
                                const llama_kv_cache & kv, struct ggml_cgraph * graph, struct ggml_tensor * k_cur,
@@ -402,11 +403,11 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
         if (q->type != GGML_TYPE_F16) {
             q = ggml_cast(ctx, q, GGML_TYPE_F16);
         }
-    
+
         // q = ggml_permute(ctx, q, 0, 2, 1, 3);
         // k = ggml_permute(ctx, k, 0, 2, 1, 3);
         // v = ggml_permute(ctx, v, 0, 2, 1, 3);
-        
+
         // printf("Q: %d, %d, %d, %d\n", q->ne[0], q->ne[1], q->ne[2], q->ne[3]);
         // printf("K: %d, %d, %d, %d\n", k->ne[0], k->ne[1], k->ne[2], k->ne[3]);
         // printf("V: %d, %d, %d, %d\n", v->ne[0], v->ne[1], v->ne[2], v->ne[3]);
