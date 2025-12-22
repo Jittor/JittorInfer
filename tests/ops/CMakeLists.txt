@@ -29,9 +29,9 @@ target_link_libraries(${TARGET_MLA_PREFILL} PRIVATE llama ${CMAKE_THREAD_LIBS_IN
 target_include_directories(${TARGET_MLA_PREFILL} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(${TARGET_MLA_PREFILL} PRIVATE cxx_std_17)
 
-set(TARGET test_ops_speed)
+set(TARGET test_backend_ops)
 add_executable(${TARGET} 
-    test_ops_speed.cpp
+    test_backend_ops.cpp
 )
 install(TARGETS ${TARGET} RUNTIME)
 target_link_libraries(${TARGET} PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
