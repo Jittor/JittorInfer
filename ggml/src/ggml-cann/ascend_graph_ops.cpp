@@ -1178,14 +1178,14 @@ ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
         }
         // 使用构造函数直接创建 Tensor，确保数据被立即拷贝
         ge::Tensor tensor(desc,
-                         reinterpret_cast<uint8_t *>(int32_values.data()),
-                         int32_values.size() * sizeof(int32_t));
+                          reinterpret_cast<uint8_t *>(int32_values.data()),
+                          int32_values.size() * sizeof(int32_t));
         const_op.set_attr_value(tensor);
     } else {  // Default to INT64
         // 直接使用 values 的 const 引用，使用构造函数确保数据被立即拷贝
         ge::Tensor tensor(desc,
-                         reinterpret_cast<const uint8_t *>(values.data()),
-                         values.size() * sizeof(int64_t));
+                          reinterpret_cast<const uint8_t *>(values.data()),
+                          values.size() * sizeof(int64_t));
         const_op.set_attr_value(tensor);
     }
     graph.AddOp(const_op);
