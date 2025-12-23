@@ -170,28 +170,23 @@ class ModelBase:
 
         for part_name in part_names:
             logger.info(f"gguf: indexing model part '{part_name}'")
-            ctx: ContextManager[Any]
             if is_safetensors:
-                ctx = cast(ContextManager[Any], gguf.utility.SafetensorsLocal(self.dir_model / part_name))
-            else:
-                ctx = contextlib.nullcontext(torch.load(str(self.dir_model / part_name), map_location="cpu", mmap=True, weights_only=True))
-
-            with ctx as model_part:
-                assert model_part is not None
+                from safetensors import safe_open
+                model_part = safe_open(str(self.dir_model / part_name), framework='pt', device='cpu')
                 for name in model_part.keys():
-                    if is_safetensors:
-                        data: gguf.utility.LocalTensor = model_part[name]
-                        if self.lazy:
-                            data_gen = lambda data=data: LazyTorchTensor.from_local_tensor(data)
-                        else:
-                            dtype = LazyTorchTensor._dtype_str_map[data.dtype]
-                            data_gen = lambda data=data, dtype=dtype: torch.from_numpy(data.mmap_bytes()).view(dtype).reshape(data.shape)
+                    if self.lazy:
+                        data_gen = lambda name=name, model_part=model_part: model_part.get_tensor(name)
                     else:
-                        data_torch: Tensor = model_part[name]
-                        if self.lazy:
-                            data_gen = lambda data=data_torch: LazyTorchTensor.from_eager(data)
-                        else:
-                            data_gen = lambda data=data_torch: data
+                        data_gen = lambda name=name, model_part=model_part: model_part.get_tensor(name)
+                    tensors[name] = data_gen
+            else:
+                model_part = torch.load(str(self.dir_model / part_name), map_location="cpu", mmap=True, weights_only=True)
+                for name in model_part.keys():
+                    data_torch: Tensor = model_part[name]
+                    if self.lazy:
+                        data_gen = lambda data=data_torch: data
+                    else:
+                        data_gen = lambda data=data_torch: data
                     tensors[name] = data_gen
 
         if len(tensor_names_from_index) > 0:
@@ -749,6 +744,13 @@ class Qwen3Model(Qwen2Model):
 
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
+        
+        # Set head_dim if explicitly provided in config
+        if (head_dim := self.find_hparam(["head_dim"], optional=True)) is not None:
+            self.gguf_writer.add_key_length(head_dim)
+            self.gguf_writer.add_value_length(head_dim)
+            logger.info(f"Setting head_dim from config: {head_dim}")
+        
         if self.is_rerank:
             self.gguf_writer.add_pooling_type(gguf.PoolingType.RANK)
             self.gguf_writer.add_classifier_output_labels(["yes", "no"])
