@@ -1022,19 +1022,25 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                         layer.attn_norm =
                             create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0);
-                        layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
+                        
+                        layer.wqkv = create_tensor({ n_embd, (n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa) }, LLM_SPLIT_REPEAT,
+                                                tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0);
 
+                        // layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_REPEAT,
+                        //                         tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
+                        // layer.wk = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                        //                         tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
+                        // layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                        //                         tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+                                                            
                         layer.attn_q_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), 0);
 
-                        layer.wk          = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
+
                         layer.attn_k_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0);
 
-                        layer.wv            = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                            tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+
                         layer.wo            = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
                                                             tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
                         // todo: some condition: load dense ffn

@@ -44,15 +44,42 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
 
         // self-attention
         {
-            // compute Q and K and RoPE them
-            struct ggml_tensor * Qcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
+            // compute Q, K, V using merged QKV weight for better performance
+            struct ggml_tensor * Qcur;
+            struct ggml_tensor * Kcur;
+            struct ggml_tensor * Vcur;
 
-            struct ggml_tensor * Kcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
+            if (model.layers[il].wqkv != nullptr) {
+                // Use merged QKV weight
+                const int64_t n_embd_head = hparams.n_embd_head_k;
+                const int64_t q_dim       = n_embd_head * n_head;
+                const int64_t k_dim       = n_embd_head * n_head_kv;
+                const int64_t v_dim       = n_embd_head * n_head_kv;
 
-            struct ggml_tensor * Vcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
+                struct ggml_tensor * QKVcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wqkv, cur);
+                cb(QKVcur, "QKVcur", il);
+
+                // Split QKV into Q, K, V using ggml_get_slice (GE backend doesn't support view)
+                // QKVcur shape: [qkv_dim, n_tokens]
+                Qcur = ggml_get_slice(ctx0, QKVcur, 0, q_dim, 0);
+                cb(Qcur, "Qcur", il);
+
+                Kcur = ggml_get_slice(ctx0, QKVcur, q_dim, q_dim + k_dim, 0);
+                cb(Kcur, "Kcur", il);
+
+                Vcur = ggml_get_slice(ctx0, QKVcur, q_dim + k_dim, q_dim + k_dim + v_dim, 0);
+                cb(Vcur, "Vcur", il);
+            } else {
+                // Fallback to separate Q, K, V weights
+                Qcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
+                cb(Qcur, "Qcur", il);
+
+                Kcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wk, cur);
+                cb(Kcur, "Kcur", il);
+
+                Vcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wv, cur);
+                cb(Vcur, "Vcur", il);
+            }
 
             Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head_k, n_head, n_tokens);
             Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, cb, il, true);

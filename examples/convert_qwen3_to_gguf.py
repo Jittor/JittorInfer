@@ -82,7 +82,7 @@ class ModelBase:
                  split_max_tensors: int = 0, split_max_size: int = 0, dry_run: bool = False,
                  small_first_shard: bool = False, hparams: dict[str, Any] | None = None, remote_hf_model_id: str | None = None,
                  disable_mistral_community_chat_template: bool = False,
-                 sentence_transformers_dense_modules: bool = False, merge_qkv: bool = False, merge_ffn: bool = False):
+                 sentence_transformers_dense_modules: bool = False, merge_qkv: bool = False, merge_ffn: bool = False, max_layers: int | None = None):
         
         self.dir_model = dir_model
         self.ftype = ftype
@@ -96,6 +96,7 @@ class ModelBase:
         self.sentence_transformers_dense_modules = sentence_transformers_dense_modules
         self.merge_qkv = merge_qkv
         self.merge_ffn = merge_ffn
+        self.max_layers = max_layers
         self.hparams = ModelBase.load_hparams(self.dir_model, self.is_mistral_format) if hparams is None else hparams
         self.model_tensors = self.index_tensors(remote_hf_model_id=remote_hf_model_id)
         self.metadata_override = metadata_override
@@ -210,6 +211,16 @@ class ModelBase:
 
     def get_tensors(self) -> Iterator[tuple[str, Tensor]]:
         for name, gen in self.model_tensors.items():
+            # Skip layers beyond max_layers BEFORE loading the tensor
+            if self.max_layers is not None:
+                bid = None
+                for part in name.split("."):
+                    if part.isdecimal():
+                        bid = int(part)
+                        break
+                if bid is not None and bid >= self.max_layers:
+                    logger.debug(f"Skipping tensor load for layer {bid} (max_layers={self.max_layers}): {name}")
+                    continue
             yield name, gen()
 
     def format_tensor_name(self, key: gguf.MODEL_TENSOR, bid: int | None = None, suffix: str = ".weight") -> str:
@@ -384,7 +395,11 @@ class TextModel(ModelBase):
         self.set_vocab()
 
     def set_gguf_parameters(self):
-        self.gguf_writer.add_block_count(self.block_count)
+        # Use max_layers if specified, otherwise use the actual block_count
+        effective_block_count = min(self.block_count, self.max_layers) if self.max_layers is not None else self.block_count
+        self.gguf_writer.add_block_count(effective_block_count)
+        if self.max_layers is not None:
+            logger.info(f"gguf: limiting block_count from {self.block_count} to {effective_block_count} (max_layers={self.max_layers})")
         if (n_ctx := self.find_hparam(["max_position_embeddings", "n_ctx", "n_positions", "max_length", "max_sequence_length", "model_max_length"], optional=True)) is not None:
             self.gguf_writer.add_context_length(n_ctx)
         if (n_embd := self.find_hparam(["hidden_size", "n_embd", "dim"], optional=True)) is not None:
@@ -952,6 +967,173 @@ class LazyTorchTensor(gguf.LazyBase):
             return args[0].numpy()
         return cls._wrap_fn(func)(*args, **kwargs)
 
+class Qwen2MoeModel(TextModel):
+    model_arch = gguf.MODEL_ARCH.QWEN2MOE
+    
+    # tensors cache for merging QKV
+    qkv_cache: dict[int, dict[str, Tensor]]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.qkv_cache = {}
+
+    def set_gguf_parameters(self):
+        super().set_gguf_parameters()
+        if (n_experts := self.hparams.get("num_experts")) is not None:
+            self.gguf_writer.add_expert_count(n_experts)
+        if (n_experts_used := self.hparams.get("num_experts_per_tok")) is not None:
+            self.gguf_writer.add_expert_used_count(n_experts_used)
+            logger.info(f"gguf: expert used count = {n_experts_used}")
+        if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
+            self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
+            logger.info(f"gguf: expert feed forward length = {moe_intermediate_size}")
+        if (shared_expert_intermediate_size := self.hparams.get('shared_expert_intermediate_size')) is not None:
+            self.gguf_writer.add_expert_shared_feed_forward_length(shared_expert_intermediate_size)
+            logger.info(f"gguf: expert shared feed forward length = {shared_expert_intermediate_size}")
+
+    _experts: list[dict[str, Tensor]] | None = None
+
+    def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+        # process the experts separately
+        name = name.replace("language_model.", "") # InternVL
+        
+        # Handle QKV merging (only for attention, not for FFN as MoE FFN is special)
+        if self.merge_qkv and bid is not None:
+            if ".self_attn.q_proj.weight" in name:
+                if bid not in self.qkv_cache:
+                    self.qkv_cache[bid] = {}
+                self.qkv_cache[bid]['q'] = data_torch
+                self.qkv_cache[bid]['q_name'] = name
+                return []  # Don't output yet
+            elif ".self_attn.k_proj.weight" in name:
+                if bid not in self.qkv_cache:
+                    self.qkv_cache[bid] = {}
+                self.qkv_cache[bid]['k'] = data_torch
+                return []  # Don't output yet
+            elif ".self_attn.v_proj.weight" in name:
+                if bid not in self.qkv_cache:
+                    self.qkv_cache[bid] = {}
+                self.qkv_cache[bid]['v'] = data_torch
+                # Now we have all three, merge them
+                if 'q' in self.qkv_cache[bid] and 'k' in self.qkv_cache[bid]:
+                    merged_qkv = torch.cat([self.qkv_cache[bid]['q'], 
+                                           self.qkv_cache[bid]['k'], 
+                                           self.qkv_cache[bid]['v']], dim=0)
+                    # Get the mapped q_proj name and modify it to qkv
+                    q_mapped_name = self.map_tensor_name(self.qkv_cache[bid]['q_name'])
+                    # Replace attn_q with attn_qkv (e.g., blk.0.attn_q.weight -> blk.0.attn_qkv.weight)
+                    qkv_mapped_name = q_mapped_name.replace("attn_q.", "attn_qkv.")
+                    # Clear cache for this block
+                    del self.qkv_cache[bid]
+                    return [(qkv_mapped_name, merged_qkv)]
+                return []  # Waiting for other tensors
+
+        # handle aggregated expert tensors
+        # GGUF stores dimensions reversed from PyTorch, so:
+        # PyTorch (A,B,C) -> GGUF writes [C,B,A] -> GGML reads ne={C,B,A}
+        # Input shapes from HF: (n_expert, n_ff_exp, n_embd) or (n_expert, n_embd, n_ff_exp)
+        # Expected GGML ne: {n_embd, n_ff_exp, n_expert} for gate/up, {n_ff_exp, n_embd, n_expert} for down
+        if name.endswith("mlp.experts.down_proj") or name.endswith("mlp.experts.down_proj.weight"):
+            mapped = f"{name}.weight" if not name.endswith(".weight") else name
+            # Input: (n_expert=128, n_ff_exp=768, n_embd=2048)
+            # Want GGML ne: {n_ff_exp, n_embd, n_expert} = {768, 2048, 128}
+            # Need PyTorch: (128, 2048, 768) [reversed of GGML]
+            # So: permute(0, 2, 1): (128, 768, 2048) -> (128, 2048, 768)
+            permuted = data_torch.permute(0, 2, 1).contiguous()
+            return [(self.map_tensor_name(mapped), permuted)]
+
+        if name.endswith("mlp.experts.gate_up_proj") or name.endswith("mlp.experts.gate_up_proj.weight"):
+            if data_torch.ndim < 3 or data_torch.shape[-1] % 2 != 0:
+                raise ValueError(f"Unexpected gate_up_proj shape for {name}: {tuple(data_torch.shape)}")
+            split_dim = data_torch.shape[-1] // 2
+            gate = data_torch[..., :split_dim].contiguous()
+            up = data_torch[..., split_dim:].contiguous()
+            # Input gate/up: (n_expert=128, n_embd=2048, n_ff_exp=768)
+            # Want GGML ne: {n_embd, n_ff_exp, n_expert} = {2048, 768, 128}
+            # Need PyTorch: (128, 768, 2048) [reversed of GGML]
+            # So: permute(0, 2, 1): (128, 2048, 768) -> (128, 768, 2048)
+            base_name = name.removesuffix(".weight")
+            base = base_name.rsplit('.', 1)[0]
+            mapped_gate = f"{base}.gate_proj.weight"
+            mapped_up = f"{base}.up_proj.weight"
+            perm_gate = gate.permute(0, 2, 1).contiguous()
+            perm_up = up.permute(0, 2, 1).contiguous()
+            return [
+                (self.map_tensor_name(mapped_gate), perm_gate),
+                (self.map_tensor_name(mapped_up), perm_up),
+            ]
+
+        if name.startswith("mlp") or name.startswith("vision_model") or name.startswith("model.vision_tower") or name.startswith("model.multi_modal_projector") or name.startswith("model.visual"):
+            # skip visual tensors
+            return []
+        if name.find("experts") != -1:
+            n_experts = self.hparams["num_experts"]
+            assert bid is not None
+
+            if self._experts is None:
+                self._experts = [{} for _ in range(self.block_count)]
+
+            self._experts[bid][name] = data_torch
+
+            if len(self._experts[bid]) >= n_experts * 3:
+                tensors: list[tuple[str, Tensor]] = []
+
+                # merge the experts into a single 3d tensor
+                for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    datas: list[Tensor] = []
+
+                    for xid in range(n_experts):
+                        ename = f"model.layers.{bid}.mlp.experts.{xid}.{w_name}.weight"
+                        datas.append(self._experts[bid][ename])
+                        del self._experts[bid][ename]
+
+                    data_torch = torch.stack(datas, dim=0)
+
+                    merged_name = f"model.layers.{bid}.mlp.experts.{w_name}.weight"
+
+                    new_name = self.map_tensor_name(merged_name)
+
+                    tensors.append((new_name, data_torch))
+                return tensors
+            else:
+                return []
+
+        return [(self.map_tensor_name(name), data_torch)]
+
+    def prepare_tensors(self):
+        super().prepare_tensors()
+
+        if self._experts is not None:
+            # flatten `list[dict[str, Tensor]]` into `list[str]`
+            experts = [k for d in self._experts for k in d.keys()]
+            if len(experts) > 0:
+                raise ValueError(f"Unprocessed experts: {experts}")
+
+class Qwen3MoeModel(Qwen2MoeModel):
+    model_arch = gguf.MODEL_ARCH.QWEN3MOE
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        hparams = ModelBase.load_hparams(self.dir_model, False)
+        self.origin_hf_arch = hparams.get('architectures', [None])[0]
+
+    def set_gguf_parameters(self):
+        super().set_gguf_parameters()
+        
+        # Set head_dim if explicitly provided in config
+        if (head_dim := self.find_hparam(["head_dim"], optional=True)) is not None:
+            self.gguf_writer.add_key_length(head_dim)
+            self.gguf_writer.add_value_length(head_dim)
+            logger.info(f"Setting head_dim from config: {head_dim}")
+
+    def set_vocab(self):
+        # deal with intern-s1
+        if self.origin_hf_arch == 'InternS1ForConditionalGeneration':
+            self._set_vocab_interns1()
+            return
+
+        super().set_vocab()
+
 
 ###### MAIN LOGIC ######
 
@@ -1056,6 +1238,10 @@ def parse_args() -> argparse.Namespace:
         "--merge-ffn", action="store_true",
         help="Merge FFN gate and up projections into a single gate_up weight tensor",
     )
+    parser.add_argument(
+        "--max-layers", type=int, default=None,
+        help="Maximum number of layers to convert (for debugging, default: all layers)",
+    )
 
     args = parser.parse_args()
     if args.model is None:
@@ -1114,16 +1300,26 @@ def main() -> None:
     with torch.inference_mode():
         output_type = ftype_map[args.outtype]
         
-        # Hardcoded to use Qwen3Model
-        model_instance = Qwen3Model(dir_model, output_type, fname_out,
-                                    is_big_endian=args.bigendian, use_temp_file=args.use_temp_file,
-                                    eager=args.no_lazy,
-                                    metadata_override=args.metadata, model_name=args.model_name,
-                                    split_max_tensors=args.split_max_tensors,
-                                    split_max_size=split_str_to_n_bytes(args.split_max_size), dry_run=args.dry_run,
-                                    small_first_shard=args.no_tensor_first_split,
-                                    remote_hf_model_id=hf_repo_id,
-                                    merge_qkv=args.merge_qkv, merge_ffn=args.merge_ffn)
+        # Detect model architecture
+        hparams = ModelBase.load_hparams(dir_model, is_mistral_format=False)
+        arch = get_model_architecture(hparams, ModelType.TEXT)
+        logger.info(f"Detected model architecture: {arch}")
+        
+        # Select model class based on architecture
+        if arch in ["Qwen3MoeForCausalLM", "Qwen2MoeForCausalLM"]:
+            model_class = Qwen3MoeModel
+        else:
+            model_class = Qwen3Model
+        
+        model_instance = model_class(dir_model, output_type, fname_out,
+                                     is_big_endian=args.bigendian, use_temp_file=args.use_temp_file,
+                                     eager=args.no_lazy,
+                                     metadata_override=args.metadata, model_name=args.model_name,
+                                     split_max_tensors=args.split_max_tensors,
+                                     split_max_size=split_str_to_n_bytes(args.split_max_size), dry_run=args.dry_run,
+                                     small_first_shard=args.no_tensor_first_split,
+                                     remote_hf_model_id=hf_repo_id,
+                                     merge_qkv=args.merge_qkv, merge_ffn=args.merge_ffn, max_layers=args.max_layers)
 
         if args.vocab_only:
             logger.info("Exporting model vocab...")

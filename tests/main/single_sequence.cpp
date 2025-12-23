@@ -57,7 +57,7 @@ static struct DefaultMiniParams {
     // std::string model = "/root/data/qwen2-7b-instruct-fp16.gguf";  // Will be set from command line argument
     // std::string model = "/root/data/Qwen2.5-7B-Instruct-f16.gguf";  // Will be set from command line argument
     // std::string model = "/root/data/Qwen3-8B-f16.gguf";  // Will be set from command line argument
-    std::string model = "/root/data/qwen3-8b-merged-fp16.gguf";  // Will be set from command line argument
+    std::string model = "/root/data/qwen3-30B-A3B-qkv-mergedf16.gguf";  // Will be set from command line argument
     // std::string model = "/root/data/Qwen3-30B-A3B-f16/Qwen.Qwen3-30B-A3B.f16-00001-of-00002.gguf";  // Will be set from command line argument
     // std::string model = "/root/data/root/data/Qwen3-30B-A3B.f16.gguf";  // Will be set from command line argument
     // std::string model = "/root/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct-GGUF/snapshots/198f08841147e5196a6a69bd0053690fb1fd3857/qwen2-0_5b-instruct-fp16.gguf";  // Will be set from command line argument
