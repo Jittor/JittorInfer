@@ -85,8 +85,9 @@ static llama_model_params common_model_params_to_llama_local() {
     // 开启张量并行
     mparams.enable_tensor_parallel      = false;
     mparams.enable_fused_moe            = true;
-    mparams.offload_input               = true;
-    mparams.enable_cann_flash_attention = true;
+    mparams.enable_mla                  = true;
+    mparams.offload_input               = false;
+    mparams.enable_cann_flash_attention = false;
     return mparams;
 }
 
@@ -99,8 +100,8 @@ static llama_context_params common_context_params_to_llama_local() {
     cparams.n_threads_batch   = default_mini_params.n_threads_batch;
     cparams.defrag_thold      = default_mini_params.defrag_thold;
     cparams.no_perf           = default_mini_params.no_perf;
-    cparams.enable_ge         = true;
-    cparams.enable_scatter_kv = true;
+    cparams.enable_ge         = false;
+    cparams.enable_scatter_kv = false;
     cparams.presample_count   = -1;
     return cparams;
 }

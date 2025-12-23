@@ -1015,7 +1015,7 @@ GGML_API struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct 
 GGML_API struct ggml_tensor * ggml_mla_prefill_jittor(
     struct ggml_context * ctx, struct ggml_tensor * query, struct ggml_tensor * query_rope, struct ggml_tensor * key,
     struct ggml_tensor * key_rope, struct ggml_tensor * value, struct ggml_tensor * qSeq_length,
-    struct ggml_tensor * kvSeq_length, struct ggml_tensor * mask, int32_t batchSize, int32_t headNum, int32_t kvHeadNum,
+    struct ggml_tensor * kvSeq_length, struct ggml_tensor * mask, int32_t tokenNum, int32_t batchSize, int32_t headNum, int32_t kvHeadNum,
     int32_t embeddim, int32_t embeddimV, int32_t maxSeqLen, float qkScale);
 
 GGML_API struct ggml_tensor * ggml_mla_preprocess(

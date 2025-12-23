@@ -233,13 +233,13 @@ std::vector<float> reshape_output_4d_to_2d(const std::vector<float>& output_4d,
 }
 
 void mla_prefill_using_attention_cpu(
-    const std::vector<float>& Q,           // [batchSize * SeqlenQ, headNum * 128]
-    const std::vector<float>& QRope,       // [batchSize * SeqlenQ, headNum * 64]
+    const std::vector<float>& Q,           // [SeqlenQ, headNum * 128]
+    const std::vector<float>& QRope,       // [SeqlenQ, headNum * 64]
     const std::vector<float>& K,           // [batchSize, SeqlenKV, kvHeadNum * 128]
     const std::vector<float>& kRope,       // [batchSize, SeqlenKV, kvHeadNum * 64]
     const std::vector<float>& V,           // [batchSize, SeqlenKV, kvHeadNum * 128]
-    const std::vector<float>& mask,        // [512, 512]
-    std::vector<float>& output,            // [batchSize * SeqlenQ, headNum * 128] - 输出形状与Q相同
+    const std::vector<float>& mask,        // [SeqlenQ, SeqlenKV]
+    std::vector<float>& output,            // [SeqlenQ, headNum * 128] - 输出形状与Q相同
     int64_t batch_size,
     int64_t seq_len_q,
     int64_t seq_len_kv,
@@ -250,15 +250,15 @@ void mla_prefill_using_attention_cpu(
     int64_t rope_dim
 ) {
     // 1. 应用旋转位置编码到Q和K（替换前64个维度，保持形状不变）
-    std::vector<float> Q_final = rope_concat(Q, QRope, batch_size, seq_len_q, 
+    std::vector<float> Q_final = rope_concat(Q, QRope, 1, seq_len_q, 
                                                      head_num, head_dim, rope_dim);
 
     std::vector<float> K_final = rope_concat(K, kRope, batch_size, seq_len_kv, 
                                                        kv_head_num, head_dim, rope_dim);
     
     // 2. 重塑张量布局以适应attention_cpu函数
-    // Q: [batch_size, head_num, seq_len_q, head_dim]
-    std::vector<float> Q_4d = reshape_2d_to_4d(Q_final, batch_size, seq_len_q, head_num, head_dim + rope_dim);
+    // Q: [1, token_num, seq_len_q, head_dim]
+    std::vector<float> Q_4d = reshape_2d_to_4d(Q_final, 1, seq_len_q, head_num, head_dim + rope_dim);
 
     // K: [batch_size, kv_head_num, seq_len_kv, head_dim]
     std::vector<float> K_4d = reshape_kv_3d_to_4d(K_final, batch_size, seq_len_kv, kv_head_num, head_dim + rope_dim);

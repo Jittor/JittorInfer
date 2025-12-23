@@ -177,6 +177,19 @@ int main() {
         }
     }
 
+    std::random_device mask_rd;
+    std::mt19937 mask_gen(mask_rd());
+    std::bernoulli_distribution mask_dist(0.3);  // 30% 的概率设置为 1
+    for (int64_t i = 0; i < mask_size; ++i) {
+        mask_host[i] = mask_dist(mask_gen) ? 1 : 0;
+    }
+
+    std::cout << "Attention mask sample:" << std::endl;
+    for (int i = 0; i < std::min(static_cast<int64_t>(16), static_cast<int64_t>(mask_size)); ++i) {
+        std::cout << static_cast<int>(mask_host[i]) << " ";
+    }
+    std::cout << std::endl;
+
     std::vector<float> output_host(output_size);
     memset(output_host.data(), 0, output_size * sizeof(float));
 

@@ -82,7 +82,7 @@ aclTensor* ggml_cann_create_tensor(const ggml_tensor* tensor, const int64_t* ne,
 
     aclTensor* acl_tensor = aclCreateTensor(
         acl_ne, final_dims, ggml_cann_type_mapping(tensor->type), acl_stride,
-        offset / ggml_element_size(tensor), format, acl_ne, final_dims,
+        offset / ggml_element_size(tensor), format, &acl_storage_len, 1,
         tensor->data);
 
     return acl_tensor;
@@ -114,7 +114,7 @@ aclTensor* ggml_cann_create_tensor_with_custom_shape(const ggml_tensor* tensor,
 
     aclTensor* acl_tensor = aclCreateTensor(
         acl_ne, final_dims, ggml_cann_type_mapping(tensor->type), acl_stride,
-        offset / ggml_element_size(tensor), format, acl_ne, final_dims,
+        offset / ggml_element_size(tensor), format, &acl_storage_len, 1,
         tensor->data);
 
     return acl_tensor;
@@ -154,7 +154,7 @@ aclTensor* ggml_cann_create_tensor_transpose(const ggml_tensor* tensor,
 
     aclTensor* acl_tensor = aclCreateTensor(
         acl_ne, final_dims, ggml_cann_type_mapping(tensor->type), acl_stride,
-        offset / ggml_element_size(tensor), format, acl_ne, final_dims,
+        offset / ggml_element_size(tensor), format, &acl_storage_len, 1,
         tensor->data);
 
     return acl_tensor;
@@ -190,7 +190,7 @@ aclTensor* ggml_cann_create_tensor_transpose(void* data_ptr, aclDataType dtype,
 
     aclTensor* acl_tensor = aclCreateTensor(
         acl_ne, final_dims, dtype, acl_stride, offset / type_size, format,
-        acl_ne, final_dims, data_ptr);
+        &acl_storage_len, 1, data_ptr);
 
     return acl_tensor;
 }
