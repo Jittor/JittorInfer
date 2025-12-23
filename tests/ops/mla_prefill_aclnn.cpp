@@ -24,6 +24,7 @@ void build_mla_prefill_graph(
     const std::vector<float> &mask_host,
     std::vector<float> &output_host,
     ggml_backend_t backend,
+    int tokenNum,
     int batchSize,
     int headNum,
     int kvHeadNum,
@@ -42,8 +43,6 @@ void build_mla_prefill_graph(
 
         ggml_cgraph* gf = ggml_new_graph(ctx);
 
-        int tokenNum = batchSize * maxSeqlen;
-
         // build graph
         ggml_tensor* query_tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 
             headNum * embeddimV, tokenNum);
@@ -60,7 +59,7 @@ void build_mla_prefill_graph(
         ggml_tensor* kvSeqLen_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_I64, 
             batchSize);
         ggml_tensor* mask_tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 
-            512, 512);
+            maxSeqlen, tokenNum);
 
         ggml_tensor* query_tensor_f16 = ggml_cast(ctx, query_tensor, GGML_TYPE_F16);
         ggml_tensor* query_rope_tensor_f16 = ggml_cast(ctx, query_rope_tensor, GGML_TYPE_F16);
@@ -71,7 +70,7 @@ void build_mla_prefill_graph(
 
         ggml_tensor* output_tensor = ggml_mla_prefill_jittor(
             ctx, query_tensor_f16, query_rope_tensor_f16, key_tensor_f16, key_rope_tensor_f16, value_tensor_f16, 
-            qSeqLen_tensor, kvSeqLen_tensor, mask_tensor_f16, batchSize, headNum, kvHeadNum, embeddim, embeddimV, maxSeqlen, qkScale);
+            qSeqLen_tensor, kvSeqLen_tensor, mask_tensor_f16, tokenNum, batchSize, headNum, kvHeadNum, embeddim, embeddimV, maxSeqlen, qkScale);
         
         output_tensor = ggml_cast(ctx, output_tensor, GGML_TYPE_F32);
 
@@ -117,12 +116,12 @@ int main() {
 
     int batchSize = 1;
     int maxSeqlen = 512;
-    int headNum = 1;
-    int kvHeadNum = 1;
+    int headNum = 16;
+    int kvHeadNum = 4;
     int embeddim = 192;
     int embeddimV = 128;
     float qkScale = 0.1352667747812271;
-    int tokenNum = batchSize * maxSeqlen;
+    int tokenNum = 512;
 
     std::cout << "Dimensions: batch_size=" << batchSize 
               << ", max_seq_len=" << maxSeqlen 
@@ -138,6 +137,7 @@ int main() {
     int64_t key_size = batchSize * maxSeqlen * kvHeadNum * embeddimV;
     int64_t key_rope_size = batchSize * maxSeqlen * kvHeadNum * 64;
     int64_t value_size = batchSize * maxSeqlen * kvHeadNum * embeddimV;
+    int64_t mask_size = tokenNum * maxSeqlen;
     int64_t output_size = tokenNum * headNum * embeddimV;
 
     std::cout << "Allocating memory for tensors..." << std::endl;
@@ -154,9 +154,9 @@ int main() {
     std::vector<float> key_host(key_size);
     std::vector<float> key_rope_host(key_rope_size);
     std::vector<float> value_host(value_size);
-    std::vector<int64_t> qSeqLen_host(batchSize, maxSeqlen);
+    std::vector<int64_t> qSeqLen_host(batchSize, tokenNum);
     std::vector<int64_t> kvSeqLen_host(batchSize, maxSeqlen);
-    std::vector<float> mask_host(512 * 512);
+    std::vector<float> mask_host(mask_size);
 
     // Random initialization
     std::cout << "Initializing tensors with random values..." << std::endl;
@@ -172,20 +172,35 @@ int main() {
 
     const float zero = float(0.0f);
     const float neg_inf = -INFINITY;
-    for (int i = 0; i < 512; ++i) {
-        for (int j = 0; j <= i; ++j) {
-            mask_host[i * 512 + j] = zero;
-        }
-        for (int j = i + 1; j < 512; ++j) {
-            mask_host[i * 512 + j] = neg_inf;
+
+    for (int i = 0; i < tokenNum; ++i) {
+        for (int j = 0; j < maxSeqlen; ++j) {
+            if (j <= i && j < maxSeqlen) {
+                mask_host[i * maxSeqlen + j] = zero;
+            } else {
+                mask_host[i * maxSeqlen + j] = neg_inf;
+            }
         }
     }
+
+    // std::random_device mask_rd;
+    // std::mt19937 mask_gen(mask_rd());
+    // std::bernoulli_distribution mask_dist(0.3);  // 30% 的概率设置为 1
+    // for (int64_t i = 0; i < mask_size; ++i) {
+    //     mask_host[i] = mask_dist(mask_gen) ? 1 : 0;
+    // }
+
+    // std::cout << "Attention mask sample:" << std::endl;
+    // for (int i = 0; i < std::min(static_cast<int64_t>(16), static_cast<int64_t>(mask_size)); ++i) {
+    //     std::cout << static_cast<int>(mask_host[i]) << " ";
+    // }
+    // std::cout << std::endl;
 
     std::vector<float> output_host(output_size);
     memset(output_host.data(), 0, output_size * sizeof(float));
 
     mla_prefill_using_attention_cpu(query_host, query_rope_host, key_host, key_rope_host,
-    value_host, mask_host, output_host, batchSize, maxSeqlen, maxSeqlen, headNum, kvHeadNum, qkScale, 128, 64);
+    value_host, mask_host, output_host, batchSize, tokenNum, maxSeqlen, headNum, kvHeadNum, qkScale, embeddimV, embeddim - embeddimV);
 
     std::cout << "CPU output tensor sample (first few values):" << std::endl;
     for (int i = 0; i < std::min(static_cast<int64_t>(10), output_size); i++) {
@@ -228,7 +243,7 @@ int main() {
     build_mla_prefill_graph(
         query_host, query_rope_host, key_host, key_rope_host, value_host,
         qSeqLen_host, kvSeqLen_host, mask_host, output_host_cann, cann_backend,
-        batchSize, headNum, kvHeadNum, embeddim, embeddimV, maxSeqlen, qkScale);
+        tokenNum, batchSize, headNum, kvHeadNum, embeddim, embeddimV, maxSeqlen, qkScale);
 
     std::cout << "MLA Prefill completed successfully." << std::endl;
     std::cout << "Cann output tensor sample (first few values):" << std::endl;

@@ -80,19 +80,22 @@ if (CANN_INSTALL_DIR)
     if (LLAMA_USE_JITTOR_OPS)
         file(MAKE_DIRECTORY ${JITTOR_OPS_LIB_DIR})
         
-        message(STATUS "install customized operators...")
-        execute_process(
-            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/kernels/op_project/install.sh
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/kernels/op_project
-            RESULT_VARIABLE install_result
-            OUTPUT_VARIABLE install_output
-            ERROR_VARIABLE install_error
-        )
+        if(LLAMA_INSTALL_JITTOR_OPS)
+            message(STATUS "install customized operators...")
+            execute_process(
+                COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/kernels/op_project/install.sh
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/kernels/op_project
+                RESULT_VARIABLE install_result
+                OUTPUT_VARIABLE install_output
+                ERROR_VARIABLE install_error
+            )
+            
+            if(NOT install_result EQUAL "0")
+                message(WARNING "customized operators install failed: ${install_error}")
+            else()
+                message(STATUS "customized operators installed")
+            endif()
         
-        if(NOT install_result EQUAL "0")
-            message(WARNING "customized operators install failed: ${install_error}")
-        else()
-            message(STATUS "customized operators installed")
         endif()
         
         execute_process(

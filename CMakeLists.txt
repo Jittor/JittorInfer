@@ -55,6 +55,9 @@ option(LLAMA_MPI "llama: enable MPI support" ON)
 # JITTOR OPS
 option(LLAMA_USE_JITTOR_OPS "llama: enable jittor ops" OFF)
 
+# JITTOR OPS
+option(LLAMA_INSTALL_JITTOR_OPS "llama: install jittor ops" OFF)
+
 # sanitizers
 option(LLAMA_SANITIZE_THREAD    "llama: enable thread sanitizer"    OFF)
 option(LLAMA_SANITIZE_ADDRESS   "llama: enable address sanitizer"   OFF)
