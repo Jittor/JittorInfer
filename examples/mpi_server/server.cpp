@@ -925,6 +925,9 @@ static llama_context_params common_context_params_to_llama_local(common_params &
     cparams.defrag_thold    = params.defrag_thold;
     cparams.no_perf         = params.no_perf;
     cparams.enable_ge       = params.enable_ge;
+    cparams.n_batch         = params.n_batch;
+    cparams.n_seq_max       = params.n_parallel;
+    cparams.presample_count = params.presample_count;
     return cparams;
 }
 
