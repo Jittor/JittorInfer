@@ -52,7 +52,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     const int64_t expert_group_id = hparams.enable_expert_parallel ? lctx.model.params.tp_id : 0;
     const int64_t n_expert_groups = hparams.enable_expert_parallel ? lctx.model.params.num_parallel : 1;
     const bool    run_mlp_only    = lctx.enable_dp_gather && lctx.self_token_size == 0;
-    const bool enable_fp16 = is_lite;
+    const bool    enable_fp16     = is_lite;
 
     struct ggml_tensor * cur;
     struct ggml_tensor * inpL;
@@ -294,7 +294,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
 
         //     ggml_tensor * cur_f32 = ggml_cast(ctx0, cur, GGML_TYPE_F32);
         //     cb(cur_f32, "result_output", -1);
-            
+
         //     ggml_build_forward_expand(gf, cur_f32);
         //     return gf;
         // }

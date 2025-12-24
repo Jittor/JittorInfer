@@ -165,7 +165,8 @@ struct llama_context * llama_init_from_model(struct llama_model * model, struct 
                     llama_graph_builder::llama_build_graph(*ctx, ctx->buf_compute_meta_decode, ubatch_pp, true);
                 ggml_graph_set_flags(ctx->graph_decode, 3);
                 ggml_backend_sched_alloc_graph(ctx->sched_decode.get(), ctx->graph_decode);
-                ggml_backend_tensor_memset(ctx->inp_pos, 0, 0, n_tokens * ctx->n_pos_per_token * ggml_element_size(ctx->inp_pos));
+                ggml_backend_tensor_memset(ctx->inp_pos, 0, 0,
+                                           n_tokens * ctx->n_pos_per_token * ggml_element_size(ctx->inp_pos));
                 ggml_backend_tensor_memset(ctx->inp_out_ids, 0, 0, n_tokens * ggml_element_size(ctx->inp_out_ids));
 
                 LLAMA_LOG_INFO("Runing Compute to warmup, please wait...\n");
