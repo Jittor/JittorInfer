@@ -157,18 +157,18 @@ enum common_reasoning_format {
 };
 
 struct common_params {
-    int                   main_gpu          = 1;
-    int                   n_gpu_layers      = 99;
-    enum llama_split_mode split_mode        = LLAMA_SPLIT_MODE_LAYER;  // how to split the model across GPUs
-    float                 tensor_split[128] = { 0 };  // how split tensors should be distributed across GPUs
-    bool                  use_mmap          = true;   // use mmap for faster loads
-    bool                  use_mlock         = false;  // use mlock to keep model in memory
-    bool                  check_tensors     = false;  // validate tensor data
-    bool                  offload_input     = false;  // offload input tensors to CPU
-    bool                  enable_ge         = false;  // use GraphEngine
-    bool                  display_chat      = false;  // display chat
-    int                   presample_count   = -1;     // CANN NPU presampling count, -1 for not use
-    bool                  enable_expert_parallel = false; // enable expert parallel
+    int                   main_gpu               = 1;
+    int                   n_gpu_layers           = 99;
+    enum llama_split_mode split_mode             = LLAMA_SPLIT_MODE_LAYER;  // how to split the model across GPUs
+    float                 tensor_split[128]      = { 0 };  // how split tensors should be distributed across GPUs
+    bool                  use_mmap               = true;   // use mmap for faster loads
+    bool                  use_mlock              = false;  // use mlock to keep model in memory
+    bool                  check_tensors          = false;  // validate tensor data
+    bool                  offload_input          = false;  // offload input tensors to CPU
+    bool                  enable_ge              = false;  // use GraphEngine
+    bool                  display_chat           = false;  // display chat
+    int                   presample_count        = -1;     // CANN NPU presampling count, -1 for not use
+    bool                  enable_expert_parallel = false;  // enable expert parallel
 
     bool enable_mla                  = false;
     bool enable_fused_moe            = true;
