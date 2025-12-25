@@ -60,6 +60,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <vector>
@@ -5712,14 +5713,14 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* key_rope = dst->src[3];
     ggml_tensor* block_table = dst->src[4];
     ggml_tensor* mask = dst->src[5];
-    // ggml_tensor* context_length = dst->src[6];
+    ggml_tensor* context_length = dst->src[6];
     GGML_ASSERT(query->type == GGML_TYPE_F16);
     GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(context_KV->type == GGML_TYPE_F16);
     GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(block_table->type == GGML_TYPE_I32);
     GGML_ASSERT(mask->type == GGML_TYPE_F16);
-    // GGML_ASSERT(context_length->type == GGML_TYPE_I64);
+    GGML_ASSERT(context_length->type == GGML_TYPE_I64);
     GGML_ASSERT(dst->type == GGML_TYPE_F16);
     struct {
         int batchSize;
@@ -5759,10 +5760,19 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     aclTensor* acl_dst_tensor =
         ggml_cann_create_tensor(dst, dst->ne, dst->nb, ggml_n_dims(dst));
 
-    // 目前保证contextLen与传入kSeqlen一致
-    std::vector<int64_t> context_length_vector(batchSize, kSeqLen);
-    aclIntArray* acl_context_length_array = aclCreateIntArray(
-        context_length_vector.data(), context_length_vector.size());
+    std::vector<int64_t> context_length_host;
+    const int64_t * context_length_ptr = nullptr;
+    if (ggml_backend_buffer_is_host(context_length->buffer)) {
+        context_length_ptr = (const int64_t *) ggml_get_data(context_length);
+    } else {
+        context_length_host.resize(batchSize);
+        ggml_backend_tensor_get(context_length, context_length_host.data(), 0,
+                                batchSize * sizeof(int64_t));
+        context_length_ptr = context_length_host.data();
+    }
+
+    aclIntArray* acl_context_length_array =
+        aclCreateIntArray(context_length_ptr, batchSize);
 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor;
@@ -5796,8 +5806,8 @@ void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
     ggml_tensor* key_rope = dst->src[3];
     ggml_tensor* value = dst->src[4];
     ggml_tensor* mask = dst->src[5];
-    // ggml_tensor* qSeqLen = dst->src[6];
-    // ggml_tensor* kvSeqLen = dst->src[7];
+    ggml_tensor* qSeqLen = dst->src[6];
+    ggml_tensor* kvSeqLen = dst->src[7];
     GGML_ASSERT(query->type == GGML_TYPE_F16);
     GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(key->type == GGML_TYPE_F16);
@@ -5805,8 +5815,8 @@ void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
     GGML_ASSERT(value->type == GGML_TYPE_F16);
     GGML_ASSERT(mask->type == GGML_TYPE_F16);
     GGML_ASSERT(dst->type == GGML_TYPE_F16);
-    // GGML_ASSERT(qSeqLen->type == GGML_TYPE_I64);
-    // GGML_ASSERT(kvSeqLen->type == GGML_TYPE_I64);
+    GGML_ASSERT(qSeqLen->type == GGML_TYPE_I64);
+    GGML_ASSERT(kvSeqLen->type == GGML_TYPE_I64);
     struct {
         int batchSize;
         int headNum;
@@ -5841,14 +5851,32 @@ void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
     aclTensor* acl_dst_tensor =
         ggml_cann_create_tensor(dst, dst->ne, dst->nb, ggml_n_dims(dst));
 
-    // 目前保证qSeqLen,kvSeqLen与传入maxSeqLen一致
-    std::vector<int64_t> qSeqLen_vector(batchSize, maxSeqLen);
+    std::vector<int64_t> qSeqLen_host;
+    const int64_t * qSeqLen_ptr = nullptr;
+    if (ggml_backend_buffer_is_host(qSeqLen->buffer)) {
+        qSeqLen_ptr = (const int64_t *) ggml_get_data(qSeqLen);
+    } else {
+        qSeqLen_host.resize(batchSize);
+        ggml_backend_tensor_get(qSeqLen, qSeqLen_host.data(), 0,
+                                batchSize * sizeof(int64_t));
+        qSeqLen_ptr = qSeqLen_host.data();
+    }
     aclIntArray* acl_qSeqLen_array =
-        aclCreateIntArray(qSeqLen_vector.data(), qSeqLen_vector.size());
+        aclCreateIntArray(qSeqLen_ptr, batchSize);
 
-    std::vector<int64_t> kvSeqLen_vector(batchSize, maxSeqLen);
+
+    std::vector<int64_t> kvSeqLen_host;
+    const int64_t * kvSeqLen_ptr = nullptr;
+    if (ggml_backend_buffer_is_host(kvSeqLen->buffer)) {
+        kvSeqLen_ptr = (const int64_t *) ggml_get_data(kvSeqLen);
+    } else {
+        kvSeqLen_host.resize(batchSize);
+        ggml_backend_tensor_get(kvSeqLen, kvSeqLen_host.data(), 0,
+                                batchSize * sizeof(int64_t));
+        kvSeqLen_ptr = kvSeqLen_host.data();
+    }
     aclIntArray* acl_kvSeqLen_array =
-        aclCreateIntArray(kvSeqLen_vector.data(), kvSeqLen_vector.size());
+        aclCreateIntArray(kvSeqLen_ptr, batchSize);
 
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor;

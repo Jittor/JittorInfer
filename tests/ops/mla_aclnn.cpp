@@ -155,7 +155,7 @@ int main() {
     std::vector<float> ctKV_host(ctKV_size);
     std::vector<float> kRope_host(kRope_size);
     std::vector<int32_t> blockTables_host(blockTables_size);
-    std::vector<int64_t> contextLens_host(contextLens_size, kSeqLen);
+    std::vector<int64_t> contextLens_host(contextLens_size);
     std::vector<float> mask_host(mask_size);
 
     // Random initialization
@@ -177,6 +177,12 @@ int main() {
         }
     }
 
+    std::random_device scale_rd;
+    std::mt19937 scale_gen(rd());
+    std::uniform_real_distribution<float> scale_dis(1.0, 5.0);
+    float scale_val = scale_dis(scale_gen);
+    contextLens_host = std::vector<int64_t>(contextLens_size, (int64_t)(kSeqLen / scale_val));
+
     std::random_device mask_rd;
     std::mt19937 mask_gen(mask_rd());
     std::bernoulli_distribution mask_dist(0.3);  // 30% 的概率设置为 1
@@ -193,7 +199,7 @@ int main() {
     std::vector<float> output_host(output_size);
     memset(output_host.data(), 0, output_size * sizeof(float));
 
-    cached_attention_cpu(query_host, query_rope_host, ctKV_host, kRope_host, blockTables_host, contextLens_host, 
+    cached_attention_cpu(query_host, query_rope_host, ctKV_host, kRope_host, blockTables_host, contextLens_host, mask_host,
         output_host, tokenNum, headNum, kvHeadNum, 576, 512, blockSize, maxBlockNumPerSeq, qkScale);
 
     std::cout << "CPU output tensor sample (first few values):" << std::endl;
