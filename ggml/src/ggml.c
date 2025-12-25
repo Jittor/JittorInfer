@@ -2750,10 +2750,10 @@ struct ggml_tensor * ggml_mla_prefill_jittor(struct ggml_context * ctx, struct g
                                              struct ggml_tensor * query_rope, struct ggml_tensor * key,
                                              struct ggml_tensor * key_rope, struct ggml_tensor * value,
                                              struct ggml_tensor * qSeq_length, struct ggml_tensor * kvSeq_length,
-                                             struct ggml_tensor * mask, int32_t tokenNum, int32_t batchSize, int32_t headNum,
-                                             int32_t kvHeadNum, int32_t embeddim, int32_t embeddimV, int32_t maxSeqLen,
-                                             float qkScale) {
-    const int64_t ne[2]  = { tokenNum, headNum * embeddimV };
+                                             struct ggml_tensor * mask, int32_t tokenNum, int32_t batchSize,
+                                             int32_t headNum, int32_t kvHeadNum, int32_t embeddim, int32_t embeddimV,
+                                             int32_t maxSeqLen, float qkScale) {
+    const int64_t        ne[2]  = { tokenNum, headNum * embeddimV };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 2, ne);
     result->op                  = GGML_OP_MLA_PREFILL_JITTOR;
     result->src[0]              = query;
