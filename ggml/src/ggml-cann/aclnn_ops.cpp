@@ -5761,9 +5761,9 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
         ggml_cann_create_tensor(dst, dst->ne, dst->nb, ggml_n_dims(dst));
 
     std::vector<int64_t> context_length_host;
-    const int64_t * context_length_ptr = nullptr;
+    const int64_t* context_length_ptr = nullptr;
     if (ggml_backend_buffer_is_host(context_length->buffer)) {
-        context_length_ptr = (const int64_t *) ggml_get_data(context_length);
+        context_length_ptr = (const int64_t*)ggml_get_data(context_length);
     } else {
         context_length_host.resize(batchSize);
         ggml_backend_tensor_get(context_length, context_length_host.data(), 0,
@@ -5852,23 +5852,21 @@ void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
         ggml_cann_create_tensor(dst, dst->ne, dst->nb, ggml_n_dims(dst));
 
     std::vector<int64_t> qSeqLen_host;
-    const int64_t * qSeqLen_ptr = nullptr;
+    const int64_t* qSeqLen_ptr = nullptr;
     if (ggml_backend_buffer_is_host(qSeqLen->buffer)) {
-        qSeqLen_ptr = (const int64_t *) ggml_get_data(qSeqLen);
+        qSeqLen_ptr = (const int64_t*)ggml_get_data(qSeqLen);
     } else {
         qSeqLen_host.resize(batchSize);
         ggml_backend_tensor_get(qSeqLen, qSeqLen_host.data(), 0,
                                 batchSize * sizeof(int64_t));
         qSeqLen_ptr = qSeqLen_host.data();
     }
-    aclIntArray* acl_qSeqLen_array =
-        aclCreateIntArray(qSeqLen_ptr, batchSize);
-
+    aclIntArray* acl_qSeqLen_array = aclCreateIntArray(qSeqLen_ptr, batchSize);
 
     std::vector<int64_t> kvSeqLen_host;
-    const int64_t * kvSeqLen_ptr = nullptr;
+    const int64_t* kvSeqLen_ptr = nullptr;
     if (ggml_backend_buffer_is_host(kvSeqLen->buffer)) {
-        kvSeqLen_ptr = (const int64_t *) ggml_get_data(kvSeqLen);
+        kvSeqLen_ptr = (const int64_t*)ggml_get_data(kvSeqLen);
     } else {
         kvSeqLen_host.resize(batchSize);
         ggml_backend_tensor_get(kvSeqLen, kvSeqLen_host.data(), 0,
