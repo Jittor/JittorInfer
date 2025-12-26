@@ -3184,8 +3184,12 @@ ge::Operator handle_mla_op(
     GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(block_tables->type == GGML_TYPE_I32);
     GGML_ASSERT(context_length->type == GGML_TYPE_I64);
-    if (mask != nullptr) { GGML_ASSERT(mask->type == GGML_TYPE_F16); }
-    if (qSeq_length != nullptr) { GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64); }
+    if (mask != nullptr) {
+        GGML_ASSERT(mask->type == GGML_TYPE_F16);
+    }
+    if (qSeq_length != nullptr) {
+        GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64);
+    }
 
     ge::Operator op_query;
     ge::Operator op_query_rope;
@@ -3265,9 +3269,10 @@ ge::Operator handle_mla_op(
     mla_op.set_input_blockTables(op_block_tables);
     mla_op.set_input_contextLens(op_context_length);
 
-    if(mask != nullptr) {
+    if (mask != nullptr) {
         ge::Operator op_mask;
-        if (gmml_tensor_to_ge_op_map.find(mask) != gmml_tensor_to_ge_op_map.end()) {
+        if (gmml_tensor_to_ge_op_map.find(mask) !=
+            gmml_tensor_to_ge_op_map.end()) {
             op_mask = gmml_tensor_to_ge_op_map[mask];
         } else {
             assert(false);
@@ -3275,16 +3280,16 @@ ge::Operator handle_mla_op(
         mla_op.set_input_mask(op_mask);
     }
 
-    if(qSeq_length != nullptr) {
+    if (qSeq_length != nullptr) {
         ge::Operator op_qseq_length;
-        if (gmml_tensor_to_ge_op_map.find(qSeq_length) != gmml_tensor_to_ge_op_map.end()) {
+        if (gmml_tensor_to_ge_op_map.find(qSeq_length) !=
+            gmml_tensor_to_ge_op_map.end()) {
             op_qseq_length = gmml_tensor_to_ge_op_map[qSeq_length];
         } else {
             assert(false);
         }
         mla_op.set_input_qseqlen(op_qseq_length);
     }
-
 
     mla_op.set_attr_headNum(headNum);
     mla_op.set_attr_qkScale(qkScale);
