@@ -3164,6 +3164,7 @@ ge::Operator handle_mla_preprocess_op(
     return concat_op;
 }
 
+// TODO
 ge::Operator handle_mla_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -3173,23 +3174,24 @@ ge::Operator handle_mla_op(
     struct ggml_tensor *context_kv = node->src[2];
     struct ggml_tensor *key_rope = node->src[3];
     struct ggml_tensor *block_tables = node->src[4];
-    struct ggml_tensor *mask = node->src[5];
-    struct ggml_tensor *context_length = node->src[6];
+    struct ggml_tensor *context_length = node->src[5];
+    struct ggml_tensor *mask = node->src[6];
+    struct ggml_tensor *qSeq_length = node->src[7];
 
     GGML_ASSERT(query->type == GGML_TYPE_F16);
     GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(context_kv->type == GGML_TYPE_F16);
     GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(block_tables->type == GGML_TYPE_I32);
-    GGML_ASSERT(mask->type == GGML_TYPE_F16);
     GGML_ASSERT(context_length->type == GGML_TYPE_I64);
+    if (mask != nullptr) { GGML_ASSERT(mask->type == GGML_TYPE_F16); }
+    if (qSeq_length != nullptr) { GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64); }
 
     ge::Operator op_query;
     ge::Operator op_query_rope;
     ge::Operator op_context_kv;
     ge::Operator op_key_rope;
     ge::Operator op_block_tables;
-    ge::Operator op_mask;
     ge::Operator op_context_length;
 
     if (gmml_tensor_to_ge_op_map.find(query) !=
@@ -3223,12 +3225,6 @@ ge::Operator handle_mla_op(
     if (gmml_tensor_to_ge_op_map.find(block_tables) !=
         gmml_tensor_to_ge_op_map.end()) {
         op_block_tables = gmml_tensor_to_ge_op_map[block_tables];
-    } else {
-        assert(false);
-    }
-
-    if (gmml_tensor_to_ge_op_map.find(mask) != gmml_tensor_to_ge_op_map.end()) {
-        op_mask = gmml_tensor_to_ge_op_map[mask];
     } else {
         assert(false);
     }
@@ -3267,8 +3263,28 @@ ge::Operator handle_mla_op(
     mla_op.set_input_ctKV(op_context_kv);
     mla_op.set_input_kRope(op_key_rope);
     mla_op.set_input_blockTables(op_block_tables);
-    mla_op.set_input_mask(op_mask);
     mla_op.set_input_contextLens(op_context_length);
+
+    if(mask != nullptr) {
+        ge::Operator op_mask;
+        if (gmml_tensor_to_ge_op_map.find(mask) != gmml_tensor_to_ge_op_map.end()) {
+            op_mask = gmml_tensor_to_ge_op_map[mask];
+        } else {
+            assert(false);
+        }
+        mla_op.set_input_mask(op_mask);
+    }
+
+    if(qSeq_length != nullptr) {
+        ge::Operator op_qseq_length;
+        if (gmml_tensor_to_ge_op_map.find(qSeq_length) != gmml_tensor_to_ge_op_map.end()) {
+            op_qseq_length = gmml_tensor_to_ge_op_map[qSeq_length];
+        } else {
+            assert(false);
+        }
+        mla_op.set_input_qseqlen(op_qseq_length);
+    }
+
 
     mla_op.set_attr_headNum(headNum);
     mla_op.set_attr_qkScale(qkScale);
