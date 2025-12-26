@@ -2711,8 +2711,8 @@ struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct
 struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tensor * query,
                                      struct ggml_tensor * query_rope, struct ggml_tensor * context_KV,
                                      struct ggml_tensor * key_rope, struct ggml_tensor * block_table,
-                                     struct ggml_tensor * context_length, struct ggml_tensor * mask, int32_t batchSize,
-                                     int32_t tokenNum, int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen,
+                                     struct ggml_tensor * context_length, struct ggml_tensor * mask, struct ggml_tensor * qSeq_length, 
+                                     int32_t batchSize, int32_t tokenNum, int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen,
                                      float qkScale, int32_t blockSize) {
     const int64_t        ne[3]  = { tokenNum, headNum, 512 };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 3, ne);
@@ -2722,8 +2722,9 @@ struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tens
     result->src[2]              = context_KV;
     result->src[3]              = key_rope;
     result->src[4]              = block_table;
-    result->src[5]              = mask;
-    result->src[6]              = context_length;
+    result->src[5]              = context_length;
+    result->src[6]              = mask;
+    result->src[7]              = qSeq_length;
 
     struct {
         int   batchSize;

@@ -5712,15 +5712,17 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* context_KV = dst->src[2];
     ggml_tensor* key_rope = dst->src[3];
     ggml_tensor* block_table = dst->src[4];
-    ggml_tensor* mask = dst->src[5];
-    ggml_tensor* context_length = dst->src[6];
+    ggml_tensor* context_length = dst->src[5];
+    ggml_tensor* mask = dst->src[6];
+    ggml_tensor* qSeq_length = dst->src[7];
     GGML_ASSERT(query->type == GGML_TYPE_F16);
     GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(context_KV->type == GGML_TYPE_F16);
     GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(block_table->type == GGML_TYPE_I32);
-    GGML_ASSERT(mask->type == GGML_TYPE_F16);
     GGML_ASSERT(context_length->type == GGML_TYPE_I64);
+    if(mask != nullptr) { GGML_ASSERT(mask->type == GGML_TYPE_F16); }
+    if(qSeq_length != nullptr) { GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64); }
     GGML_ASSERT(dst->type == GGML_TYPE_F16);
     struct {
         int batchSize;
@@ -5755,8 +5757,8 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     aclTensor* acl_block_table_tensor =
         ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb,
                                 ggml_n_dims(block_table));
-    aclTensor* acl_mask_tensor =
-        ggml_cann_create_tensor(mask, mask->ne, mask->nb, ggml_n_dims(mask));
+    aclTensor* acl_mask_tensor = mask != nullptr ? 
+        ggml_cann_create_tensor(mask, mask->ne, mask->nb, ggml_n_dims(mask)) : nullptr;
     aclTensor* acl_dst_tensor =
         ggml_cann_create_tensor(dst, dst->ne, dst->nb, ggml_n_dims(dst));
 
@@ -5774,13 +5776,28 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     aclIntArray* acl_context_length_array =
         aclCreateIntArray(context_length_ptr, batchSize);
 
+    aclIntArray* acl_qseq_length_array = nullptr;
+    if(qSeq_length != nullptr) {
+        std::vector<int64_t> qseq_length_host;
+        const int64_t * qseq_length_ptr = nullptr;
+        if (ggml_backend_buffer_is_host(qSeq_length->buffer)) {
+            qseq_length_ptr = (const int64_t *) ggml_get_data(qSeq_length);
+        } else {
+            qseq_length_host.resize(batchSize);
+            ggml_backend_tensor_get(qSeq_length, qseq_length_host.data(), 0,
+                                    batchSize * sizeof(int64_t));
+            qseq_length_ptr = qseq_length_host.data();
+        }
+        acl_qseq_length_array = aclCreateIntArray(qseq_length_ptr, batchSize);
+    }
+
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor;
     void* workspaceAddr = nullptr;
     ACL_CHECK(aclnnMLAGetWorkspaceSize(
         acl_query_tensor, acl_query_rope_tensor, acl_context_KV_tensor,
         acl_key_rope_tensor, acl_block_table_tensor, acl_context_length_array,
-        acl_mask_tensor, nullptr, nullptr, nullptr, headNum, qkScale, kvHeadNum,
+        acl_mask_tensor, acl_qseq_length_array, nullptr, nullptr, headNum, qkScale, kvHeadNum,
         0, 0, 0, acl_dst_tensor, &workspaceSize, &executor));
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);

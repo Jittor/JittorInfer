@@ -21,6 +21,7 @@ void build_mla_graph(
     const std::vector<int32_t> &blockTables_host,
     const std::vector<int64_t> &contextLens_host,
     const std::vector<float> &mask_host,
+    const std::vector<int64_t> &qSeqLen_host,
     std::vector<float> &output_host,
     ggml_backend_t backend,
     int batchSize,
@@ -59,6 +60,8 @@ void build_mla_graph(
             batchSize);
         ggml_tensor* mask_tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 
             kSeqLen, tokenNum);
+        ggml_tensor* qSeqLen_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_I64, 
+            batchSize);
 
         ggml_tensor* query_tensor_f16 = ggml_cast(ctx, query_tensor, GGML_TYPE_F16);
         ggml_tensor* query_rope_tensor_f16 = ggml_cast(ctx, query_rope_tensor, GGML_TYPE_F16);
@@ -67,8 +70,7 @@ void build_mla_graph(
         ggml_tensor* mask_tensor_f16 = ggml_cast(ctx, mask_tensor, GGML_TYPE_F16);
 
         ggml_tensor* output_tensor = ggml_mla_jittor(
-            ctx, query_tensor_f16, query_rope_tensor_f16, ctKV_tensor_f16, kRope_tensor_f16, block_table_tensor, contextLen_tensor, mask_tensor_f16,
-            batchSize, tokenNum, headNum, kvHeadNum, kSeqLen, qkScale, blockSize);
+            ctx, query_tensor_f16, query_rope_tensor_f16, ctKV_tensor_f16, kRope_tensor_f16, block_table_tensor, contextLen_tensor, mask_tensor_f16, qSeqLen_tensor, batchSize, tokenNum, headNum, kvHeadNum, kSeqLen, qkScale, blockSize);
         
         output_tensor = ggml_cast(ctx, output_tensor, GGML_TYPE_F32);
 
@@ -86,6 +88,7 @@ void build_mla_graph(
         GGML_ASSERT(ggml_nbytes(block_table_tensor) == blockTables_host.size() * sizeof(int32_t));
         GGML_ASSERT(ggml_nbytes(contextLen_tensor) == contextLens_host.size() * sizeof(int64_t));
         GGML_ASSERT(ggml_nbytes(mask_tensor) == mask_host.size() * sizeof(float));
+        GGML_ASSERT(ggml_nbytes(qSeqLen_tensor) == contextLens_host.size() * sizeof(int64_t));
         ggml_backend_tensor_set(query_tensor, query_host.data(), 0, ggml_nbytes(query_tensor));
         ggml_backend_tensor_set(query_rope_tensor, query_rope_host.data(), 0, ggml_nbytes(query_rope_tensor));
         ggml_backend_tensor_set(ctKV_tensor, ctKV_host.data(), 0, ggml_nbytes(ctKV_tensor));
@@ -93,6 +96,7 @@ void build_mla_graph(
         ggml_backend_tensor_set(block_table_tensor, blockTables_host.data(), 0, ggml_nbytes(block_table_tensor));
         ggml_backend_tensor_set(contextLen_tensor, contextLens_host.data(), 0, ggml_nbytes(contextLen_tensor));
         ggml_backend_tensor_set(mask_tensor, mask_host.data(), 0, ggml_nbytes(mask_tensor));
+        ggml_backend_tensor_set(qSeqLen_tensor, qSeqLen_host.data(), 0, ggml_nbytes(qSeqLen_tensor));
 
         // 执行计算
         GGML_ASSERT(ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS);
@@ -136,6 +140,7 @@ int main() {
     int64_t kRope_size = blockNum * blockSize * kvHeadNum * 64;
     int64_t blockTables_size = batchSize * maxBlockNumPerSeq;
     int64_t contextLens_size = batchSize;
+    int64_t qSeqLen_size = batchSize;
     int64_t mask_size = tokenNum * kSeqLen;
     int64_t output_size = tokenNum * headNum * 512;
 
@@ -146,6 +151,7 @@ int main() {
     std::cout << "Key Rope size: " << kRope_size << std::endl;
     std::cout << "Block Table size: " << blockTables_size << std::endl;
     std::cout << "Context Length size: " << contextLens_size << std::endl;
+    std::cout << "QSeq Length size: " << qSeqLen_size << std::endl;
     std::cout << "Attention mask size: " << mask_size << std::endl;
     std::cout << "Output size: " << output_size << std::endl;
 
@@ -157,6 +163,7 @@ int main() {
     std::vector<int32_t> blockTables_host(blockTables_size);
     std::vector<int64_t> contextLens_host(contextLens_size);
     std::vector<float> mask_host(mask_size);
+    std::vector<int64_t> qSeqLen_host(qSeqLen_size, tokenNum);
 
     // Random initialization
     std::cout << "Initializing tensors with random values..." << std::endl;
@@ -241,7 +248,7 @@ int main() {
     // Call flash attention function
     std::cout << "Calling MLA function..." << std::endl;
     build_mla_graph(
-        query_host, query_rope_host, ctKV_host, kRope_host, blockTables_host, contextLens_host, mask_host, output_host_cann, 
+        query_host, query_rope_host, ctKV_host, kRope_host, blockTables_host, contextLens_host, mask_host, qSeqLen_host, output_host_cann, 
         cann_backend,batchSize, tokenNum, headNum, kvHeadNum, kSeqLen, qkScale, blockSize);
 
     std::cout << "MLA completed successfully." << std::endl;
