@@ -2711,9 +2711,10 @@ struct ggml_tensor * ggml_flash_attn_jittor_v1(struct ggml_context * ctx, struct
 struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tensor * query,
                                      struct ggml_tensor * query_rope, struct ggml_tensor * context_KV,
                                      struct ggml_tensor * key_rope, struct ggml_tensor * block_table,
-                                     struct ggml_tensor * context_length, struct ggml_tensor * mask, struct ggml_tensor * qSeq_length, 
-                                     int32_t batchSize, int32_t tokenNum, int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen,
-                                     float qkScale, int32_t blockSize) {
+                                     struct ggml_tensor * context_length, struct ggml_tensor * mask,
+                                     struct ggml_tensor * qSeq_length, int32_t batchSize, int32_t tokenNum,
+                                     int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen, float qkScale,
+                                     int32_t blockSize) {
     const int64_t        ne[3]  = { tokenNum, headNum, 512 };
     struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 3, ne);
     result->op                  = GGML_OP_MLA_JITTOR;
