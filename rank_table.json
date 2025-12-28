@@ -1,0 +1,53 @@
+{
+    "server_count": "1",
+    "version": "1.0",
+    "status": "completed",
+    "server_list": [
+        {
+            "device": [
+                {
+                    "device_ip": "192.168.20.191",
+                    "device_id": "0",
+                    "rank_id": "0"
+                },
+                {
+                    "device_ip": "192.168.20.192",
+                    "device_id": "1",
+                    "rank_id": "1"
+                },
+                {
+                    "device_ip": "192.168.20.193",
+                    "device_id": "2",
+                    "rank_id": "2"
+                },
+                {
+                    "device_ip": "192.168.20.194",
+                    "device_id": "3",
+                    "rank_id": "3"
+                },
+                {
+                    "device_ip": "192.168.20.195",
+                    "device_id": "4",
+                    "rank_id": "4"
+                },
+                {
+                    "device_ip": "192.168.20.196",
+                    "device_id": "5",
+                    "rank_id": "5"
+                },
+                {
+                    "device_ip": "192.168.20.197",
+                    "device_id": "6",
+                    "rank_id": "6"
+                },
+                {
+                    "device_ip": "192.168.20.198",
+                    "device_id": "7",
+                    "rank_id": "7"
+                }
+            ],
+            "server_id": "192.168.20.191",
+            "host_nic_ip": "reserve"
+        }
+    ]
+}

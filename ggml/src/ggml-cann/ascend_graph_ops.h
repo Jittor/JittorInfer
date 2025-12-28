@@ -146,6 +146,11 @@ ge::Operator handle_pad_op(
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
 
+ge::Operator handle_allreduce_sum_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
 ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
                                 const std::vector<int64_t> &values,
                                 ge::DataType type);
