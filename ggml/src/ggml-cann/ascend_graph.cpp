@@ -600,7 +600,7 @@ ge::Graph build_ascend_graph_es(ggml_cgraph* cgraph,
         // 创建output_init
         create_output_tensors_es(graph_outputs, last_op_node, output_init);
         // 设置多个输出并构建图
-        return *graph_builder.Build(graph_outputs);
+        return *graph_builder.BuildAndReset(graph_outputs);
     } else {
         std::cerr << "Graph inputs or outputs are empty." << std::endl;
         // 返回空图

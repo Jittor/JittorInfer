@@ -59,12 +59,12 @@ if (CANN_INSTALL_DIR)
 
     # Set header and libs
     set(CANN_INCLUDE_DIRS
-        ${CANN_INSTALL_DIR}/include
-        ${CANN_INSTALL_DIR}/include/aclnn
+        ${CANN_INSTALL_DIR}/x86_64-linux/include
+        ${CANN_INSTALL_DIR}/x86_64-linux/include/aclnn
         ${CANN_INSTALL_DIR}/acllib/include
-        ${CANN_INSTALL_DIR}/compiler/include/graph
-        ${CANN_INSTALL_DIR}/compiler/include/ge
-        ${CANN_INSTALL_DIR}/compiler/include
+        ${CANN_INSTALL_DIR}/x86_64-linux/include/graph
+        ${CANN_INSTALL_DIR}/x86_64-linux/include/ge
+        ${CANN_INSTALL_DIR}/x86_64-linux/include
         ${CANN_INSTALL_DIR}/opp/built-in/op_proto/inc
         ${CANN_INSTALL_DIR}/opp/vendors/customize/op_proto/inc
     )

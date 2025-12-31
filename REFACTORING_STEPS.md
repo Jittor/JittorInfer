@@ -6,11 +6,13 @@
 
 ## 参考资源
 
-- ES API 使用示例目录：`https://gitcode.com/cann/ge-dev/tree/master/examples/es`
+- [ES资料](https://gitcode.com/cann/ge/tree/master/docs/es)
 
 ---
 
 ## 阶段零：工程适配（重构前提）
+
+本次重构依赖run包中已经含有了es的能力，本文使用的run包为开源社区包，具体的下载和安装步骤可以参考：[GE开源仓构建](https://gitcode.com/cann/ge/blob/master/docs/build.md)
 
 ### 步骤 0.1：在 CMakeLists.txt 中引入 ES API 支持
 
@@ -95,7 +97,7 @@
 
 ---
 
-## 阶段二：创建 ES 版本的辅助函数（并行实现）
+## 阶段二：创建 ES 版本的辅助函数
 
 ### 步骤 2.1：创建 `create_graph_input_tensor_es()` 函数
 
@@ -160,7 +162,7 @@ void process_input_tensors_es(
 
 ---
 
-## 阶段三：实现所有算子的 ES 版本（必须全部完成）
+## 阶段三：实现所有算子的 ES 版本
 
 **重要说明：** 
 - **在实现 `build_ascend_graph_es()` 之前，必须完成所有 `handle_xx_op_es()` 函数的实现**
@@ -439,7 +441,7 @@ return PadV3(es_input, paddings, 0.0f, "constant", true)
 
 ---
 
-### 待实现的算子 ES 版本（必须全部完成）
+### 待实现的算子 ES 版本
 
 根据 `ascend_graph_ops.h` 中的函数声明，以下算子的 ES 版本**必须全部实现**：
 
@@ -546,7 +548,7 @@ return PadV3(es_input, paddings, 0.0f, "constant", true)
 
 4. **创建输出：** 实现 `create_output_tensors_es()` 辅助函数，使用 `GetProducerOutIndex()` 获取正确的输出索引
 
-5. **构建图：** 使用 `graph_builder.Build(graph_outputs)` 一次性设置多个输出并构建图
+5. **构建图：** 使用 `graph_builder.BuildAndReset(graph_outputs)` 一次性设置多个输出并构建图
 
 **关键实现细节：**
 - ✅ 支持所有 24 个算子类型（与 `build_ascend_graph()` 保持一致）
@@ -589,8 +591,19 @@ return PadV3(es_input, paddings, 0.0f, "constant", true)
 ## 阶段五：测试和验证
 
 1. **编译验证：** ✅ 确保所有代码能够成功编译
-source /pkg/latest/bin/setenv.bash
+
+- 设置run包的环境变量
+
+`source ${install_path}/cann/set_env.sh`
+
+- 编译 ggml-cann
+```
+# 配置
+cmake -DCMAKE_BUILD_TYPE=Debug -DCANN_INSTALL_DIR=/home/gengc/code/open_source/mypkg/cann -DGGML_CANN=ON 
+-DSOC_TYPE=ascend910b2 -S . -B ./cmake-build-debug
+# 构建
 cmake --build cmake-build-debug/ --target ggml-cann -j16
+```
 
 **状态：** 完成
 
@@ -743,7 +756,7 @@ graph.SetInputs(graph_inputs).SetOutputs(indexed_graph_outputs);
 - 也可以使用 `BuildAndReset({tensor1, tensor2, ...})` 一次性设置多个输出
 - **输入不需要显式设置**：`CreateInput()` 创建的输入会自动成为图的输入
 
-注： BuildAndReset的函数名之前命名为了Build, 最近才调整为了BuildAndReset以表达更清晰语义，当前重构使用的社区版本（12/01号版本仍然是Build命名）
+注： BuildAndReset的函数名之前命名为了Build, 最近才调整为了BuildAndReset以表达更清晰语义，当前重构使用的社区版本1231已经是BuildAndReset的命名
 
 **参考代码：**
 ```cpp
