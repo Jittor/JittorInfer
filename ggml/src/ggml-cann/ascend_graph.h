@@ -48,6 +48,12 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                              std::vector<gert::Tensor>& input_init,
                              std::vector<gert::Tensor>& output_init);
 
+// ES (Eager Style) API version
+ge::Graph build_ascend_graph_es(ggml_cgraph* cgraph,
+                                 ggml_backend_cann_context& cann_ctx,
+                                 std::vector<gert::Tensor>& input_init,
+                                 std::vector<gert::Tensor>& output_init);
+
 Status reuse_ascend_graph(uint32_t graph_id, ge::Session* session,
                           ggml_cgraph* cgraph, const aclrtStream& stream,
                           std::vector<gert::Tensor>& input_init,

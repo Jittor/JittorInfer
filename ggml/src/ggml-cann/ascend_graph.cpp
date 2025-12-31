@@ -29,6 +29,8 @@
 #include <vector>
 
 #include "ggml-cann/ascend_graph_ops.h"
+// 引入es构图api的聚合头文件
+#include "es_all_ops.h"
 
 using namespace std;
 
@@ -116,21 +118,23 @@ gert::Tensor create_bound_tensor_with_ptr(const ge::TensorDesc& tensor_desc,
  * 为给定的源张量创建对应的Ascend Tensor，并添加到图输入列表中
  *
  * @param src_tensor 源GGML张量
- * @param ggml_tensor_to_ge_op_map 张量到算子的映射
- * @param graph_inputs 图输入算子列表
+ * @param ggml_tensor_to_es_tensor_map 张量映射
  * @param input_init 输入张量初始化列表
  */
-void create_graph_input_tensor(
+void create_graph_input_tensor_es(
     ggml_tensor* src_tensor,
-    std::map<ggml_tensor*, Operator>& ggml_tensor_to_ge_op_map,
-    std::vector<Operator>& graph_inputs,
+    std::map<ggml_tensor*, ge::es::EsTensorHolder>*
+        ggml_tensor_to_es_tensor_map,
     std::vector<gert::Tensor>& input_init) {
-    // 将对应的Data操作符加入graph_inputs
-    graph_inputs.push_back(ggml_tensor_to_ge_op_map[src_tensor]);
-
     // 获取输出描述符，使用输出端口0
-    ge::TensorDesc tensor_desc =
-        ggml_tensor_to_ge_op_map[src_tensor].GetOutputDesc(0);
+    ge::es::EsTensorHolder tensor_holder =
+        ggml_tensor_to_es_tensor_map->at(src_tensor);
+
+    // tensor_holder当前并没有提供SetPlacement方法，所以用下面这种方式绕一下；
+    // TODO:EsTensorHolder提供SetPlacement方法
+    ge::TensorDesc tensor_desc;
+    (void)tensor_holder.GetProducer()->GetOutputDesc(
+        tensor_holder.GetProducerOutIndex(), tensor_desc);
     tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
 
     // 使用辅助函数创建并绑定张量
@@ -193,80 +197,42 @@ ggml_tensor* find_last_op_node(ggml_cgraph* cgraph) {
     return last_op_node;
 }
 
-/**
- * @brief 创建输出张量列表
- *
- * @param graph_outputs 图输出操作符列表
- * @param last_op_node 最后一个操作节点
- * @param output_init 输出张量初始化列表
- */
-void create_output_tensors(const std::vector<Operator>& graph_outputs,
-                           ggml_tensor* last_op_node,
-                           std::vector<gert::Tensor>& output_init) {
-    if (!graph_outputs.empty() && last_op_node != nullptr) {
-        for (auto& output_op : graph_outputs) {
-            // 获取输出描述符
-            ge::TensorDesc tensor_desc = output_op.GetOutputDesc(0);
-            tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
-
-            // 使用辅助函数创建输出张量并绑定数据
-            gert::Tensor output_tensor = create_bound_tensor_with_ptr(
-                tensor_desc, last_op_node->data, ggml_nbytes(last_op_node));
-
-            // 添加到output_init
-            output_init.push_back(std::move(output_tensor));
-        }
-    }
-}
-
-/**
- * @brief 处理输入张量（支持构建模式和复用模式）
- *
- * @param tensor_array 张量数组指针
- * @param count 数组元素数量
- * @param input_init 输入张量初始化列表
- * @param build_mode
- * 是否为构建模式（需要创建算子），false为复用模式（只绑定数据）
- * @param name_prefix 算子名称前缀（仅构建模式使用）
- * @param index_offset 索引偏移量（仅构建模式使用）
- * @param graph Ascend图引用（仅构建模式使用）
- * @param ggml_tensor_to_ge_op_map 张量到算子的映射（仅构建模式使用）
- * @param graph_inputs 图输入算子列表（仅构建模式使用）
- */
-void process_input_tensors(
+namespace {
+// ES version helper function declarations
+void process_input_tensors_es(
     ggml_tensor** tensor_array, int count,
-    std::vector<gert::Tensor>& input_init, bool build_mode = true,
-    const std::string& name_prefix = "", int index_offset = 0,
-    Graph* graph = nullptr,
-    std::map<ggml_tensor*, Operator>* ggml_tensor_to_ge_op_map = nullptr,
-    std::vector<Operator>* graph_inputs = nullptr) {
+    std::vector<gert::Tensor>& input_init, const std::string& name_prefix,
+    int index_offset, ge::es::EsGraphBuilder* graph_builder,
+    std::map<ggml_tensor*, ge::es::EsTensorHolder>*
+        ggml_tensor_to_es_tensor_map,
+    std::vector<ge::es::EsTensorHolder>* graph_inputs) {
     auto create_data = [&](ggml_tensor* node) {
-        if (ggml_tensor_to_ge_op_map->find(node) !=
-            ggml_tensor_to_ge_op_map->end()) {
+        if (ggml_tensor_to_es_tensor_map->find(node) !=
+            ggml_tensor_to_es_tensor_map->end()) {
             return;
         }
 
-        if (build_mode) {
-            // 使用辅助函数创建张量描述符
-            ge::TensorDesc desc = create_tensor_desc_for_node(node);
+        // 使用辅助函数创建张量描述符
+        ge::TensorDesc desc = create_tensor_desc_for_node(node);
 
-            // 为此输入创建数据算子
-            std::string name = name_prefix + std::string(node->name);
-            op::Data data_op(name.c_str());
-            data_op.update_output_desc_y(desc);
+        // 构建输入名称
+        std::string name = name_prefix + std::string(node->name);
 
-            // 添加到图和映射中
-            graph->AddOp(data_op);
-            (*ggml_tensor_to_ge_op_map)[node] = data_op;
-            create_graph_input_tensor(node, *ggml_tensor_to_ge_op_map,
-                                      *graph_inputs, input_init);
-        } else {
-            ge::TensorDesc desc = create_tensor_desc_for_node(node);
-            gert::Tensor input_tensor = create_bound_tensor_with_ptr(
-                desc, node->data, ggml_nbytes(node));
-            input_init.push_back(std::move(input_tensor));
-        }
+        // 使用ES API创建输入
+        int input_index = static_cast<int>(graph_inputs->size()) + index_offset;
+        auto es_input = graph_builder->CreateInput(
+            input_index, name.c_str(), desc.GetDataType(), desc.GetFormat(),
+            desc.GetShape().GetDims());
+
+        // 添加到映射和输入列表
+        (*ggml_tensor_to_es_tensor_map)[node] = es_input;
+        graph_inputs->push_back(es_input);
+
+        // 创建对应的gert::Tensor用于input_init
+        create_graph_input_tensor_es(node, ggml_tensor_to_es_tensor_map,
+                                     input_init);
     };
+
     for (int i = 0; i < count; i++) {
         ggml_tensor* node = tensor_array[i];
         for (int j = 0; j < GGML_MAX_SRC; j++) {
@@ -285,6 +251,31 @@ void process_input_tensors(
 }
 
 /**
+ * @brief 创建输出张量列表（ES API版本）
+ *
+ * @param graph_outputs 图输出ES张量列表
+ * @param last_op_node 最后一个操作节点
+ * @param output_init 输出张量初始化列表
+ */
+void create_output_tensors_es(
+    std::vector<ge::es::EsTensorHolder>& graph_outputs,
+    ggml_tensor* last_op_node, std::vector<gert::Tensor>& output_init) {
+    if (!graph_outputs.empty() && last_op_node != nullptr) {
+        for (auto& es_output : graph_outputs) {
+            ge::TensorDesc tensor_desc;
+            (void)es_output.GetProducer()->GetOutputDesc(
+                es_output.GetProducerOutIndex(), tensor_desc);
+            tensor_desc.SetPlacement(ge::Placement::kPlacementDevice);
+
+            // 使用辅助函数创建并绑定张量
+            gert::Tensor output_tensor = create_bound_tensor_with_ptr(
+                tensor_desc, last_op_node->data, ggml_nbytes(last_op_node));
+            output_init.push_back(std::move(output_tensor));
+        }
+    }
+}
+}
+/**
  * @brief 构建Ascend(昇腾)计算图
  *
  * 将GGML计算图(cgraph)转换为Ascend计算图，支持各种算子类型
@@ -299,40 +290,38 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                              ggml_backend_cann_context& cann_ctx,
                              std::vector<gert::Tensor>& input_init,
                              std::vector<gert::Tensor>& output_init) {
-    // 创建新的Ascend图
-    Graph graph("Graph");
+    // 使用 ES API 版本构建图
+    return build_ascend_graph_es(cgraph, cann_ctx, input_init, output_init);
+}
+
+ge::Graph build_ascend_graph_es(ggml_cgraph* cgraph,
+                                ggml_backend_cann_context& cann_ctx,
+                                std::vector<gert::Tensor>& input_init,
+                                std::vector<gert::Tensor>& output_init) {
+    // 创建ES Graph Builder
+    ge::es::EsGraphBuilder graph_builder("Graph");
     cann_ctx.n_ctx = cgraph->n_ctx;
 
-    // 用于跟踪已处理的张量，键为GGML张量指针，值为对应的Ascend算子
-    std::map<ggml_tensor*, Operator> ggml_tensor_to_ge_op_map;
-    std::vector<Operator> graph_inputs, graph_outputs;
+    // 用于跟踪已处理的张量，键为GGML张量指针，值为对应的ES张量
+    std::map<ggml_tensor*, ge::es::EsTensorHolder> ggml_tensor_to_es_tensor_map;
+    std::vector<ge::es::EsTensorHolder> graph_inputs;
+    std::vector<ge::es::EsTensorHolder> graph_outputs;
 
     // 第一部分：处理叶子节点（通常是输入或常量）
     // --------------------------------------------------------------
-    // 叶子节点肯定是输入或常量，所以先保存一份
-    process_input_tensors(cgraph->leafs, cgraph->n_leafs, input_init, true,
-                          "leaf_", 0, &graph, &ggml_tensor_to_ge_op_map,
-                          &graph_inputs);
+    process_input_tensors_es(cgraph->leafs, cgraph->n_leafs, input_init, "leaf_",
+                             0, &graph_builder, &ggml_tensor_to_es_tensor_map,
+                             &graph_inputs);
 
     // 第二部分：处理GGML_OP_NONE节点（输入张量）
     // --------------------------------------------------------------
-    process_input_tensors(cgraph->nodes, cgraph->n_nodes, input_init, true,
-                          "data_", cgraph->n_leafs, &graph,
-                          &ggml_tensor_to_ge_op_map, &graph_inputs);
+    process_input_tensors_es(cgraph->nodes, cgraph->n_nodes, input_init, "data_",
+                             cgraph->n_leafs, &graph_builder,
+                             &ggml_tensor_to_es_tensor_map, &graph_inputs);
 
-    // 第三部分：查找首个和最后一个非NONE算子节点
+    // 第三部分：查找最后一个非NONE算子节点
     // --------------------------------------------------------------
-    ggml_tensor* first_op_node = nullptr;
     ggml_tensor* last_op_node = find_last_op_node(cgraph);
-
-    // 查找第一个操作节点
-    for (int i = 0; i < cgraph->n_nodes; i++) {
-        ggml_tensor* node = cgraph->nodes[i];
-        if (!ggml_is_empty(node) && node->op != GGML_OP_NONE) {
-            first_op_node = node;
-            break;
-        }
-    }
 
     // 第四部分：处理算子节点
     // --------------------------------------------------------------
@@ -343,157 +332,134 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
         }
 
         // 根据不同的操作类型处理
+        ge::es::EsTensorHolder es_result;
         switch (node->op) {
             case GGML_OP_ADD: {
-                // 使用ascend_graph_ops.h中的函数处理ADD操作
-                Operator add_op =
-                    handle_add_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = add_op;
-
-                // 如果这是最后一个操作，将其添加到输出中
+                es_result = handle_add_op_es(graph_builder, node,
+                                             ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(add_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_MUL: {
-                // 处理MUL（乘法）操作
-                Operator mul_op =
-                    handle_mul_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = mul_op;
-
-                // 如果这是最后一个操作，将其添加到输出中
+                es_result = handle_mul_op_es(graph_builder, node,
+                                               ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(mul_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_MUL_MAT: {
-                // 处理矩阵乘法操作
-                ge::Operator matmul_op =
-                    handle_matmul_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = matmul_op;
-
+                es_result = handle_matmul_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(matmul_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_SCALE: {
-                // 处理缩放操作
-                Operator scale_op =
-                    handle_scale_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = scale_op;
-
+                es_result = handle_scale_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(scale_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_SOFT_MAX: {
-                // 处理Softmax操作
-                Operator softmax_op =
-                    handle_softmax_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = softmax_op;
-
+                es_result = handle_softmax_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(softmax_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_REPEAT: {
-                // 处理重复操作
-                Operator repeat_op =
-                    handle_repeat_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = repeat_op;
-
+                es_result = handle_repeat_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(repeat_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_RESHAPE: {
-                // 处理重塑形状操作
-                Operator reshape_op =
-                    handle_reshape_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = reshape_op;
-
+                es_result = handle_reshape_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(reshape_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_PERMUTE: {
-                // 处理维度置换操作
-                Operator permute_op =
-                    handle_permute_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = permute_op;
-
+                es_result = handle_permute_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(permute_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
+
             case GGML_OP_PAD: {
-                Operator pad_op =
-                    handle_pad_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = pad_op;
+                es_result = handle_pad_op_es(graph_builder, node,
+                                              ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(pad_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
-            case GGML_OP_VIEW: {
-                // 处理视图操作
-                Operator view_op =
-                    handle_view_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = view_op;
 
+            case GGML_OP_VIEW: {
+                es_result = handle_view_op_es(graph_builder, node,
+                                               ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(view_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_TRANSPOSE: {
-                // 处理转置操作
-                Operator transpose_op = handle_transpose_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = transpose_op;
-
+                es_result = handle_transpose_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(transpose_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_CONT: {
-                // 处理连续存储操作
-                Operator cont_op =
-                    handle_cont_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = cont_op;
-
+                es_result = handle_cont_op_es(graph_builder, node,
+                                               ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(cont_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_CPY: {
-                // 处理复制操作
-                Operator cpy_op =
-                    handle_cpy_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = cpy_op;
-
+                es_result = handle_cpy_op_es(graph_builder, node,
+                                              ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(cpy_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
@@ -502,138 +468,124 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 // 处理一元操作（如激活函数）
                 switch (ggml_get_unary_op(node)) {
                     case GGML_UNARY_OP_SILU: {
-                        Operator silu_op = handle_silu_op(
-                            graph, node, ggml_tensor_to_ge_op_map, i);
-                        ggml_tensor_to_ge_op_map[node] = silu_op;
+                        es_result = handle_silu_op_es(
+                            graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                        ggml_tensor_to_es_tensor_map[node] = es_result;
                         if (node == last_op_node) {
-                            graph_outputs.push_back(silu_op);
+                            graph_outputs.push_back(es_result);
                         }
                         break;
                     }
                     default:
-                        std::cerr << "Unhandled operation type: " << node->op
-                                  << std::endl;
+                        std::cerr << "Unhandled unary operation type: "
+                                  << ggml_get_unary_op(node) << std::endl;
                         break;
                 }
                 break;
             }
 
             case GGML_OP_ARGSORT: {
-                // 处理ArgSort操作（返回排序后的索引）
-                Operator argsort_op =
-                    handle_argsort_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = argsort_op;
+                es_result = handle_argsort_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(argsort_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_CONCAT: {
-                // 处理拼接操作
-                Operator concat_op =
-                    handle_concat_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = concat_op;
+                es_result = handle_concat_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(concat_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
+
             case GGML_OP_RMS_NORM_FUSED:
             case GGML_OP_RMS_NORM: {
-                // 处理RMS归一化操作
-                Operator rms_norm_op = handle_rms_norm_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = rms_norm_op;
+                es_result = handle_rms_norm_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(rms_norm_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_ROPE: {
-                // 处理旋转位置编码(RoPE)操作
-                Operator rope_op = handle_rope_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i, cann_ctx);
-                ggml_tensor_to_ge_op_map[node] = rope_op;
+                es_result = handle_rope_op_es(graph_builder, node,
+                                               ggml_tensor_to_es_tensor_map, i,
+                                               cann_ctx);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(rope_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_MOE_FUSED: {
-                // 处理MOE Fused操作
-                Operator moe_fused_op = handle_moe_fused_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = moe_fused_op;
+                es_result = handle_moe_fused_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(moe_fused_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
 
             case GGML_OP_ARANGE: {
-                // 处理Arange操作
-                Operator arange_op =
-                    handle_arange_op(graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = arange_op;
+                es_result = handle_arange_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(arange_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
+
             case GGML_OP_GET_SLICE: {
-                // 处理步长切片操作
-                Operator strided_slice_op = handle_stridedslicev2_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = strided_slice_op;
+                es_result = handle_stridedslicev2_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(strided_slice_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
-            // case GGML_OP_STRIDED_SLICE_V2: {
-            //     // 处理步长切片操作
-            //     Operator strided_slice_op = handle_stridedslicev2_op(
-            //         graph, node, ggml_tensor_to_ge_op_map, i);
-            //     ggml_tensor_to_ge_op_map[node] = strided_slice_op;
-            //     if (node == last_op_node) {
-            //         graph_outputs.push_back(strided_slice_op);
-            //     }
-            //     break;
-            // }
+
             case GGML_OP_SCATTER_UPDATE: {
-                // 处理步长切片赋值操作
-                Operator set_slice_op = handle_set_slice_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = set_slice_op;
+                es_result = handle_set_slice_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(set_slice_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
+
             case GGML_OP_FLASH_ATTN_PROMPT: {
-                Operator op_node = handle_flash_attn_prompt_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-
-                ggml_tensor_to_ge_op_map[node] = op_node;
+                es_result = handle_flash_attn_prompt_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(op_node);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
+
             case GGML_OP_GET_ROWS: {
-                // 处理获取行操作
-                Operator get_rows_op = handle_get_rows_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
-                ggml_tensor_to_ge_op_map[node] = get_rows_op;
-
+                es_result = handle_get_rows_op_es(
+                    graph_builder, node, ggml_tensor_to_es_tensor_map, i);
+                ggml_tensor_to_es_tensor_map[node] = es_result;
                 if (node == last_op_node) {
-                    graph_outputs.push_back(get_rows_op);
+                    graph_outputs.push_back(es_result);
                 }
                 break;
             }
+
             default:
                 // 未处理的操作类型
                 std::cerr << "Unhandled operation type: " << node->op
@@ -642,32 +594,18 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
         }
     }
 
-    // 第五部分：设置图的输入和输出，并处理output_init
+    // 第五部分：创建output_init并设置图的输出
     // --------------------------------------------------------------
     if (!graph_inputs.empty() && !graph_outputs.empty()) {
-        // 创建一个std::vector<std::pair<ge::Operator,
-        // std::vector<size_t>>>来指定输出算子及其输出索引
-        int prev_size = graph_outputs.size();
-        create_output_tensors(graph_outputs, last_op_node, output_init);
-        // for(auto& op: debug_operators) {
-        //     graph_outputs.push_back(op);
-        // }
-        // create_debug_tensors(graph_outputs, last_op_node, output_init,
-        // prev_size);
-        std::vector<std::pair<ge::Operator, std::vector<size_t>>>
-            indexed_graph_outputs;
-        for (const auto& op : graph_outputs) {
-            indexed_graph_outputs.push_back(
-                {op, {0}});  // 默认使用第0个输出端口
-        }
-        graph.SetInputs(graph_inputs).SetOutputs(indexed_graph_outputs);
-
-        // 为图中的每个输出创建对应的output_init张量
+        // 创建output_init
+        create_output_tensors_es(graph_outputs, last_op_node, output_init);
+        // 设置多个输出并构建图
+        return *graph_builder.BuildAndReset(graph_outputs);
     } else {
         std::cerr << "Graph inputs or outputs are empty." << std::endl;
+        // 返回空图
+        return ge::Graph("EmptyGraph");
     }
-
-    return graph;
 }
 
 Status reuse_ascend_graph(uint32_t graph_idx, ge::Session* session,

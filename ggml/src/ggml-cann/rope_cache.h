@@ -1,5 +1,6 @@
 #include "aclnn_ops.h"
 #include "ggml-impl.h"
+#include "es_graph_builder.h"
 
 class RopeCache {
    public:
@@ -10,6 +11,9 @@ class RopeCache {
     std::array<int64_t, 4> final_shape;
     ge::Operator GetCosOp(ge::Graph& graph, const std::string& name) const;
     ge::Operator GetSinOp(ge::Graph& graph, const std::string& name) const;
+    // ES API versions - directly create Const using EsGraphBuilder
+    ge::es::EsTensorHolder GetCosEsTensor(ge::es::EsGraphBuilder& graph_builder) const;
+    ge::es::EsTensorHolder GetSinEsTensor(ge::es::EsGraphBuilder& graph_builder) const;
     ~RopeCache() {
         ACL_CHECK(aclrtFreeHost(sin_final_buffer));
         ACL_CHECK(aclrtFreeHost(cos_final_buffer));

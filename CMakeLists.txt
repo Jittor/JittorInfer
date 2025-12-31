@@ -2,11 +2,13 @@
 cmake_minimum_required(VERSION 3.14) # for add_link_options and implicit target directories.
 project("llama.cpp" C CXX)
 
-# 查找MPI包
-find_package(MPI REQUIRED)
+# 先尝试查找MPI包
+find_package(MPI QUIET)
 if(MPI_FOUND)
     message(STATUS "MPI found: ${MPI_C_INCLUDE_PATH}")
     message(STATUS "MPI libraries: ${MPI_C_LIBRARIES}")
+else()
+    message(STATUS "MPI not found (will be optional)")
 endif()
 
 # 头文件检查
@@ -51,6 +53,17 @@ option(LLAMA_FATAL_WARNINGS "llama: enable -Werror flag" OFF)
 
 # MPI
 option(LLAMA_MPI "llama: enable MPI support" ON)
+
+# 如果启用了MPI但未找到MPI，给出错误提示
+if(LLAMA_MPI AND NOT MPI_FOUND)
+    message(FATAL_ERROR 
+        "LLAMA_MPI is enabled but MPI was not found.\n"
+        "Please either:\n"
+        "  1. Install MPI (e.g., sudo apt-get install libopenmpi-dev on Ubuntu)\n"
+        "  2. Set LLAMA_MPI=OFF to disable MPI support (cmake -DLLAMA_MPI=OFF)\n"
+        "  3. Specify MPI path manually (cmake -DMPI_C_COMPILER=/path/to/mpicc)"
+    )
+endif()
 
 # JITTOR OPS
 option(LLAMA_USE_JITTOR_OPS "llama: enable jittor ops" OFF)
