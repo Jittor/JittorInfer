@@ -17,21 +17,21 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
 
     // params changed in parallel (TP support)
     const int64_t n_split = (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
-    const int64_t n_head_act      = n_head / n_split;
-    
+    const int64_t n_head_act = n_head / n_split;
+
     // KV heads handling for GQA with few KV heads
-    const bool    replicate_kv    = (n_head_kv < n_split) || (n_head_kv % n_split != 0);
-    int64_t       n_head_kv_act;
-    int64_t       kv_head_start = 0;  // Start index of KV heads for this device
-    
+    const bool replicate_kv = (n_head_kv < n_split) || (n_head_kv % n_split != 0);
+    int64_t    n_head_kv_act;
+    int64_t    kv_head_start = 0;  // Start index of KV heads for this device
+
     if (replicate_kv && n_head_kv > 0) {
         // Calculate which KV heads this device needs based on its Q heads
-        const int64_t tp_id = hparams.tp_id;
-        const int64_t n_rep = n_head / n_head_kv;  // GQA ratio
+        const int64_t tp_id          = hparams.tp_id;
+        const int64_t n_rep          = n_head / n_head_kv;  // GQA ratio
         const int64_t n_q_per_device = n_head / n_split;
-        kv_head_start = (tp_id * n_q_per_device) / n_rep;
-        const int64_t kv_head_end = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;  // ceil
-        n_head_kv_act = kv_head_end - kv_head_start;
+        kv_head_start                = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_head_end    = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;  // ceil
+        n_head_kv_act                = kv_head_end - kv_head_start;
     } else {
         n_head_kv_act = n_head_kv / n_split;
     }
@@ -82,13 +82,13 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
             if (replicate_kv && n_head_kv_act < n_head_kv) {
                 // Kcur shape: [n_embd_head_k * n_head_kv, n_tokens] -> slice to [n_embd_head_k * n_head_kv_act, n_tokens]
                 const int64_t k_start = kv_head_start * n_embd_head_k;
-                const int64_t k_end = k_start + n_embd_head_k * n_head_kv_act;
-                Kcur = ggml_get_slice(ctx0, Kcur, k_start, k_end, 0);
+                const int64_t k_end   = k_start + n_embd_head_k * n_head_kv_act;
+                Kcur                  = ggml_get_slice(ctx0, Kcur, k_start, k_end, 0);
                 cb(Kcur, "Kcur_sliced", il);
-                
+
                 const int64_t v_start = kv_head_start * n_embd_head_v;
-                const int64_t v_end = v_start + n_embd_head_v * n_head_kv_act;
-                Vcur = ggml_get_slice(ctx0, Vcur, v_start, v_end, 0);
+                const int64_t v_end   = v_start + n_embd_head_v * n_head_kv_act;
+                Vcur                  = ggml_get_slice(ctx0, Vcur, v_start, v_end, 0);
                 cb(Vcur, "Vcur_sliced", il);
             }
 
@@ -214,21 +214,22 @@ void llm_update_qwen3moe_ge(llama_context & lctx) {
     ggml_cgraph * graph   = lctx.graph_decode;
     int           n_nodes = ggml_graph_n_nodes(graph);
     llama_hparams hparams = lctx.model.hparams;
-    const int64_t head_split = (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
+    const int64_t head_split =
+        (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
     const int64_t n_head_kv = hparams.n_head_kv();
-    const int64_t n_head = hparams.n_head();
-    
+    const int64_t n_head    = hparams.n_head();
+
     // KV heads handling for GQA with few KV heads
-    const bool    replicate_kv = (n_head_kv < head_split) || (n_head_kv % head_split != 0);
-    int64_t       n_head_kv_act;
-    
+    const bool replicate_kv = (n_head_kv < head_split) || (n_head_kv % head_split != 0);
+    int64_t    n_head_kv_act;
+
     if (replicate_kv && n_head_kv > 0) {
-        const int64_t tp_id = hparams.tp_id;
-        const int64_t n_rep = n_head / n_head_kv;
+        const int64_t tp_id          = hparams.tp_id;
+        const int64_t n_rep          = n_head / n_head_kv;
         const int64_t n_q_per_device = n_head / head_split;
-        const int64_t kv_head_start = (tp_id * n_q_per_device) / n_rep;
-        const int64_t kv_head_end = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
-        n_head_kv_act = kv_head_end - kv_head_start;
+        const int64_t kv_head_start  = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_head_end    = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
+        n_head_kv_act                = kv_head_end - kv_head_start;
     } else {
         n_head_kv_act = n_head_kv / head_split;
     }

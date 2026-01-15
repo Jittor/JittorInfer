@@ -3160,7 +3160,7 @@ ge::Operator handle_sum_rows_op(
 
     return reduce_sum_op;
 }
- /*
+/*
  * @brief 处理AllReduce操作的函数
  *
  *
