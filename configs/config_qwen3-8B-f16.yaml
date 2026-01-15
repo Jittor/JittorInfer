@@ -14,7 +14,7 @@ enable_mla: false        # use mla for deepseek
 enable_fused_moe: true  # use fused moe for deepseek
 offload_input: true # offload input to GPU
 enable_ge: true # enable ge for deepseek
-display_chat: false # display chat info to console
+display_chat: true # display chat info to console
 presample_count: 128 # presample on npu, -1 for disable
 enable_cann_flash_attention: true # enable cann flash attention
 
@@ -24,7 +24,7 @@ n_batch: 4 # logical batch size for prompt processing
 n_parallel: 4  # number of parallel sequences to decode (must < 32 now)
 
 # Model parameters
-model: "/root/data/Qwen3-8B-f16.gguf"  # model path
+model: "/root/data/qwen3-8b-merged-fp16.gguf"  # model path
 model_alias: ""  # model alias
 
 # Server parameters

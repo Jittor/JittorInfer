@@ -1,10 +1,12 @@
 #include "llama-graph-qwen3ge.h"
 
 #include <cmath>
+#include <cstdio>
 #include <type_traits>
 
 #include "ggml.h"
 #include "llama-context.h"
+#include "llama-hparams.h"
 
 struct ggml_tensor * llm_qwen3_context_ge::build_attn_indices() {
     lctx.inp_attn_indices = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_tokens);
@@ -35,6 +37,31 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
     GGML_ASSERT(n_embd_head == hparams.n_rot);
 
     const float kq_scale = 1.0f / sqrtf(float(n_embd_head));
+
+    // params changed in parallel
+    const int64_t n_split = (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
+    const int64_t n_head_act      = n_head / n_split;
+    
+    // KV heads handling for GQA with few KV heads
+    const bool    replicate_kv    = (n_head_kv < n_split) || (n_head_kv % n_split != 0);
+    int64_t       n_head_kv_act;
+    int64_t       kv_head_start = 0;  // Start index of KV heads for this device
+    
+    if (replicate_kv && n_head_kv > 0) {
+        // Calculate which KV heads this device needs based on its Q heads
+        const int64_t tp_id = hparams.tp_id;
+        const int64_t n_rep = n_head / n_head_kv;  // GQA ratio
+        const int64_t n_q_per_device = n_head / n_split;
+        kv_head_start = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_head_end = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;  // ceil
+        n_head_kv_act = kv_head_end - kv_head_start;
+    } else {
+        n_head_kv_act = n_head_kv / n_split;
+    }
+    
+    const int64_t expert_group_id = hparams.enable_expert_parallel ? lctx.model.params.tp_id : 0;
+    const int64_t n_expert_groups = hparams.enable_expert_parallel ? lctx.model.params.num_parallel : 1;
+    const bool    run_mlp_only    = lctx.enable_dp_gather && lctx.self_token_size == 0;
 
     struct ggml_tensor * cur;
     struct ggml_tensor * inpL;
@@ -71,9 +98,9 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
             if (model.layers[il].wqkv != nullptr) {
                 // Use merged QKV weight
                 const int64_t n_embd_head = hparams.n_embd_head_k;
-                const int64_t q_dim       = n_embd_head * n_head;
-                const int64_t k_dim       = n_embd_head * n_head_kv;
-                const int64_t v_dim       = n_embd_head * n_head_kv;
+                const int64_t q_dim       = n_embd_head * n_head_act;
+                const int64_t k_dim       = n_embd_head * n_head_kv_act;
+                const int64_t v_dim       = n_embd_head * n_head_kv_act;
 
                 struct ggml_tensor * QKVcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wqkv, cur);
                 cb(QKVcur, "QKVcur", il);
@@ -98,9 +125,23 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
 
                 Vcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wv, cur);
                 cb(Vcur, "Vcur", il);
+                
+                // If KV is replicated (n_head_kv < n_split), slice out the KV heads this device needs
+                // GE backend doesn't support view, use ggml_get_slice instead
+                if (replicate_kv && n_head_kv_act < n_head_kv) {
+                    const int64_t k_start = kv_head_start * n_embd_head_k;
+                    const int64_t k_end = k_start + n_embd_head_k * n_head_kv_act;
+                    Kcur = ggml_get_slice(ctx0, Kcur, k_start, k_end, 0);
+                    cb(Kcur, "Kcur_sliced", il);
+                    
+                    const int64_t v_start = kv_head_start * n_embd_head_v;
+                    const int64_t v_end = v_start + n_embd_head_v * n_head_kv_act;
+                    Vcur = ggml_get_slice(ctx0, Vcur, v_start, v_end, 0);
+                    cb(Vcur, "Vcur_sliced", il);
+                }
             }
 
-            Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head, n_tokens);
+            Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head, n_head_act, n_tokens);
             // apply q_norm
             Qcur = llm_build_norm(ctx0, Qcur, hparams, model.layers[il].attn_q_norm, NULL, LLM_NORM_RMS, cb, il, true);
             cb(Qcur, "Qcur_normed", il);
@@ -109,7 +150,7 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
                                  ext_factor, attn_factor, beta_fast, beta_slow);
             cb(Qcur, "Qcur", il);
 
-            Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
+            Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv_act, n_tokens);
             // apply k_norm
             Kcur = llm_build_norm(ctx0, Kcur, hparams, model.layers[il].attn_k_norm, NULL, LLM_NORM_RMS, cb, il, true);
             cb(Kcur, "Kcur_normed", il);
@@ -120,6 +161,11 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
 
             cur = llm_build_kv_ge(ctx0, lctx, kv_self, gf, model.layers[il].wo, model.layers[il].bo, Kcur, Vcur, Qcur,
                                   indices, length_q, length_kv, n_tokens, n_kv, kq_scale, cb, il, true);
+        }
+
+        if (lctx.model.params.enable_tensor_parallel && !lctx.enable_dp_gather) {
+            cur = ggml_all_reduce_sum(ctx0, cur);
+            cb(cur, "all_reduce_sum_aft_attn", il);
         }
 
         struct ggml_tensor * ffn_inp = ggml_add(ctx0, cur, inpSA);
@@ -137,7 +183,7 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
 
             // Split gate_up into gate and up using ggml_get_slice (GE backend doesn't support view)
             // gate_up shape: [2*n_ff, n_tokens]
-            const int64_t        n_ff = hparams.n_ff();
+            const int64_t        n_ff = hparams.n_ff() / n_split;
             struct ggml_tensor * gate = ggml_get_slice(ctx0, gate_up, 0, n_ff, 0);
             cb(gate, "ffn_gate", il);
 
@@ -161,6 +207,11 @@ struct ggml_cgraph * llm_qwen3_context_ge::build_qwen3_ge() {
                                 NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il,
                                 false);
             cb(cur, "ffn_out", il);
+        }
+
+        if (lctx.model.hparams.enable_tensor_parallel) {
+            cur = ggml_all_reduce_sum(ctx0, cur);
+            cb(cur, "all_reduce_sum_aft_mlp", il);
         }
 
         ggml_build_forward_expand(gf, cur);
@@ -219,7 +270,26 @@ struct ggml_cgraph * llm_build_qwen3_ge(llama_context & lctx, std::vector<uint8_
 void llm_update_qwen3_ge(llama_context & lctx) {
     ggml_cgraph * graph   = lctx.graph_decode;
     int           n_nodes = ggml_graph_n_nodes(graph);
-
+    llama_hparams hparams = lctx.model.hparams;
+    const int64_t head_split = (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
+    const int64_t n_head_kv = hparams.n_head_kv();
+    const int64_t n_head = hparams.n_head();
+    
+    // KV heads handling for GQA with few KV heads
+    const bool    replicate_kv = (n_head_kv < head_split) || (n_head_kv % head_split != 0);
+    int64_t       n_head_kv_act;
+    
+    if (replicate_kv && n_head_kv > 0) {
+        const int64_t tp_id = hparams.tp_id;
+        const int64_t n_rep = n_head / n_head_kv;
+        const int64_t n_q_per_device = n_head / head_split;
+        const int64_t kv_head_start = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_head_end = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
+        n_head_kv_act = kv_head_end - kv_head_start;
+    } else {
+        n_head_kv_act = n_head_kv / head_split;
+    }
+    
     struct flash_attn_params {
         int     batch_size;
         int     num_heads;
@@ -230,14 +300,14 @@ void llm_update_qwen3_ge(llama_context & lctx) {
         int64_t sequence_lenth_kv;
         float   scaleValue;
     };
-
+    
     for (int i = 0; i < n_nodes; i++) {
         ggml_tensor * cur = ggml_graph_node(graph, i);
         if (cur->op == GGML_OP_FLASH_ATTN_PROMPT) {
             flash_attn_params * params = reinterpret_cast<flash_attn_params *>(cur->op_params);
             params->sequence_lenth_kv  = lctx.kv_self.n;
-            // 关键：确保 Qwen3 的 GQA KV 头数正确下发给后端，避免 GE 报 head 数不匹配
-            params->key_num_heads      = lctx.model.hparams.n_head_kv();
+            // Use actual KV heads for this device
+            params->key_num_heads      = n_head_kv_act;
         }
     }
 }

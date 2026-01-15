@@ -82,7 +82,8 @@ class ModelBase:
                  split_max_tensors: int = 0, split_max_size: int = 0, dry_run: bool = False,
                  small_first_shard: bool = False, hparams: dict[str, Any] | None = None, remote_hf_model_id: str | None = None,
                  disable_mistral_community_chat_template: bool = False,
-                 sentence_transformers_dense_modules: bool = False, merge_qkv: bool = False, merge_ffn: bool = False, max_layers: int | None = None):
+                 sentence_transformers_dense_modules: bool = False, merge_qkv: bool = False, merge_ffn: bool = False, 
+                 max_layers: int | None = None):
         
         self.dir_model = dir_model
         self.ftype = ftype
@@ -271,8 +272,13 @@ class ModelBase:
                 continue
 
             old_dtype = data_torch.dtype
+            # Optimize dtype conversion based on output format
             if data_torch.dtype not in (torch.float16, torch.float32):
-                data_torch = data_torch.to(torch.float32)
+                # For fp16 output, convert bf16 directly to fp16 (faster than bf16->fp32->fp16)
+                if self.ftype == gguf.LlamaFileType.MOSTLY_F16 and data_torch.dtype == torch.bfloat16:
+                    data_torch = data_torch.to(torch.float16)
+                else:
+                    data_torch = data_torch.to(torch.float32)
 
             bid = None
             for part in name.split("."):
@@ -300,12 +306,21 @@ class ModelBase:
                         # Fallbacks
                         data_qtype = gguf.GGMLQuantizationType.F16
 
-                try:
-                    data = gguf.quants.quantize(data, data_qtype)
-                except gguf.QuantError as e:
-                    logger.warning("%s, %s", e, "falling back to F16")
-                    data_qtype = gguf.GGMLQuantizationType.F16
-                    data = gguf.quants.quantize(data, data_qtype)
+                # Fast path: skip quantize() for simple dtype conversions
+                if data_qtype == gguf.GGMLQuantizationType.F32:
+                    if data.dtype != np.float32:
+                        data = data.astype(np.float32, copy=False)
+                elif data_qtype == gguf.GGMLQuantizationType.F16:
+                    if data.dtype != np.float16:
+                        data = data.astype(np.float16, copy=False)
+                else:
+                    # Use gguf quantization for other types
+                    try:
+                        data = gguf.quants.quantize(data, data_qtype)
+                    except gguf.QuantError as e:
+                        logger.warning("%s, %s", e, "falling back to F16")
+                        data_qtype = gguf.GGMLQuantizationType.F16
+                        data = data.astype(np.float16, copy=False)
 
                 shape = gguf.quant_shape_from_byte_shape(data.shape, data_qtype) if data.dtype == np.uint8 else data.shape
                 shape_str = f"{{{', '.join(str(n) for n in reversed(shape))}}}"

@@ -605,9 +605,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     {
         // note: cast to int64_t since we will use these for the tensor dimensions
         const int64_t n_head        = hparams.n_head();
-        // const int64_t n_head_kv     = hparams.n_head_kv();
+        const int64_t n_head_kv     = hparams.n_head_kv();
         const int64_t n_embd        = hparams.n_embd;
-        const int64_t n_embd_v_gqa  = hparams.n_embd_v_gqa();
+        const int64_t n_embd_v_gqa  = hparams.n_embd_v_gqa(0,false);
         const int64_t n_embd_head_k = hparams.n_embd_head_k;
         const int64_t n_embd_head_v = hparams.n_embd_head_v;
         const int64_t n_ff          = hparams.n_ff();
@@ -791,24 +791,24 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         if (!is_lite) {
                             layer.wq_a = create_tensor({ n_embd, q_lora_rank }, LLM_SPLIT_REPEAT,
                                                        tn(LLM_TENSOR_ATTN_Q_A, "weight", i), 0, local_dev);
-                            layer.wq_b = create_tensor({ q_lora_rank, n_embd_head_k, n_head },
-                                                       use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM2_MERGE12,
+                            layer.wq_b = create_tensor({ q_lora_rank, n_embd_head_k * parallel_size, n_head /parallel_size},
+                                                       use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM1_MERGE12,
                                                        tn(LLM_TENSOR_ATTN_Q_B, "weight", i), 0, local_dev);
                         } else {
-                            layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head },
-                                                     use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_2d_DIM1,
+                            layer.wq = create_tensor({ n_embd, n_embd_head_k * parallel_size , n_head /parallel_size},
+                                                     use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM1_MERGE12,
                                                      tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
                         }
 
                         layer.wkv_a_mqa =
                             create_tensor({ n_embd, kv_lora_rank + (n_embd_head_qk_rope) }, LLM_SPLIT_REPEAT,
                                           tn(LLM_TENSOR_ATTN_KV_A_MQA, "weight", i), 0, local_dev);
-                        layer.wkv_b = create_tensor({ kv_lora_rank, n_embd_head_qk_nope + n_embd_head_v, n_head },
-                                                    use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM2_MERGE12,
+                        layer.wkv_b = create_tensor({ kv_lora_rank, (n_embd_head_qk_nope + n_embd_head_v) * parallel_size, n_head / parallel_size},
+                                                    use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM1_MERGE12,
                                                     tn(LLM_TENSOR_ATTN_KV_B, "weight", i), 0, local_dev,
                                                     hparams.enable_mla ? wkv_b_post_process : nullptr);
-                        layer.wo    = create_tensor({ n_embd_head_v, n_head, n_embd },
-                                                 use_dp ? LLM_SPLIT_3d_MERGE01 : LLM_SPLIT_3d_DIM1_MERGE01,
+                        layer.wo    = create_tensor({ n_embd_head_v * parallel_size, n_head / parallel_size, n_embd },
+                                                 use_dp ? LLM_SPLIT_3d_MERGE01 : LLM_SPLIT_3d_DIM0_MERGE01,
                                                     tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
 
                         layer.ffn_norm = create_tensor({ n_embd }, LLM_SPLIT_REPEAT,
@@ -882,27 +882,29 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     output = create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_OUTPUT, "weight"), 0);
 
                     for (int i = 0; i < n_layer; ++i) {
+                        const int          p         = hparams.tp_id;
                         auto & layer = layers[i];
+                        ggml_backend_dev_t local_dev = enable_tensor_parallel ? devices[p] : nullptr;
 
                         layer.attn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0, local_dev);
 
                         layer.wqkv = create_tensor({ n_embd, n_embd * 3 }, LLM_SPLIT_REPEAT,
-                                                   tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0);
+                                                   tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0, local_dev);
                         layer.bqkv =
-                            create_tensor({ n_embd * 3 }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_QKV, "bias", i), 0);
+                            create_tensor({ n_embd * 3 }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_QKV, "bias", i), 0, local_dev);
                         layer.wo = create_tensor({ n_embd, n_embd }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
+                                                 tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
 
                         layer.ffn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
 
                         layer.ffn_gate = create_tensor({ n_embd, n_ff / 2 }, LLM_SPLIT_REPEAT,
-                                                       tn(LLM_TENSOR_FFN_GATE, "weight", i), 0);
+                                                       tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
                         layer.ffn_down = create_tensor({ n_ff / 2, n_embd }, LLM_SPLIT_REPEAT,
-                                                       tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0);
+                                                       tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
                         layer.ffn_up   = create_tensor({ n_embd, n_ff / 2 }, LLM_SPLIT_REPEAT,
-                                                       tn(LLM_TENSOR_FFN_UP, "weight", i), 0);
+                                                       tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
                     }
                 }
                 break;
@@ -923,38 +925,43 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     }
 
                     for (int i = 0; i < n_layer; ++i) {
+                        const int          p         = hparams.tp_id;
                         auto & layer = layers[i];
+                        ggml_backend_dev_t local_dev = enable_tensor_parallel ? devices[p] : nullptr;
 
                         layer.attn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0, local_dev);
                         layer.wq =
-                            create_tensor({ n_embd, n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
+                            create_tensor({ n_embd, n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
                         layer.wk = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
+                                                 tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
                         layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
                         layer.wo = create_tensor({ n_embd, n_embd }, LLM_SPLIT_REPEAT,
-                                                 tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
+                                                 tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
 
                         // optional bias tensors
-                        layer.bq = create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_Q, "bias", i), 0);
-                        layer.bk = create_tensor({ n_embd_gqa }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_K, "bias", i), 0);
-                        layer.bv = create_tensor({ n_embd_gqa }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_V, "bias", i), 0);
+                        layer.bq = create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_Q, "bias", i), 0, local_dev);
+                        layer.bk = create_tensor({ n_embd_gqa }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_K, "bias", i), 0, local_dev);
+                        layer.bv = create_tensor({ n_embd_gqa }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_V, "bias", i), 0, local_dev);
 
                         layer.ffn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
 
                         layer.ffn_gate =
-                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE, "weight", i), 0);
+                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
                         layer.ffn_down =
-                            create_tensor({ n_ff, n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0);
+                            create_tensor({ n_ff, n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
                         layer.ffn_up =
-                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_UP, "weight", i), 0);
+                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
                     }
                 }
                 break;
             case LLM_ARCH_QWEN3:
                 {
+                    GGML_ASSERT(n_head % parallel_size == 0);
+                    GGML_ASSERT(n_head_kv % parallel_size ==0);
+                    GGML_ASSERT(n_ff % parallel_size == 0);
                     tok_embd =
                         create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), 0);
 
@@ -969,43 +976,66 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     }
 
                     for (int i = 0; i < n_layer; ++i) {
+                        const int          p         = hparams.tp_id;
                         auto & layer = layers[i];
-                        layer.wqkv   = create_tensor({ n_embd, n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa },
-                                                     LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0);
+                        ggml_backend_dev_t local_dev = enable_tensor_parallel ? devices[p] : nullptr;
 
-                        // layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_REPEAT,
-                        //                          tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
-                        // layer.wk          = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                        //                                   tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
-                        // layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                        //                          tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+                        // printf("wqkv dims: %d %d %d %d\n", n_embd_head_k, n_head, n_embd_gqa, n_embd_gqa);
+                        // layer.wqkv   = create_tensor({ n_embd, n_embd_head_k * parallel_size, (n_head + n_head_kv + n_head_kv) / parallel_size},
+                        //                              LLM_SPLIT_3d_DIM1_MERGE12, tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0, local_dev);
+
+                        // layer.wq = create_tensor({ n_embd, n_embd_head_k * parallel_size, n_head / parallel_size}, LLM_SPLIT_3d_DIM1_MERGE12,
+                        //                          tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
+                        // layer.wk          = create_tensor({ n_embd, n_embd_head_k * parallel_size, n_head_kv / parallel_size}, LLM_SPLIT_3d_DIM1_MERGE12,
+                        //                                   tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
+                        // layer.wv = create_tensor({ n_embd, n_embd_head_k * parallel_size, n_head_kv / parallel_size}, LLM_SPLIT_3d_DIM1_MERGE12,
+                        //                          tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
+
+                        // the idea of simple split is failed because of mqa
+
+                        layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_2d_DIM1,
+                                                 tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
+                        layer.wk          = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_2d_DIM1,
+                                                          tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
+                        layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_2d_DIM1,
+                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
 
                         layer.attn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0, local_dev);
                         layer.attn_q_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), 0);
+                                                          tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), 0, local_dev);
                         layer.attn_k_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0);
-                        layer.wo          = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
-
+                                                          tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0, local_dev);
+                        layer.wo          = create_tensor({ n_embd_head_k, n_head, n_embd }, LLM_SPLIT_3d_DIM1_MERGE01,
+                                                          tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
+                        // layer.wo          = create_tensor({ n_embd_head_k * parallel_size, n_head / parallel_size, n_embd }, LLM_SPLIT_3d_DIM0_MERGE01,
+                        //                                   tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
                         layer.ffn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
 
-                        layer.ffn_gate_up = create_tensor({ n_embd, n_ff + n_ff }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_FFN_GATE_UP, "weight", i), 0);
-                        // layer.ffn_gate =
-                        //     create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_GATE, "weight", i), 0);
-                        // layer.ffn_up =
-                        //     create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_UP, "weight", i), 0);
+                        // layer.ffn_gate_up = create_tensor({ n_embd, n_ff, 2 }, LLM_SPLIT_3d_DIM1_MERGE12,
+                        //                                   tn(LLM_TENSOR_FFN_GATE_UP, "weight", i), 0, local_dev);
+                        layer.ffn_gate =
+                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1, tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
+                        layer.ffn_up =
+                            create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1, tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
                         layer.ffn_down =
-                            create_tensor({ n_ff, n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0);
+                            create_tensor({ n_ff, n_embd }, LLM_SPLIT_2d_DIM0, tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
                     }
                 }
                 break;
             case LLM_ARCH_QWEN3MOE:
                 {
                     const int64_t n_ff_exp = hparams.n_ff_exp;
+                    
+                    // TP requires these dimensions to be divisible by parallel_size
+                    // For n_head_kv, if it's smaller than parallel_size, we replicate KV across all devices
+                    GGML_ASSERT(n_head % parallel_size == 0);
+                    // n_head_kv can be smaller than parallel_size (e.g., GQA with few KV heads)
+                    // In this case, KV will be replicated across devices instead of split
+                    const bool replicate_kv = (n_head_kv < parallel_size) || (n_head_kv % parallel_size != 0);
+                    GGML_ASSERT(n_ff_exp % parallel_size == 0);
+                    
                     tok_embd =
                         create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), 0);
 
@@ -1023,48 +1053,58 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     }
 
                     for (int i = 0; i < n_layer; ++i) {
+                        const int          p         = hparams.tp_id;
                         auto & layer = layers[i];
+                        ggml_backend_dev_t local_dev = enable_tensor_parallel ? devices[p] : nullptr;
 
                         layer.attn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0, local_dev);
 
-                        layer.wqkv = create_tensor({ n_embd, (n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa) },
-                                                   LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0);
-
-                        // layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_REPEAT,
-                        //                         tn(LLM_TENSOR_ATTN_Q, "weight", i), 0);
-                        // layer.wk = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                        //                         tn(LLM_TENSOR_ATTN_K, "weight", i), 0);
-                        // layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
-                        //                         tn(LLM_TENSOR_ATTN_V, "weight", i), 0);
+                        // Use separate Q/K/V weights for TP
+                        // Q is always split, but K/V may be replicated if n_head_kv < parallel_size
+                        layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_2d_DIM1,
+                                                 tn(LLM_TENSOR_ATTN_Q, "weight", i), TENSOR_NOT_REQUIRED, local_dev);
+                        layer.wk = create_tensor({ n_embd, n_embd_gqa }, replicate_kv ? LLM_SPLIT_REPEAT : LLM_SPLIT_2d_DIM1,
+                                                 tn(LLM_TENSOR_ATTN_K, "weight", i), TENSOR_NOT_REQUIRED, local_dev);
+                        layer.wv = create_tensor({ n_embd, n_embd_gqa }, replicate_kv ? LLM_SPLIT_REPEAT : LLM_SPLIT_2d_DIM1,
+                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), TENSOR_NOT_REQUIRED, local_dev);
+                        // Fallback to merged wqkv if separate tensors not found
+                        if (layer.wq == nullptr) {
+                            if (i == 0) { printf("load merged wqkv\n"); }
+                            layer.wqkv = create_tensor({ n_embd, (n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa) },
+                                                       LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0, local_dev);
+                        }
+                        else {
+                            if (i == 0) { printf("load separate wq, wk, wv\n"); }
+                        }
 
                         layer.attn_q_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), 0);
+                                                          tn(LLM_TENSOR_ATTN_Q_NORM, "weight", i), 0, local_dev);
 
                         layer.attn_k_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0);
+                                                          tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), 0, local_dev);
 
-                        layer.wo            = create_tensor({ n_embd_head_k * n_head, n_embd }, LLM_SPLIT_REPEAT,
-                                                            tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0);
-                        // todo: some condition: load dense ffn
-                        layer.ffn_gate_exps = create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_REPEAT,
-                                                            tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0);
+                        layer.wo            = create_tensor({ n_embd_head_k, n_head, n_embd }, LLM_SPLIT_3d_DIM1_MERGE01,
+                                                            tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
+                        // MoE experts weights - TP split on n_ff_exp dimension (same as DeepSeek2)
+                        layer.ffn_gate_exps = create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
+                                                            tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0, local_dev);
 
-                        layer.ffn_down_exps = create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_REPEAT,
-                                                            tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0);
+                        layer.ffn_down_exps = create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_3d_DIM0,
+                                                            tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0, local_dev);
 
-                        layer.ffn_up_exps = create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_REPEAT,
-                                                          tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0);
+                        layer.ffn_up_exps = create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
+                                                          tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0, local_dev);
 
                         layer.ffn_gate_inp = create_tensor({ n_embd, n_expert }, LLM_SPLIT_REPEAT,
-                                                           tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), 0);
+                                                           tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), 0, local_dev);
 
                         layer.ffn_exp_probs_b =
                             create_tensor({ n_expert }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_EXP_PROBS_B, "bias", i),
-                                          TENSOR_NOT_REQUIRED);
+                                          TENSOR_NOT_REQUIRED, local_dev);
 
                         layer.ffn_norm =
-                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0);
+                            create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
                     }
                 }
                 break;

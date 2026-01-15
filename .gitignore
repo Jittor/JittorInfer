@@ -162,3 +162,5 @@ dump_log/
 work_path/
 msprof*
 test_speed/
+
+configs-local

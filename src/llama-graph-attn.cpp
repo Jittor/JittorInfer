@@ -51,7 +51,24 @@ static struct ggml_tensor * llm_build_kqv(struct ggml_context * ctx, struct llam
     const int head_split = (hparams.enable_tensor_parallel && !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
     const int64_t n_ctx  = cparams.n_ctx;
     const int64_t n_head = hparams.n_head(il) / head_split;
-    const int64_t n_head_kv     = hparams.n_head_kv(il) / head_split;
+    const int64_t n_head_kv_full = hparams.n_head_kv(il);
+    const int64_t n_head_q_full = hparams.n_head(il);
+    
+    // Calculate actual KV heads for this device (handles GQA with few KV heads)
+    int64_t n_head_kv;
+    if (n_head_kv_full >= (int64_t)head_split) {
+        n_head_kv = n_head_kv_full / head_split;
+    } else if (n_head_kv_full > 0) {
+        const int64_t tp_id = hparams.tp_id;
+        const int64_t n_rep = n_head_q_full / n_head_kv_full;
+        const int64_t n_q_per_device = n_head_q_full / head_split;
+        const int64_t kv_start = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_end = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
+        n_head_kv = kv_end - kv_start;
+    } else {
+        n_head_kv = n_head_kv_full;
+    }
+    
     const int64_t n_embd_head_k = hparams.n_embd_head_k;
     const int64_t n_embd_k_gqa  = hparams.n_embd_k_gqa(il);
     const int64_t n_embd_head_v = hparams.n_embd_head_v;
@@ -352,16 +369,34 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
 
     const int64_t n_embd_head_k = hparams.n_embd_head_k;
     const int64_t n_embd_head_v = hparams.n_embd_head_v;
-    const int64_t n_embd_k_gqa  = hparams.n_embd_k_gqa(il);
-    const int64_t n_embd_v_gqa  = hparams.n_embd_v_gqa(il);
-    const int64_t n_head_kv     = hparams.n_head_kv(il);
+    const int64_t n_head_kv_full = hparams.n_head_kv(il);
     const int64_t n_head        = hparams.n_head(il);
     const int64_t n_ctx         = cparams.n_ctx;
     const int64_t head_split =
         (hparams.enable_tensor_parallel && !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
-    GGML_ASSERT(n_head % head_split == 0 && n_head_kv % head_split == 0);
-    const int64_t n_head_local    = n_head / head_split;
-    const int64_t n_head_kv_local = n_head_kv / head_split;
+    
+    // For GQA models: Q heads must be divisible by head_split
+    GGML_ASSERT(n_head % head_split == 0);
+    const int64_t n_head_local = n_head / head_split;
+    
+    // Calculate actual KV heads for this device (handles GQA with few KV heads)
+    int64_t n_head_kv_local;
+    if (n_head_kv_full >= head_split) {
+        n_head_kv_local = n_head_kv_full / head_split;
+    } else if (n_head_kv_full > 0) {
+        const int64_t tp_id = hparams.tp_id;
+        const int64_t n_rep = n_head / n_head_kv_full;
+        const int64_t n_q_per_device = n_head / head_split;
+        const int64_t kv_start = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_end = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
+        n_head_kv_local = kv_end - kv_start;
+    } else {
+        n_head_kv_local = n_head_kv_full;
+    }
+    
+    // Use hparams functions to get consistent n_embd values
+    const int64_t n_embd_k_gqa  = hparams.n_embd_k_gqa(il);
+    const int64_t n_embd_v_gqa  = hparams.n_embd_v_gqa(il);
 
     // TODO(hsh): remove pad op here, need to modify kv cache initialization
     // pad qkv

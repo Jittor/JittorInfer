@@ -20,11 +20,11 @@ enable_cann_flash_attention: true # enable cann flash attention
 
 # Generation parameters
 n_ctx: 1024  # context size (1024 * 16 * 16)
-n_batch: 4 # logical batch size for prompt processing
-n_parallel: 4  # number of parallel sequences to decode (must < 32 now)
+n_batch: 1 # logical batch size for prompt processing
+n_parallel: 1  # number of parallel sequences to decode (must < 32 now)
 
 # Model parameters
-model: "/root/data/qwen3-30B-A3B-qkv-mergedf16.gguf"  # model path
+model: "/root/data/qwen3-30B-A3B-fp16.gguf"  # model path
 model_alias: ""  # model alias
 
 # Server parameters
@@ -32,7 +32,7 @@ special: false       # enable special token output
 cont_batching: true  # insert new sequences for decoding on-the-fly
 reranking: false     # enable reranking support on server
 port: 8088           # server listens on this network port
-n_threads_http: 16   # number of threads to process HTTP requests
+n_threads_http: 128   # number of threads to process HTTP requests
 hostname: "127.0.0.1"  # server hostname
 chat_template: ""    # chat template
 
