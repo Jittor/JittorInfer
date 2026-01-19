@@ -67,29 +67,54 @@ struct ggml_cgraph * llm_qwen3moe_context_ge::build_qwen3moe_ge() {
 
         // self-attention
         {
-            // compute Q, K, V using separate weights (already split for TP)
-            struct ggml_tensor * Qcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
-            cb(Qcur, "Qcur", il);
+            struct ggml_tensor * Qcur;
+            struct ggml_tensor * Kcur;
+            struct ggml_tensor * Vcur;
 
-            struct ggml_tensor * Kcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wk, cur);
-            cb(Kcur, "Kcur", il);
+            if (model.layers[il].wqkv != nullptr) {
+                // compute Q, K, V using merged QKV weight for better performance
+                const int64_t n_embd_head = hparams.n_embd_head_k;
+                const int64_t q_dim       = n_embd_head * n_head_act;
+                const int64_t k_dim       = n_embd_head * n_head_kv_act;
+                const int64_t v_dim       = n_embd_head * n_head_kv_act;
 
-            struct ggml_tensor * Vcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wv, cur);
-            cb(Vcur, "Vcur", il);
+                struct ggml_tensor * QKVcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wqkv, cur);
+                cb(QKVcur, "QKVcur", il);
 
-            // If KV is replicated (n_head_kv < n_split), slice out the KV heads this device needs
-            // GE backend doesn't support view, use ggml_get_slice instead
-            if (replicate_kv && n_head_kv_act < n_head_kv) {
-                // Kcur shape: [n_embd_head_k * n_head_kv, n_tokens] -> slice to [n_embd_head_k * n_head_kv_act, n_tokens]
-                const int64_t k_start = kv_head_start * n_embd_head_k;
-                const int64_t k_end   = k_start + n_embd_head_k * n_head_kv_act;
-                Kcur                  = ggml_get_slice(ctx0, Kcur, k_start, k_end, 0);
-                cb(Kcur, "Kcur_sliced", il);
+                // Split QKV into Q, K, V using ggml_get_slice (GE backend doesn't support view)
+                // QKVcur shape: [qkv_dim, n_tokens]
+                Qcur = ggml_get_slice(ctx0, QKVcur, 0, q_dim, 0);
+                cb(Qcur, "Qcur", il);
 
-                const int64_t v_start = kv_head_start * n_embd_head_v;
-                const int64_t v_end   = v_start + n_embd_head_v * n_head_kv_act;
-                Vcur                  = ggml_get_slice(ctx0, Vcur, v_start, v_end, 0);
-                cb(Vcur, "Vcur_sliced", il);
+                Kcur = ggml_get_slice(ctx0, QKVcur, q_dim, q_dim + k_dim, 0);
+                cb(Kcur, "Kcur", il);
+
+                Vcur = ggml_get_slice(ctx0, QKVcur, q_dim + k_dim, q_dim + k_dim + v_dim, 0);
+                cb(Vcur, "Vcur", il);
+            } else {
+                // Fallback to separate Q, K, V weights
+                Qcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
+                cb(Qcur, "Qcur", il);
+
+                Kcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wk, cur);
+                cb(Kcur, "Kcur", il);
+
+                Vcur = ggml_mul_mat_fp16(ctx0, model.layers[il].wv, cur);
+                cb(Vcur, "Vcur", il);
+
+                // If KV is replicated (n_head_kv < n_split), slice out the KV heads this device needs
+                // GE backend doesn't support view, use ggml_get_slice instead
+                if (replicate_kv && n_head_kv_act < n_head_kv) {
+                    const int64_t k_start = kv_head_start * n_embd_head_k;
+                    const int64_t k_end   = k_start + n_embd_head_k * n_head_kv_act;
+                    Kcur                  = ggml_get_slice(ctx0, Kcur, k_start, k_end, 0);
+                    cb(Kcur, "Kcur_sliced", il);
+
+                    const int64_t v_start = kv_head_start * n_embd_head_v;
+                    const int64_t v_end   = v_start + n_embd_head_v * n_head_kv_act;
+                    Vcur                  = ggml_get_slice(ctx0, Vcur, v_start, v_end, 0);
+                    cb(Vcur, "Vcur_sliced", il);
+                }
             }
 
             Qcur = ggml_reshape_3d(ctx0, Qcur, n_embd_head_k, n_head_act, n_tokens);

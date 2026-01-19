@@ -321,9 +321,10 @@ enum llm_split_method {
     LLM_SPLIT_3d_DIM2,
     LLM_SPLIT_3d_DIM1,
     LLM_SPLIT_3d_DIM0,
+    LLM_SPLIT_QKV,
 };
 
-static std::vector<int64_t> bulid_target_ne(const std::vector<int64_t> & ori_ne, llm_split_method split_method,
+static std::vector<int64_t> build_target_ne(const std::vector<int64_t> & ori_ne, llm_split_method split_method,
                                             int split_num) {
     switch (split_method) {
         case LLM_SPLIT_REPEAT:
@@ -364,6 +365,32 @@ static std::vector<int64_t> bulid_target_ne(const std::vector<int64_t> & ori_ne,
         default:
             GGML_ABORT("Invalid split method");
     }
+}
+
+static llama_model_loader::llama_tensor_viewer build_qkv_viewer(int tp_id, int64_t head_kv_start, int64_t n_embd,
+                                                                int64_t n_embd_head_k, int64_t n_embd_head_v,
+                                                                int64_t n_head, int64_t n_head_kv, int64_t n_head_act,
+                                                                int64_t              n_head_kv_act,
+                                                                llama_load_post_proc post_process = nullptr) {
+    llama_model_loader::llama_tensor_viewer spliter;
+    spliter              = llama_model_loader::build_repeater(tp_id);
+    spliter.mode         = llama_model_loader::LLAMA_QKV_SPLIT;
+    spliter.post_process = post_process;
+
+    spliter.qkv_param = { /* q_size=       */ n_embd * n_embd_head_k * n_head_act,
+                          /* k_size=       */ n_embd * n_embd_head_k * n_head_kv_act,
+                          /* v_size=       */ n_embd * n_embd_head_v * n_head_kv_act,
+                          /* q_offset_dst= */ 0,
+                          /* k_offset_dst= */ n_embd * n_embd_head_k * n_head_act,
+                          /* v_offset_dst= */ n_embd * (n_embd_head_k * n_head_act + n_embd_head_k * n_head_kv_act),
+                          /* q_offset_src= */ 0 + n_embd * n_embd_head_k * tp_id * n_head_act,
+                          /* k_offset_src= */ n_embd * (n_embd_head_k * n_head + n_embd_head_k * head_kv_start),
+                          /* v_offset_src= */ n_embd *
+                              (n_embd_head_k * n_head + n_embd_head_k * n_head_kv + n_embd_head_v * head_kv_start),
+                          /* tot_size_src= */ n_embd *
+                              (n_embd_head_k * n_head + n_embd_head_k * n_head_kv + n_embd_head_v * n_head_kv) };
+
+    return spliter;
 }
 
 static llama_model_loader::llama_tensor_viewer build_viewer(const std::vector<int64_t> & ori_ne,
@@ -628,7 +655,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         ggml_backend_buffer_type_t first_moved_from_buft = nullptr;
         ggml_backend_buffer_type_t first_moved_to_buft   = nullptr;
 
-        auto create_tensor = [&](const std::initializer_list<int64_t> & ori_ne, llm_split_method split_method,
+        auto create_tensor = [&](const std::vector<int64_t> & ori_ne, llm_split_method split_method,
                                  const LLM_TN_IMPL & tn, int flags, ggml_backend_dev_t dev = nullptr,
                                  llama_load_post_proc post_process = nullptr) -> ggml_tensor * {
             ggml_tensor * t_meta = ml.get_tensor_meta(tn.str().c_str());
@@ -735,10 +762,39 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     return t;
                 }
             }
-            std::vector<int64_t> ne(bulid_target_ne(ori_ne, split_method, hparams.num_parallel));
-            return ml.create_tensor(
-                ctx, tn, ne, flags,
-                build_viewer(ori_ne, split_method, hparams.tp_id, hparams.num_parallel, post_process));
+            std::vector<int64_t>                    ne;
+            llama_model_loader::llama_tensor_viewer viewer;
+
+            if (split_method == LLM_SPLIT_QKV) {
+                // ori_ne : n_embd * (n_embd_k * n_head + n_emd_k * n_head_kv + n_embd_v * n_head_kv)
+                GGML_ASSERT(ori_ne.size() == 2);
+                const bool replicate_kv = (n_head_kv < hparams.num_parallel) || (n_head_kv % hparams.num_parallel != 0);
+                int64_t    n_head_act   = n_head / hparams.num_parallel;
+                int64_t    n_head_kv_act;
+                int64_t    kv_head_start;
+                if (replicate_kv && n_head_kv > 0) {
+                    // Calculate which KV heads this device needs based on its Q heads
+                    const int64_t tp_id          = hparams.tp_id;
+                    const int64_t n_rep          = n_head / n_head_kv;  // GQA ratio
+                    const int64_t n_q_per_device = n_head / hparams.num_parallel;
+                    kv_head_start                = (tp_id * n_q_per_device) / n_rep;
+                    const int64_t kv_head_end    = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;  // ceil
+                    n_head_kv_act                = kv_head_end - kv_head_start;
+                } else {
+                    n_head_kv_act = n_head_kv / hparams.num_parallel;
+                    kv_head_start = n_head_kv_act * hparams.tp_id;
+                }
+                ne     = { ori_ne[0],
+                           (n_embd_head_k * n_head_act + n_embd_head_k * n_head_kv_act + n_embd_head_v * n_head_kv_act) };
+                viewer = build_qkv_viewer(hparams.tp_id, kv_head_start, n_embd, n_embd_head_k, n_embd_head_v, n_head,
+                                          n_head_kv, n_head_act, n_head_kv_act, post_process);
+                viewer.mode         = llama_model_loader::LLAMA_QKV_SPLIT;
+                viewer.post_process = post_process;
+            } else {
+                ne     = build_target_ne(ori_ne, split_method, hparams.num_parallel);
+                viewer = build_viewer(ori_ne, split_method, hparams.tp_id, hparams.num_parallel, post_process);
+            }
+            return ml.create_tensor(ctx, tn, ne, flags, viewer);
         };
 
         const int  parallel_size = enable_tensor_parallel ? hparams.num_parallel : 1;
@@ -965,6 +1021,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                 break;
             case LLM_ARCH_QWEN3:
                 {
+                    // dense QWEN3 does not support replicate kv
                     GGML_ASSERT(n_head % parallel_size == 0);
                     GGML_ASSERT(n_head_kv % parallel_size == 0);
                     GGML_ASSERT(n_ff % parallel_size == 0);
@@ -987,24 +1044,21 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         ggml_backend_dev_t local_dev = enable_tensor_parallel ? devices[p] : nullptr;
 
                         // printf("wqkv dims: %d %d %d %d\n", n_embd_head_k, n_head, n_embd_gqa, n_embd_gqa);
-                        // layer.wqkv   = create_tensor({ n_embd, n_embd_head_k * parallel_size, (n_head + n_head_kv + n_head_kv) / parallel_size},
-                        //                              LLM_SPLIT_3d_DIM1_MERGE12, tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0, local_dev);
-
-                        // layer.wq = create_tensor({ n_embd, n_embd_head_k * parallel_size, n_head / parallel_size}, LLM_SPLIT_3d_DIM1_MERGE12,
-                        //                          tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
-                        // layer.wk          = create_tensor({ n_embd, n_embd_head_k * parallel_size, n_head_kv / parallel_size}, LLM_SPLIT_3d_DIM1_MERGE12,
-                        //                                   tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
-                        // layer.wv = create_tensor({ n_embd, n_embd_head_k * parallel_size, n_head_kv / parallel_size}, LLM_SPLIT_3d_DIM1_MERGE12,
-                        //                          tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
-
-                        // the idea of simple split is failed because of mqa
-
-                        layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_2d_DIM1,
-                                                 tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
-                        layer.wk = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_2d_DIM1,
-                                                 tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
-                        layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_2d_DIM1,
-                                                 tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
+                        layer.wqkv =
+                            create_tensor({ n_embd, n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa }, LLM_SPLIT_QKV,
+                                          tn(LLM_TENSOR_ATTN_QKV, "weight", i), TENSOR_NOT_REQUIRED, local_dev);
+                        if (layer.wqkv == nullptr) {
+                            // use seperate Q K V
+                            layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head }, LLM_SPLIT_2d_DIM1,
+                                                     tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
+                            layer.wk = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_2d_DIM1,
+                                                     tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
+                            layer.wv = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_2d_DIM1,
+                                                     tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
+                            // printf("load separate wq, wk, wv\n");
+                        } else {
+                            // printf("load merged wqkv\n");
+                        }
 
                         layer.attn_norm   = create_tensor({ n_embd }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0, local_dev);
@@ -1019,12 +1073,19 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.ffn_norm    = create_tensor({ n_embd }, LLM_SPLIT_REPEAT,
                                                           tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
 
-                        // layer.ffn_gate_up = create_tensor({ n_embd, n_ff, 2 }, LLM_SPLIT_3d_DIM1_MERGE12,
-                        //                                   tn(LLM_TENSOR_FFN_GATE_UP, "weight", i), 0, local_dev);
-                        layer.ffn_gate = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
-                                                       tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
-                        layer.ffn_up   = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
-                                                       tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
+                        layer.ffn_gate_up =
+                            create_tensor({ n_embd, n_ff, 2 }, LLM_SPLIT_3d_DIM1_MERGE12,
+                                          tn(LLM_TENSOR_FFN_GATE_UP, "weight", i), TENSOR_NOT_REQUIRED, local_dev);
+                        if (layer.ffn_gate_up == nullptr) {
+                            // use seperate ffn_gate and ffn_up
+                            layer.ffn_gate = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
+                                                           tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
+                            layer.ffn_up   = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
+                                                           tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
+                            // printf("load separate ffn_gate, ffn_up\n");
+                        } else {
+                            // printf("load merged ffn_gate_up\n");
+                        }
                         layer.ffn_down = create_tensor({ n_ff, n_embd }, LLM_SPLIT_2d_DIM0,
                                                        tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
                     }
@@ -1078,16 +1139,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                           tn(LLM_TENSOR_ATTN_V, "weight", i), TENSOR_NOT_REQUIRED, local_dev);
                         // Fallback to merged wqkv if separate tensors not found
                         if (layer.wq == nullptr) {
-                            if (i == 0) {
-                                printf("load merged wqkv\n");
-                            }
-                            layer.wqkv =
-                                create_tensor({ n_embd, (n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa) },
-                                              LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_QKV, "weight", i), 0, local_dev);
-                        } else {
-                            if (i == 0) {
-                                printf("load separate wq, wk, wv\n");
-                            }
+                            layer.wqkv = create_tensor({ n_embd, n_embd_head_k * n_head + n_embd_gqa + n_embd_gqa },
+                                                       LLM_SPLIT_QKV, tn(LLM_TENSOR_ATTN_QKV, "weight", i),
+                                                       TENSOR_NOT_REQUIRED, local_dev);
                         }
 
                         layer.attn_q_norm = create_tensor({ n_embd_head_k }, LLM_SPLIT_REPEAT,

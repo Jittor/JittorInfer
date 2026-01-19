@@ -805,6 +805,9 @@ const struct ggml_tensor * llama_model_loader::check_tensor_dims(const std::stri
                            name.c_str(), llama_format_tensor_shape(ne).c_str(), llama_format_tensor_shape(ne2).c_str(),
                            llama_format_tensor_shape(cur).c_str()));
             }
+        } else if (spliter.mode == LLAMA_QKV_SPLIT) {
+            // todo: check dim
+            // hack!
         } else {
             for (size_t i = 0; i < GGML_MAX_DIMS; ++i) {
                 if ((i < ne.size() && ne[i] != cur->ne[i]) || (i >= ne.size() && cur->ne[i] != 1)) {
@@ -837,6 +840,9 @@ struct ggml_tensor * llama_model_loader::create_tensor(struct ggml_context * ctx
     struct ggml_tensor * tensor;
     if (spliter.mode == LLAMA_REPEAT) {
         tensor = ggml_dup_tensor(ctx, cur);
+    } else if (spliter.mode == LLAMA_QKV_SPLIT) {
+        int64_t tar_ne[4] = { ne[0], ne[1], 1, 1 };
+        tensor = ggml_new_tensor(ctx, cur->type, GGML_MAX_DIMS, tar_ne);
     } else if (spliter.mode == LLAMA_AVG_SPLIT) {
         int     cur_split_dim = 0;
         int64_t cur_dim_size  = 1;
@@ -1333,6 +1339,31 @@ bool llama_model_loader::load_all_data_mpi(struct ggml_context * ctx, const stru
                 ggml_backend_tensor_set(cur, data, 0, n_size);
             }
             size_done += n_size;
+        } else if (spliter->mode == LLAMA_QKV_SPLIT) {
+            
+            GGML_ASSERT(spliter->post_process == NULL);
+            const int64_t element_size     = ggml_element_size(cur);
+            int64_t q_size = spliter->qkv_param.q_size * element_size;
+            int64_t k_size = spliter->qkv_param.k_size * element_size;
+            int64_t v_size = spliter->qkv_param.v_size * element_size;
+            int64_t q_offset_dst = spliter->qkv_param.q_offset_dst * element_size;
+            int64_t k_offset_dst = spliter->qkv_param.k_offset_dst * element_size;
+            int64_t v_offset_dst = spliter->qkv_param.v_offset_dst * element_size;
+            int64_t q_offset_src = spliter->qkv_param.q_offset_src * element_size;
+            int64_t k_offset_src = spliter->qkv_param.k_offset_src * element_size;
+            int64_t v_offset_src = spliter->qkv_param.v_offset_src * element_size;
+            int64_t src_size = spliter->qkv_param.tot_size_src * element_size;
+            
+            // printf("mlj: reach load qkv!");
+            // printf("mlj: tp_id = %d, q_offset = %lld, k_offset = %lld, v_offset = %lld\n",spliter->tp_id, q_offset_src, k_offset_src, v_offset_src);
+
+            ggml_backend_tensor_set(cur, data + q_offset_src, q_offset_dst, q_size);
+            ggml_backend_tensor_set(cur, data + k_offset_src, k_offset_dst, k_size);
+            ggml_backend_tensor_set(cur, data + v_offset_src, v_offset_dst, v_size);
+
+            // printf("mlj: successfully load qkv!");
+
+            size_done += src_size;
         } else {
             GGML_ASSERT(ggml_blck_size(cur->type) == 1);
             const int64_t element_size     = ggml_element_size(cur);

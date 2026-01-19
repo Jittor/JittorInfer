@@ -69,6 +69,8 @@ struct llama_model_loader {
         LLAMA_REPEAT,
         // average split
         LLAMA_AVG_SPLIT,
+        // specialized split method for merged qkv
+        LLAMA_QKV_SPLIT,
     };
 
     struct llama_tensor_viewer {
@@ -84,6 +86,19 @@ struct llama_model_loader {
         // buffer id (initialized only when loading)
         int                        buft_id;
         llama_load_post_proc       post_process;
+
+        struct {
+            int64_t q_size;
+            int64_t k_size;
+            int64_t v_size;
+            int64_t q_offset_dst;
+            int64_t k_offset_dst;
+            int64_t v_offset_dst;
+            int64_t q_offset_src;
+            int64_t k_offset_src;
+            int64_t v_offset_src;
+            int64_t tot_size_src;
+        } qkv_param;
 
         std::string add_tp_id(const std::string & name) const { return "tp." + std::to_string(tp_id) + "." + name; }
 

@@ -89,6 +89,7 @@ struct server_task {
         defaults.sampling          = params_base.sampling;
         params.stream              = json_value(data, "stream", false);
         params.post_sampling_probs = json_value(data, "post_sampling_probs", defaults.post_sampling_probs);
+        params.n_predict           = json_value(data, "max_tokens", -1);
         std::string model_name = params_base.model_alias.empty() ? DEFAULT_OAICOMPAT_MODEL : params_base.model_alias;
         return params;
     }
