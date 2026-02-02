@@ -114,13 +114,13 @@ static void print_date_time() {
 static struct DefaultMiniParams {
     int                   main_gpu          = 1;
     int                   n_gpu_layers      = 99;
-    enum llama_split_mode split_mode        = LLAMA_SPLIT_MODE_ROW;  // how to split the model across GPUs
+    enum llama_split_mode split_mode        = LLAMA_SPLIT_MODE_LAYER;  // how to split the model across GPUs
     float                 tensor_split[128] = { 0 };  // how split tensors should be distributed across GPUs
-    bool                  use_mmap          = true;   // use mmap for faster loads
+    bool                  use_mmap          = false;   // use mmap for faster loads
     bool                  use_mlock         = false;  // use mlock to keep model in memory
     bool                  check_tensors     = false;  // validate tensor data
 
-    std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
+    std::string model = "/root/data/Qwen2.5-7B-Instruct-f16.gguf";
 
     uint32_t n_ctx = 65536;  // context size
 
@@ -128,7 +128,7 @@ static struct DefaultMiniParams {
     uint32_t n_threads       = 64;                               // number of threads to use for computation
     uint32_t n_threads_batch = 64;                               // number of threads to use for batch processing
 
-    float                                 defrag_thold = 0.1f;   // defragmentation threshold
+    float                                 defrag_thold = 0.05f;   // defragmentation threshold
     bool                                  no_perf      = false;  // disable performance metrics
     std::vector<common_adapter_lora_info> lora_adapters;         // lora adapter path with user defined scale
 
@@ -159,10 +159,10 @@ static llama_model_params common_model_params_to_llama_local() {
     mparams.check_tensors               = default_mini_params.check_tensors;
     mparams.n_gpu_layers                = default_mini_params.n_gpu_layers;
     mparams.enable_tensor_parallel      = false;
-    mparams.enable_fused_moe            = true;
+    mparams.enable_fused_moe            = false;
     mparams.kv_overrides                = NULL;
     mparams.offload_input               = true;
-    mparams.enable_cann_flash_attention = true;
+    mparams.enable_cann_flash_attention = false;
     return mparams;
 }
 
@@ -175,7 +175,7 @@ static llama_context_params common_context_params_to_llama_local() {
     cparams.defrag_thold    = default_mini_params.defrag_thold;
     cparams.no_perf         = default_mini_params.no_perf;
     cparams.n_batch         = default_mini_params.n_batch;
-    cparams.enable_ge       = true;
+    cparams.enable_ge       = false;
     return cparams;
 }
 

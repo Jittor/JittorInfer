@@ -19,6 +19,7 @@ add_library(llama
             llama-graph-builder.cpp
             llama-graph-defrag.cpp
             llama-graph-deepseek2.cpp
+            llama-graph-qwen2.cpp
             llama-graph-deepseek2ge.cpp
             llama-graph-utils.cpp
             llama-graph-ffn.cpp
