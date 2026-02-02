@@ -2,7 +2,7 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2023-2024. All rights reserved.
 
 vendor_name=customize
-targetdir=/root/hyx/Ascend/opp
+targetdir=${ASCEND_OPP_PATH}/..
 target_custom=0
 
 sourcedir=$PWD/packages
