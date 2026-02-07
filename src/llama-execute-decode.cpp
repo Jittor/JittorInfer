@@ -1,5 +1,8 @@
 #include <cstdio>
 #include <cstring>
+#include <cmath>
+#include <fstream>
+#include <string>
 
 #include "ggml-cann.h"
 #include "ggml.h"
@@ -102,9 +105,11 @@ static int llama_prepare_ubatch(llama_context & lctx, llama_kv_slot_restorer & k
             kv_self.head = 0;
         }
 
-        const auto slot = cparams.enable_scatter_kv ?
+        const auto slot = cparams.page_attention ?
+        (llama_kv_cache_find_page_slot(kv_self, ubatch)) :
+        (cparams.enable_scatter_kv ?
                               llama_kv_cache_find_scatter_slot(kv_self, ubatch, cparams.n_ubatch) :
-                              llama_kv_cache_find_slot(kv_self, ubatch);
+                              llama_kv_cache_find_slot(kv_self, ubatch));
         if (!slot) {
             return 1;
         }
@@ -251,6 +256,66 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
             GGML_ASSERT(strcmp(res->name, "result_output") == 0 && "missing result_output tensor");
         }
 
+        // // debug
+        // // Find MLA input/output tensors for layer 0
+        // struct ggml_tensor * debug_node = nullptr;
+        // struct ggml_tensor * mla_input_q_nope = nullptr;
+        // struct ggml_tensor * mla_input_q_pe = nullptr;
+        // struct ggml_tensor * mla_input_cache_kv_nope = nullptr;
+        // struct ggml_tensor * mla_input_cache_kv_pe = nullptr;
+        // struct ggml_tensor * mla_input_page_table = nullptr;
+        // struct ggml_tensor * mla_input_length_kv = nullptr;
+        // struct ggml_tensor * mla_output_kqv = nullptr;
+        
+        // // Scatter update tensors
+        // struct ggml_tensor * scatter_nope_input_cache = nullptr;
+        // struct ggml_tensor * scatter_nope_input_indices = nullptr;
+        // struct ggml_tensor * scatter_nope_input_updates = nullptr;
+        // struct ggml_tensor * scatter_nope_output = nullptr;
+        // struct ggml_tensor * scatter_pe_input_cache = nullptr;
+        // struct ggml_tensor * scatter_pe_input_indices = nullptr;
+        // struct ggml_tensor * scatter_pe_input_updates = nullptr;
+        // struct ggml_tensor * scatter_pe_output = nullptr;
+        // {
+            
+        //     for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
+        //         struct ggml_tensor * node = ggml_graph_node(gf, i);
+        //         if (strcmp(node->name, "debug-0") == 0) {
+        //             debug_node = node;
+        //         } else if (strcmp(node->name, "mla_input_q_nope-0") == 0) {
+        //             mla_input_q_nope = node;
+        //         } else if (strcmp(node->name, "mla_input_q_pe-0") == 0) {
+        //             mla_input_q_pe = node;
+        //         } else if (strcmp(node->name, "mla_input_cache_kv_nope-0") == 0) {
+        //             mla_input_cache_kv_nope = node;
+        //         } else if (strcmp(node->name, "mla_input_cache_kv_pe-0") == 0) {
+        //             mla_input_cache_kv_pe = node;
+        //         } else if (strcmp(node->name, "mla_input_page_table-0") == 0) {
+        //             mla_input_page_table = node;
+        //         } else if (strcmp(node->name, "mla_input_length_kv-0") == 0) {
+        //             mla_input_length_kv = node;
+        //         } else if (strcmp(node->name, "mla_output_kqv-0") == 0) {
+        //             mla_output_kqv = node;
+        //         } else if (strcmp(node->name, "scatter_nope_input_cache-0") == 0) {
+        //             scatter_nope_input_cache = node;
+        //         } else if (strcmp(node->name, "scatter_nope_input_indices-0") == 0) {
+        //             scatter_nope_input_indices = node;
+        //         } else if (strcmp(node->name, "scatter_nope_input_updates-0") == 0) {
+        //             scatter_nope_input_updates = node;
+        //         } else if (strcmp(node->name, "scatter_nope_output-0") == 0) {
+        //             scatter_nope_output = node;
+        //         } else if (strcmp(node->name, "scatter_pe_input_cache-0") == 0) {
+        //             scatter_pe_input_cache = node;
+        //         } else if (strcmp(node->name, "scatter_pe_input_indices-0") == 0) {
+        //             scatter_pe_input_indices = node;
+        //         } else if (strcmp(node->name, "scatter_pe_input_updates-0") == 0) {
+        //             scatter_pe_input_updates = node;
+        //         } else if (strcmp(node->name, "scatter_pe_output-0") == 0) {
+        //             scatter_pe_output = node;
+        //         }
+        //     }
+        // }
+
         llama_set_inputs(lctx, ubatch);
 
         const auto compute_status = llama_graph_builder::llama_graph_compute(lctx, gf, sched, n_threads, threadpool);
@@ -269,6 +334,46 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
                 kv_self.head = 0;
             }
         }
+        // if (debug_node && ubatch.n_tokens < 32 && ubatch.n_tokens > 1) {
+        //     ggml_backend_t backend_debug = ggml_backend_sched_get_tensor_backend(sched, debug_node);
+        //     std::vector<int> debug_data(debug_node->ne[0] * debug_node->ne[1] * debug_node->ne[2] * debug_node->ne[3]);
+        //     GGML_ASSERT(backend_debug != nullptr);
+        //     ggml_backend_tensor_get_async(backend_debug, debug_node, debug_data.data(), 0,
+        //                                   debug_node->ne[0] * debug_node->ne[1] * debug_node->ne[2] * debug_node->ne[3] * sizeof(int));
+        //     ggml_backend_synchronize(backend_debug);
+            
+        //     // Check for inf/nan
+        //     bool has_inf = false;
+        //     bool has_nan = false;
+        //     for (size_t i = 0; i < debug_data.size(); ++i) {
+        //         if (std::isinf(debug_data[i])) {
+        //             has_inf = true;
+        //         }
+        //         if (std::isnan(debug_data[i])) {
+        //             has_nan = true;
+        //         }
+        //     }
+            
+        //     // Print first 10 values
+        //     printf("Debug node shape: [%zu, %zu, %zu, %zu]\n", debug_node->ne[0], debug_node->ne[1], debug_node->ne[2], debug_node->ne[3]);
+        //     for (size_t d3 = 0; d3 < debug_node->ne[3]; d3++) {
+        //         for (size_t d2 = 0; d2 < 1; d2++) {
+        //             for (size_t d1 = 0; d1 < debug_node->ne[1]; d1++) {
+        //                 printf("Debug data (first %zu values): ", std::min(static_cast<size_t>(debug_node->ne[0]), size_t(16)));
+        //                 for (size_t i = 0; i < std::min(static_cast<size_t>(debug_node->ne[0]), size_t(16)); ++i) {
+        //                     printf("%d ", debug_data[d3 * debug_node->ne[2] * debug_node->ne[1] * debug_node->ne[0] + d2 * debug_node->ne[1] * debug_node->ne[0] + d1 * debug_node->ne[0] + i]);
+        //                 }
+        //                 printf("\n");
+        //             }
+        //         }
+        //     }
+            
+        //     // Print inf/nan status
+        //     printf("Debug data status: has_inf=%s, has_nan=%s, total_size=%zu\n",
+        //            has_inf ? "true" : "false",
+        //            has_nan ? "true" : "false",
+        //            debug_data.size());
+        // }
 
         // extract logits
         if (res) {

@@ -95,7 +95,8 @@ void mla_attn_cpu(
                         // 允许关注的条件: 
                         // 1. 键位置k在有效长度内 (k < kv_context_len)
                         // 2. 并且满足因果性 (k <= current_query_global_idx)
-                        if (k < kv_context_len && k <= current_query_global_idx) {
+                        // if (k < kv_context_len && k <= current_query_global_idx) {
+                        if (k < kv_context_len) {
                             mask_data[idx] = 0.0f; // 允许关注
                         }
                         // 否则保持 -INFINITY (禁止关注)

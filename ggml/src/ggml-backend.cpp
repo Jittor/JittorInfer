@@ -892,11 +892,18 @@ static int ggml_backend_sched_backend_id_from_cur(ggml_backend_sched_t sched, st
         }
         // skip ROPE since the rope freqs tensor is too small to choose a backend based on it
         // not an ideal solution
-        if (tensor->op != GGML_OP_ROPE && src->buffer != NULL &&
-            src->buffer->usage == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
-            int src_backend_id = ggml_backend_sched_backend_from_buffer(sched, src, tensor);
+        
+        // For view tensors, recursively find the root tensor with buffer
+        const struct ggml_tensor * src_with_buffer = src;
+        while (src_with_buffer != NULL && src_with_buffer->buffer == NULL && src_with_buffer->view_src != NULL) {
+            src_with_buffer = src_with_buffer->view_src;
+        }
+        
+        if (tensor->op != GGML_OP_ROPE && src_with_buffer != NULL && src_with_buffer->buffer != NULL &&
+            src_with_buffer->buffer->usage == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) {
+            int src_backend_id = ggml_backend_sched_backend_from_buffer(sched, src_with_buffer, tensor);
             // check if a backend with higher prio wants to offload the op
-            if (src_backend_id == sched->n_backends - 1 && ggml_backend_buffer_is_host(src->buffer)) {
+            if (src_backend_id == sched->n_backends - 1 && ggml_backend_buffer_is_host(src_with_buffer->buffer)) {
                 for (int b = 0; b < src_backend_id; b++) {
                     if (ggml_backend_supports_op(sched->backends[b], tensor) &&
                         ggml_backend_offload_op(sched->backends[b], tensor)) {

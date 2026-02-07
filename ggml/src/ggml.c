@@ -2715,8 +2715,20 @@ struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tens
                                      struct ggml_tensor * qSeq_length, int32_t batchSize, int32_t tokenNum,
                                      int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen, float qkScale,
                                      int32_t blockSize) {
-    const int64_t        ne[3]  = { tokenNum, headNum, 512 };
-    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 3, ne);
+    bool use_jittor_mla = false;
+    int64_t ne[4];
+    if (use_jittor_mla) {
+        ne[0] = 512;
+        ne[1] = headNum;
+        ne[2] = tokenNum;
+        ne[3] = 1;
+    } else {
+        ne[0] = 512;
+        ne[1] = 1;
+        ne[2] = headNum;
+        ne[3] = tokenNum;
+    }
+    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, use_jittor_mla ? 3 : 4, ne);
     result->op                  = GGML_OP_MLA_JITTOR;
     result->src[0]              = query;
     result->src[1]              = query_rope;

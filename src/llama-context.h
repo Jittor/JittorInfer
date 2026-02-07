@@ -163,6 +163,7 @@ struct llama_context {
     struct ggml_tensor * inp_attn_indices;   // I32 [n_tokens]
     struct ggml_tensor * inp_length_q;       // I64 [1]
     struct ggml_tensor * inp_length_kv;      // I64 [1]
+    struct ggml_tensor * inp_page_table;     // I32 [n_tokens, max_page_num_per_seq]
 
     // multi_server_status
     int  all_server_tokens[MAX_PARALLEL_SERVERS];

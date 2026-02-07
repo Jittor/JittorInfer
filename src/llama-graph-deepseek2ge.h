@@ -5,9 +5,7 @@
 
 class llm_deepseek2_context_ge : public llm_deepseek2_context {
   protected:
-    ggml_tensor * build_attn_indices();
     ggml_tensor * build_length_q();
-    ggml_tensor * build_length_kv();
   public:
     llm_deepseek2_context_ge(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta, const llama_ubatch & ubatch,
                              const llm_build_cb & cb, bool worst_case, int print_layer = -1) :

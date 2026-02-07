@@ -33,6 +33,7 @@
 #include <aclnnop/aclnn_exp.h>
 #include <aclnnop/aclnn_fill_scalar.h>
 #include <aclnnop/aclnn_fused_infer_attention_score.h>
+#include <aclnnop/aclnn_fused_infer_attention_score_v3.h>
 #include <aclnnop/aclnn_gather_v2.h>
 #include <aclnnop/aclnn_group_norm.h>
 #include <aclnnop/aclnn_index_fill_tensor.h>
@@ -5749,24 +5750,36 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
 
     int maxBlockNumPerSeq = (kSeqLen + blockSize - 1) / blockSize;
     int blockNum = tokenNum * maxBlockNumPerSeq;
+    bool use_jittor_mla = false;
+
+    std::string sLayerOut = "BNSD";
+    char layerOut[sLayerOut.length()];
+    strcpy(layerOut, sLayerOut.c_str());
+    int64_t sparseMode = 0;
 
     aclTensor* acl_query_tensor = ggml_cann_create_tensor(
-        query, query->ne, query->nb, ggml_n_dims(query));
+        query, query->ne, query->nb, use_jittor_mla? ggml_n_dims(query) : 4);
     aclTensor* acl_query_rope_tensor = ggml_cann_create_tensor(
-        query_rope, query_rope->ne, query_rope->nb, ggml_n_dims(query_rope));
+        query_rope, query_rope->ne, query_rope->nb, use_jittor_mla? ggml_n_dims(query_rope) : 4);
     aclTensor* acl_context_KV_tensor = ggml_cann_create_tensor(
-        context_KV, context_KV->ne, context_KV->nb, ggml_n_dims(context_KV));
+        context_KV, context_KV->ne, context_KV->nb, use_jittor_mla? ggml_n_dims(context_KV) : 4);
+
+    // build tensor list
+    const int kvTensorNum = 1;
+    aclTensor* tensorsOfKey[kvTensorNum];
+    tensorsOfKey[0] = acl_context_KV_tensor;
+    auto* acl_context_KV_tensor_list = aclCreateTensorList(tensorsOfKey, kvTensorNum);
+
     aclTensor* acl_key_rope_tensor = ggml_cann_create_tensor(
-        key_rope, key_rope->ne, key_rope->nb, ggml_n_dims(key_rope));
+        key_rope, key_rope->ne, key_rope->nb, use_jittor_mla? ggml_n_dims(key_rope) : 4);
     aclTensor* acl_block_table_tensor =
-        ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb,
-                                ggml_n_dims(block_table));
+        ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb, use_jittor_mla? ggml_n_dims(block_table) : 2);
     aclTensor* acl_mask_tensor =
         mask != nullptr ? ggml_cann_create_tensor(mask, mask->ne, mask->nb,
                                                   ggml_n_dims(mask))
                         : nullptr;
     aclTensor* acl_dst_tensor =
-        ggml_cann_create_tensor(dst, dst->ne, dst->nb, ggml_n_dims(dst));
+        ggml_cann_create_tensor(dst, dst->ne, dst->nb, use_jittor_mla? ggml_n_dims(dst) : 4);
 
     std::vector<int64_t> context_length_host;
     const int64_t* context_length_ptr = nullptr;
@@ -5800,18 +5813,43 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor;
     void* workspaceAddr = nullptr;
-    ACL_CHECK(aclnnMLAGetWorkspaceSize(
-        acl_query_tensor, acl_query_rope_tensor, acl_context_KV_tensor,
-        acl_key_rope_tensor, acl_block_table_tensor, acl_context_length_array,
-        acl_mask_tensor, acl_qseq_length_array, nullptr, nullptr, headNum,
-        qkScale, kvHeadNum, 0, 0, 0, acl_dst_tensor, &workspaceSize,
-        &executor));
+    if (use_jittor_mla) {
+        ACL_CHECK(aclnnMLAGetWorkspaceSize(
+            acl_query_tensor, acl_query_rope_tensor, acl_context_KV_tensor,
+            acl_key_rope_tensor, acl_block_table_tensor, acl_context_length_array,
+            acl_mask_tensor, acl_qseq_length_array, nullptr, nullptr, headNum,
+            qkScale, kvHeadNum, 0, 0, 0, acl_dst_tensor, &workspaceSize,
+            &executor));
+    } else {
+        ACL_CHECK(aclnnFusedInferAttentionScoreV3GetWorkspaceSize(
+            acl_query_tensor, acl_context_KV_tensor_list, acl_context_KV_tensor_list, nullptr,
+            nullptr, nullptr,
+            acl_context_length_array, nullptr,
+            nullptr, nullptr, nullptr,
+            nullptr, nullptr,
+            nullptr, acl_block_table_tensor,
+            nullptr, nullptr,
+            nullptr, nullptr,
+            nullptr, nullptr,
+            nullptr, nullptr,
+            nullptr, acl_query_rope_tensor,
+            acl_key_rope_tensor, nullptr,
+            headNum, qkScale, 2147483647,
+            2147483647, layerOut, kvHeadNum, sparseMode, 0,
+            blockSize, 0, false, 0, 0,
+            acl_dst_tensor, nullptr, &workspaceSize, &executor));
+    }
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
 
-    ACL_CHECK(aclnnMLA(workspaceAddr, workspaceSize, executor, ctx.stream()));
+    if (use_jittor_mla) {
+        ACL_CHECK(aclnnMLA(workspaceAddr, workspaceSize, executor, ctx.stream()));
+    } else {
+        ACL_CHECK(aclnnFusedInferAttentionScoreV3(workspaceAddr, workspaceSize, executor, ctx.stream()));
+    }
+
     ACL_CHECK(aclDestroyTensor(acl_query_tensor));
     ACL_CHECK(aclDestroyTensor(acl_query_rope_tensor));
     ACL_CHECK(aclDestroyTensor(acl_context_KV_tensor));
@@ -5820,6 +5858,7 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyIntArray(acl_context_length_array));
     ACL_CHECK(aclDestroyTensor(acl_mask_tensor));
     ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
+    
 }
 
 void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
@@ -6480,7 +6519,7 @@ static void aclnn_muls_inplace(ggml_backend_cann_context& ctx,
 
 void ggml_cann_scatter_update(ggml_backend_cann_context& ctx,
                               ggml_tensor* dst) {
-    // 不依赖外部参数的实现
+    // Use aclnnInplaceIndexCopy to implement scatter_update
     ggml_tensor* indices = dst->src[1];
     ggml_tensor* updates = dst->src[2];
 
@@ -6490,69 +6529,71 @@ void ggml_cann_scatter_update(ggml_backend_cann_context& ctx,
     GGML_ASSERT(indices->ne[0] == updates->ne[1]);
     GGML_ASSERT(updates->ne[0] == dst->ne[0]);
 
-    aclTensor* acl_indices_tensor_ori =
-        ggml_cann_create_tensor(indices, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
-    aclTensor* acl_updates_tensor =
-        ggml_cann_create_tensor(updates, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    // Shape validation for aclnnInplaceIndexCopy
+    // dst shape: [ne[0], ne[1], 1, 1] e.g., [512, 8192, 1, 1]
+    // updates shape: [ne[0], n_indices, 1, 1] e.g., [512, 23, 1, 1]
+    // indices shape: [n_indices, 1, 1, 1] e.g., [23, 1, 1, 1]
+    // 
+    // For aclnnInplaceIndexCopy with dim=1:
+    // - selfRef (dst) and source (updates) must have same shape on dim 0
+    // - source's dim 1 must equal the number of indices
+    // - All other dimensions must match
+    
+    int64_t feature_dim = dst->ne[0];      // e.g., 512 or 64
+    int64_t seq_len = dst->ne[1];          // e.g., 8192
+    int64_t n_indices = indices->ne[0];    // e.g., 23
+    
+    GGML_ASSERT(updates->ne[0] == feature_dim);
+    GGML_ASSERT(updates->ne[1] == n_indices);
+    
+    // Create tensors for aclnnInplaceIndexCopy
+    // Note: ggml_cann_create_tensor reverses dimensions for ACL
+    // GGML layout: [feature_dim, seq_len] e.g., [512, 8192]
+    // ACL layout after reverse: [seq_len, feature_dim] e.g., [8192, 512]
+    // 
+    // For dst: GGML [512, 8192] -> ACL [8192, 512]
+    // For updates: GGML [512, 23] -> ACL [23, 512]
+    // 
+    // We want to index along the sequence dimension (8192 vs 23)
+    // In ACL's reversed layout, this is dimension 0
+    
+    // selfRef: dst tensor as 2D [feature_dim, seq_len] -> ACL [seq_len, feature_dim]
     aclTensor* acl_dst_tensor =
         ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-
-    // arange, [0,1,...,ne0]
-    int64_t arange_length = indices->ne[0];
-    ggml_cann_pool_alloc arange_allocator(ctx.pool(),
-                                          arange_length * sizeof(int64_t));
-    void* arange_buffer = arange_allocator.get();
-    int64_t arange_ne[] = {arange_length, 1, 1, 1};
-    size_t arange_nb[] = {sizeof(int64_t), sizeof(int64_t), sizeof(int64_t),
-                          arange_length * sizeof(int64_t)};
-
-    aclTensor* acl_arange_tensor = ggml_cann_create_tensor(
-        arange_buffer, ACL_INT64, sizeof(int64_t), arange_ne, arange_nb, 1);
-
-    // copyresult of indices
-    ggml_cann_pool_alloc indices_allocator(ctx.pool(),
-                                           arange_length * sizeof(int64_t));
-    void* indices_buffer = indices_allocator.get();
+    
+    // index: indices tensor (1D, INT32 or INT64)
     aclTensor* acl_indices_tensor =
-        ggml_cann_create_tensor(indices_buffer, ACL_INT64, sizeof(int64_t),
-                                indices->ne, indices->nb, 1);
+        ggml_cann_create_tensor(indices, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+    
+    // source: updates tensor as 2D [feature_dim, n_indices] -> ACL [n_indices, feature_dim]
+    aclTensor* acl_updates_tensor =
+        ggml_cann_create_tensor(updates, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
 
-    int64_t start = 0;
-    int64_t step = 1;
-    int64_t stop = arange_length;
-
-    // print_device_tensor_elements(ctx, indices->data, "indices", indices->ne,
-    //     indices->type,ggml_nelements(indices), 10, ctx.stream(), false, true,
-    //     true);
-
-    // 这里存在一个bug，对于第i位，实际偏移量是 i * ne[0] +
-    // indices[i]，但是我们的预期是 indices[i] * ne[0]
-    // 为此，我们需要进行如下步骤，以实现预期的偏移量
-    aclnn_arange_int(ctx, acl_arange_tensor, start, stop, step);
-    aclnn_sub(ctx, acl_indices_tensor_ori, acl_arange_tensor,
-              acl_indices_tensor);
-    aclnn_muls_inplace(ctx, acl_indices_tensor, dst->ne[0]);
-
-    // print_device_tensor_elements(ctx, indices->data, "indices", indices->ne,
-    //     indices->type,ggml_nelements(indices), 10, ctx.stream(), false, true,
-    //     true);
+    // dim: dimension along which to index
+    // In ACL's reversed layout, sequence dimension is at index 0
+    int64_t dim = 0;
 
     uint64_t workspaceSize = 0;
-    aclOpExecutor* executor;
+    aclOpExecutor* executor = nullptr;
     void* workspaceAddr = nullptr;
 
-    ACL_CHECK(aclnnInplaceScatterUpdateGetWorkspaceSize(
-        acl_dst_tensor, acl_indices_tensor, acl_updates_tensor, 1,
+    // Get workspace size and executor
+    ACL_CHECK(aclnnInplaceIndexCopyGetWorkspaceSize(
+        acl_dst_tensor, dim, acl_indices_tensor, acl_updates_tensor,
         &workspaceSize, &executor));
+    
+    // Allocate workspace if needed
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
-    ACL_CHECK(aclnnInplaceScatterUpdate(workspaceAddr, workspaceSize, executor,
-                                        ctx.stream()));
+    
+    // Execute the operation
+    ACL_CHECK(aclnnInplaceIndexCopy(workspaceAddr, workspaceSize, executor,
+                                    ctx.stream()));
+
+    // Cleanup
     ACL_CHECK(aclDestroyTensor(acl_indices_tensor));
     ACL_CHECK(aclDestroyTensor(acl_updates_tensor));
     ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_arange_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_indices_tensor_ori));
 }

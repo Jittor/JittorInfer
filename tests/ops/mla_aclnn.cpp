@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cmath>
 #include <chrono>
+#include <algorithm>
 #include "cached_attn_cpu.h"
 
 const int max_graph_nodes = 128;
@@ -39,21 +40,38 @@ void build_mla_graph(
         };
         ggml_context* ctx = ggml_init(params);
         GGML_ASSERT(ctx);
+        bool use_jittor_mla = false;
 
         ggml_cgraph* gf = ggml_new_graph(ctx);
+        ggml_graph_set_flags(gf, 1);  // 启用GE模式 (flags & 1 == 1)
 
         int maxBlockNumPerSeq = (kSeqLen + blockSize - 1) / blockSize;
         int blockNum = tokenNum * maxBlockNumPerSeq;
         
         // build graph
-        ggml_tensor* query_tensor = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 
-            512, headNum, tokenNum);
-        ggml_tensor* query_rope_tensor = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 
-            64, headNum, tokenNum);
-        ggml_tensor* ctKV_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
-            512, kvHeadNum, blockSize, blockNum);
-        ggml_tensor* key_rope_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
-            64, kvHeadNum, blockSize, blockNum);
+        ggml_tensor* query_tensor;
+        ggml_tensor* query_rope_tensor;
+        ggml_tensor* ctKV_tensor;
+        ggml_tensor* key_rope_tensor;
+        if (use_jittor_mla) {
+            query_tensor = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 
+                512, headNum, tokenNum);
+            query_rope_tensor = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, 
+                64, headNum, tokenNum);
+            ctKV_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                512, kvHeadNum, blockSize, blockNum);
+            key_rope_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                64, kvHeadNum, blockSize, blockNum);
+        } else {
+            query_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                512, 1, headNum, tokenNum);
+            query_rope_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                64, 1, headNum, tokenNum);
+            ctKV_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                512, blockSize, kvHeadNum, blockNum);
+            key_rope_tensor = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, 
+                64, blockSize, kvHeadNum, blockNum);
+        }
         ggml_tensor* block_table_tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, 
             maxBlockNumPerSeq, batchSize);
         ggml_tensor* contextLen_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_I64, 
@@ -70,7 +88,7 @@ void build_mla_graph(
         ggml_tensor* mask_tensor_f16 = ggml_cast(ctx, mask_tensor, GGML_TYPE_F16);
 
         ggml_tensor* output_tensor = ggml_mla_jittor(
-            ctx, query_tensor_f16, query_rope_tensor_f16, ctKV_tensor_f16, kRope_tensor_f16, block_table_tensor, contextLen_tensor, mask_tensor_f16, qSeqLen_tensor, batchSize, tokenNum, headNum, kvHeadNum, kSeqLen, qkScale, blockSize);
+            ctx, query_tensor_f16, query_rope_tensor_f16, ctKV_tensor_f16, kRope_tensor_f16, block_table_tensor, contextLen_tensor, nullptr, nullptr, batchSize, tokenNum, headNum, kvHeadNum, kSeqLen, qkScale, blockSize);
         
         output_tensor = ggml_cast(ctx, output_tensor, GGML_TYPE_F32);
 
@@ -115,11 +133,11 @@ int main() {
     // Define tensor dimensions
 
     // tokenNum = batchSize ?
-    int batchSize = 1;
-    int tokenNum = 1;
+    int batchSize = 16;
+    int tokenNum = 16;
 
     int headNum = 16;
-    int kSeqLen = 526;
+    int kSeqLen = 2048;
     const uint32_t blockSize = 128;
     int kvHeadNum = 1;
     float qkScale = 0.1352667747812271;
@@ -178,17 +196,19 @@ int main() {
     for (auto &val : mask_host) { val = 0; }
 
     // 这样的布局使得PageAttention KVCache和原生KVCache一致
-    for (size_t i = 0; i < batchSize; i++) {
-        for (size_t j = 0; j < maxBlockNumPerSeq; j++) {
-            blockTables_host[i * maxBlockNumPerSeq + j] = i * maxBlockNumPerSeq + j;
-        }
+    for (int32_t i = 0; i < blockNum; i++) {
+        blockTables_host[i] = rand() % maxBlockNumPerSeq;
     }
 
     std::random_device scale_rd;
     std::mt19937 scale_gen(rd());
     std::uniform_real_distribution<float> scale_dis(1.0, 5.0);
-    float scale_val = scale_dis(scale_gen);
-    contextLens_host = std::vector<int64_t>(contextLens_size, (int64_t)(kSeqLen / scale_val));
+    for (int32_t i = 0; i < contextLens_size; i++) {
+        float scale_val = scale_dis(scale_gen);
+        contextLens_host[i] = (int64_t)(kSeqLen / scale_val);
+        printf("%lld ", contextLens_host[i]);
+    }
+    printf("\n");
 
     std::random_device mask_rd;
     std::mt19937 mask_gen(mask_rd());
@@ -299,6 +319,7 @@ int main() {
               << " (CPU: " << output_host[max_rel_error_idx] 
               << ", CANN: " << output_host_cann[max_rel_error_idx] << ")" << std::endl;
 
+    ggml_backend_free(cann_backend);
     return 0;
 }
 

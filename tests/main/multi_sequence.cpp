@@ -122,18 +122,18 @@ static struct DefaultMiniParams {
 
     std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
 
-    uint32_t n_ctx = 65536;  // context size
+    uint32_t n_ctx = 32768;  // context size
 
     // cpu
-    uint32_t n_threads       = 64;                               // number of threads to use for computation
-    uint32_t n_threads_batch = 64;                               // number of threads to use for batch processing
+    uint32_t n_threads       = 1;                               // number of threads to use for computation
+    uint32_t n_threads_batch = 1;                               // number of threads to use for batch processing
 
-    float                                 defrag_thold = 0.1f;   // defragmentation threshold
+    float                                 defrag_thold = 1.0f;   // defragmentation threshold
     bool                                  no_perf      = false;  // disable performance metrics
     std::vector<common_adapter_lora_info> lora_adapters;         // lora adapter path with user defined scale
 
     // some runtime parameters
-    int32_t                  n_batch = 8;  // logical batch size for prompt processing (must be >=32 to use BLAS)
+    int32_t                  n_batch = 32;  // logical batch size for prompt processing (must be >=32 to use BLAS)
     bool                     enable_chat_template = true;
     bool                     escape               = true;
     common_conversation_mode conversation_mode    = COMMON_CONVERSATION_MODE_ENABLED;
@@ -160,9 +160,9 @@ static llama_model_params common_model_params_to_llama_local() {
     mparams.n_gpu_layers                = default_mini_params.n_gpu_layers;
     mparams.enable_tensor_parallel      = false;
     mparams.enable_fused_moe            = true;
-    mparams.kv_overrides                = NULL;
+    mparams.enable_mla                  = true;
     mparams.offload_input               = true;
-    mparams.enable_cann_flash_attention = true;
+    mparams.enable_cann_flash_attention = false;
     return mparams;
 }
 
@@ -175,7 +175,11 @@ static llama_context_params common_context_params_to_llama_local() {
     cparams.defrag_thold    = default_mini_params.defrag_thold;
     cparams.no_perf         = default_mini_params.no_perf;
     cparams.n_batch         = default_mini_params.n_batch;
-    cparams.enable_ge       = true;
+    cparams.enable_ge         = true;
+    cparams.enable_scatter_kv = true;
+    cparams.page_attention    = true;
+    cparams.presample_count   = -1;
+    cparams.n_seq_max         = default_mini_params.n_sequences;
     return cparams;
 }
 
@@ -307,11 +311,12 @@ int main() {
            n_seq, cont_batching, n_tokens_system);
     printf("\n");
 
+    for (size_t sid = 0; sid < clients.size(); sid++)
     {
         printf("%s: Evaluating the system prompt ...\n", __func__);
 
         for (int32_t i = 0; i < n_tokens_system; ++i) {
-            common_batch_add(batch, tokens_system[i], i, { 0 }, false);
+            common_batch_add(batch, tokens_system[i], i, { (llama_seq_id)sid }, false);
         }
 
         const int32_t n_batch = default_mini_params.n_batch;
@@ -335,11 +340,7 @@ int main() {
                 return 1;
             }
         }
-
-        // assign the system KV cache to all parallel sequences
-        for (int32_t i = 1; i <= n_clients; ++i) {
-            llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
-        }
+        common_batch_clear(batch);
 
         printf("\n");
     }
@@ -364,17 +365,15 @@ int main() {
             client.i_batch = batch.n_tokens;
 
             common_batch_add(batch, client.sampled, n_tokens_system + client.n_prompt + client.n_decoded,
-                             { client.id + 1 }, true);
+                             { client.id }, true);
 
             client.n_decoded += 1;
         }
 
         if (batch.n_tokens == 0) {
             // all sequences have ended - clear the entire KV cache
-            for (int i = 1; i <= n_clients; ++i) {
-                llama_kv_cache_seq_rm(ctx, i, -1, -1);
-                // but keep the system prompt
-                llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
+            for (int i = 0; i < n_clients; ++i) {
+                llama_kv_cache_seq_rm(ctx, i, n_tokens_system, -1);
             }
 
             printf("%s: clearing the KV cache\n", __func__);
@@ -400,7 +399,7 @@ int main() {
                     tokens_prompt = common_tokenize(ctx, client.prompt, false);
 
                     for (size_t i = 0; i < tokens_prompt.size(); ++i) {
-                        common_batch_add(batch, tokens_prompt[i], i + n_tokens_system, { client.id + 1 }, false);
+                        common_batch_add(batch, tokens_prompt[i], i + n_tokens_system, { client.id }, false);
                     }
 
                     // extract the logits only for the last token
@@ -507,8 +506,7 @@ int main() {
                     }
 
                     // delete only the generated part of the sequence, i.e. keep the system prompt in the cache
-                    llama_kv_cache_seq_rm(ctx, client.id + 1, -1, -1);
-                    llama_kv_cache_seq_cp(ctx, 0, client.id + 1, -1, -1);
+                    llama_kv_cache_seq_rm(ctx, client.id, n_tokens_system, -1);
 
                     const auto t_main_end = ggml_time_us();
 

@@ -140,9 +140,11 @@ struct llama_hparams {
 
     // dimension of key embeddings across all k-v heads
     uint32_t n_embd_k_gqa(uint32_t il = 0) const;
+    uint32_t n_embd_k_cache(uint32_t il = 0) const;
 
     // dimension of value embeddings across all k-v heads
     uint32_t n_embd_v_gqa(uint32_t il = 0) const;
+    uint32_t n_embd_v_cache(uint32_t il = 0) const;
 
     // dimension of the rolling state embeddings
     // corresponds to Mamba's conv_states size or RWKV's token_shift states size

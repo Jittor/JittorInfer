@@ -55,6 +55,9 @@ class llm_deepseek2_context : public llm_build_context {
     struct ggml_tensor * build_inp_pos();
     struct ggml_tensor * build_inp_KQ_mask(bool causal = true);
     struct ggml_tensor * build_inp_out_ids();
+    struct ggml_tensor * build_inp_page_table();
+    struct ggml_tensor * build_length_kv();
+    struct ggml_tensor * build_attn_indices();
 
   public:
     llm_deepseek2_context(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta, const llama_ubatch & ubatch,

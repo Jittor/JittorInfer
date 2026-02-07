@@ -6,25 +6,11 @@
 #include "ggml.h"
 #include "llama-context.h"
 
-struct ggml_tensor * llm_deepseek2_context_ge::build_attn_indices() {
-    lctx.inp_attn_indices = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_tokens);
-    cb(lctx.inp_attn_indices, "inp_attn_indices", -1);
-    ggml_set_input(lctx.inp_attn_indices);
-    return lctx.inp_attn_indices;
-}
-
 struct ggml_tensor * llm_deepseek2_context_ge::build_length_q() {
     lctx.inp_length_q = ggml_new_tensor_1d(ctx0, GGML_TYPE_I64, 1);
     cb(lctx.inp_length_q, "inp_length_q", -1);
     ggml_set_input(lctx.inp_length_q);
     return lctx.inp_length_q;
-}
-
-struct ggml_tensor * llm_deepseek2_context_ge::build_length_kv() {
-    lctx.inp_length_kv = ggml_new_tensor_1d(ctx0, GGML_TYPE_I64, 1);
-    cb(lctx.inp_length_kv, "inp_length_kv", -1);
-    ggml_set_input(lctx.inp_length_kv);
-    return lctx.inp_length_kv;
 }
 
 struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
@@ -56,6 +42,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     struct ggml_tensor * indices;
     struct ggml_tensor * length_q;
     struct ggml_tensor * length_kv;
+    struct ggml_tensor * page_table;
 
     GGML_ASSERT(!run_mlp_only);
     GGML_ASSERT(!hparams.enable_tensor_parallel);
@@ -72,8 +59,12 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     // indices for kv cache
     indices = build_attn_indices();
 
-    length_q  = build_length_q();
     length_kv = build_length_kv();
+    if (hparams.enable_mla) {
+        page_table = build_inp_page_table();
+    } else {
+        length_q  = build_length_q();
+    }
 
     for (int il = 0; il < n_layer; ++il) {
         if (print_layer_ >= 0 && il != print_layer_) {
@@ -134,7 +125,21 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             cb(kv_compressed, "kv_compressed", il);
 
             if (hparams.enable_mla) {
-                GGML_ABORT("mla not supported now.");
+                q_pe = ggml_rope_ext(ctx0, q_pe, inp_pos, nullptr, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    ext_factor, attn_factor_scaled, beta_fast, beta_slow);
+                cb(q_pe, "q_pe", il);
+
+                // shared RoPE key
+                k_pe = ggml_rope_ext(ctx0, k_pe, inp_pos, nullptr, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
+                    ext_factor, attn_factor_scaled, beta_fast, beta_slow);
+                cb(k_pe, "k_pe", il);
+                k_pe = ggml_reshape_2d(ctx0, k_pe, n_embd_head_qk_rope, n_tokens);
+
+                cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, model.layers[il].wkv_b,
+                                   kv_compressed, k_pe, q_nope, q_pe, indices,
+                                   page_table, length_kv,
+                                   n_embd_head_qk_nope, n_tokens, n_head,
+                                   kq_scale, cb, il);
             } else {
                 // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_tokens} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_tokens}
                 struct ggml_tensor * kv = ggml_mul_mat_fp16(ctx0, model.layers[il].wkv_b, kv_compressed);

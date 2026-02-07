@@ -31,6 +31,7 @@ struct llama_cparams {
     bool no_perf;
     bool enable_ge;
     bool enable_scatter_kv;
+    bool page_attention;
     int  presample_count;
 
     enum llama_pooling_type pooling_type;

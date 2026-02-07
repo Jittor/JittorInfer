@@ -64,6 +64,7 @@ struct llama_context_params llama_context_default_params() {
         /*.no_perf                     =*/true,
         /*.enable_ge                   =*/false,
         /*.enable_scatter_kv           =*/false,
+        /*.page_attention              =*/false,
         /*.presample_count             =*/-1,
         /*.abort_callback              =*/nullptr,
         /*.abort_callback_data         =*/nullptr,
