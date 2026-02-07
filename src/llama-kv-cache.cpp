@@ -41,6 +41,43 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
     cache.head = 0;
     cache.size = kv_size;
     cache.used = 0;
+    cache.page_attention = cparams.page_attention;
+    if (cache.page_attention) {
+        cache.page_size = 128;
+        cache.page_num = kv_size / cache.page_size;
+        cache.seq_num_max = cparams.n_seq_max;
+        cache.page_num_per_seq = cache.page_num / cache.seq_num_max;
+        if (kv_size % cache.page_size != 0) {
+            LLAMA_LOG_ERROR("%s: kv_size must be a multiple of page_size\n", __func__);
+            return false;
+        }
+        if (kv_size % (cache.seq_num_max * cache.page_size) != 0) {
+            LLAMA_LOG_ERROR("%s: kv_size must be a multiple of n_seq_max * page_size\n", __func__);
+            return false;
+        }
+        cache.page_table.resize(cache.page_num_per_seq * cache.seq_num_max);
+        cache.page_used.resize(cache.page_num);
+        cache.page_owner.resize(cache.page_num);
+        cache.seq_lengths.resize(cache.seq_num_max);
+        cache.seq_page_used.resize(cache.seq_num_max);
+        for (int i = 0; i < cache.seq_num_max; i++) {
+            for (int j = 0; j < cache.page_num_per_seq; j++) {
+                cache.page_table[i * cache.page_num_per_seq + j] = 0;
+            }
+            cache.seq_lengths[i] = 0;
+            cache.seq_page_used[i] = 0;
+        }
+        for (int i = 0; i < cache.page_num; i++) {
+            cache.page_used[i] = 0;
+            cache.page_owner[i] = -1;
+        }
+        if (cache.page_num < 2) {
+            LLAMA_LOG_ERROR("%s: page_num must be greater than 2\n", __func__);
+            return false;
+        }
+        // reserve page zero
+        cache.page_owner[0] = -2;
+    }
 
     cache.type_k = type_k;
     cache.type_v = type_v;
@@ -73,11 +110,11 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
     cache.v_l.reserve(n_layer);
 
     for (int i = 0; i < n_layer; i++) {
-        const uint32_t n_embd_k_gqa = hparams.n_embd_k_gqa(i);
-        const uint32_t n_embd_v_gqa = hparams.n_embd_v_gqa(i);
+        const uint32_t n_embd_k_cache = hparams.n_embd_k_cache(i);
+        const uint32_t n_embd_v_cache = hparams.n_embd_v_cache(i);
 
-        LLAMA_LOG_DEBUG("%s: layer %d: n_embd_k_gqa = %d, n_embd_v_gqa = %d\n", __func__, i, n_embd_k_gqa,
-                        n_embd_v_gqa);
+        LLAMA_LOG_DEBUG("%s: layer %d: n_embd_k_cache = %d, n_embd_v_cache = %d\n", __func__, i, n_embd_k_cache,
+                        n_embd_v_cache);
 
         ggml_backend_buffer_type_t buft;
         if (offload) {
@@ -93,15 +130,15 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
             return false;
         }
 
-        ggml_tensor * k = ggml_new_tensor_1d(ctx, type_k, n_embd_k_gqa * kv_size);
-        ggml_tensor * v = ggml_new_tensor_1d(ctx, type_v, n_embd_v_gqa * kv_size);
+        ggml_tensor * k = ggml_new_tensor_1d(ctx, type_k, n_embd_k_cache * kv_size);
+        ggml_tensor * v = ggml_new_tensor_1d(ctx, type_v, n_embd_v_cache * kv_size);
         ggml_format_name(k, "cache_k_l%d", i);
         ggml_format_name(v, "cache_v_l%d", i);
         cache.k_l.push_back(k);
         cache.v_l.push_back(v);
     }
     // buffer on device for cann flash attention.
-    if (cparams.flash_attn) {
+    if (cparams.flash_attn && !hparams.enable_mla) {
         cache.kq_mask_l.reserve(n_layer);
         std::map<ggml_backend_buffer_type_t, ggml_tensor *> kq_mask_per_buffer;
         for (int i = 0; i < n_layer; i++) {
@@ -173,10 +210,108 @@ void llama_kv_cache_clear(struct llama_kv_cache & cache) {
     }
     cache.head = 0;
     cache.used = 0;
+    if (cache.page_attention) {
+        for (int i = 0; i < cache.page_num_per_seq * cache.seq_num_max; i++) {
+            cache.page_table[i] = 0;
+        }
+        for (int i = 0; i < cache.seq_num_max; i++) {
+            cache.seq_lengths[i] = 0;
+            cache.seq_page_used[i] = 0;
+        }
+        for (int i = 0; i < cache.page_num; i++) {
+            cache.page_used[i] = 0;
+            cache.page_owner[i] = -1;
+        }
+        cache.page_owner[0] = -2;
+    }
 
     for (auto & buf : cache.bufs) {
         ggml_backend_buffer_clear(buf.get(), 0);
     }
+}
+
+static void update_page_status(struct llama_kv_cache & cache, llama_seq_id seq_id) {
+    int last_page = -1;
+    int relative_blocks = 0;
+    int cached_length = 0;
+    GGML_ASSERT(seq_id < cache.seq_num_max);
+    for (int page_id = 0; page_id < cache.page_num; page_id++) {
+        int rep_id = page_id * cache.page_size;
+        llama_kv_cell rep_cell = cache.cells[rep_id];
+        if (!rep_cell.has_seq_id(seq_id)) {
+            for (int off = 0; off < cache.page_size; off++) {
+                if (cache.cells[rep_id + off].has_seq_id(seq_id)) {
+                    GGML_ABORT("not implemented: head deleted.\n");
+                }
+            }
+            // page is cleared.
+            if (cache.page_owner[page_id] == seq_id) {
+                cache.page_owner[page_id] = -1;
+                cache.page_used[page_id] = 0;
+            }
+        } else {
+            int used = cache.page_size;
+            for (int off = 0; off < cache.page_size; off++) {
+                if (cache.cells[rep_id + off].has_seq_id(seq_id)) {
+                    if (used < cache.page_size) {
+                        GGML_ABORT("not implemented: unexpected gap.\n");
+                    }
+                } else {
+                    if (used >= cache.page_size) {
+                        used = off;
+                    }
+                }
+            }
+            cache.page_owner[page_id] = seq_id;
+            cache.page_used[page_id] = used;
+            if (used < cache.page_size) {
+                if (last_page >= 0) {
+                    GGML_ABORT("not implemented: too much incomplete blocks.\n");
+                }
+                last_page = page_id;
+            } else {
+                if (relative_blocks >= cache.page_num_per_seq) {
+                    GGML_ABORT("not implemented: too much blocks.\n");
+                }
+                cache.page_table[seq_id * cache.page_num_per_seq + relative_blocks] = page_id;
+                relative_blocks++;
+            }
+            cached_length += used;
+        }
+    }
+    if (last_page >= 0) {
+        if (relative_blocks >= cache.page_num_per_seq) {
+            GGML_ABORT("not implemented: too much blocks.\n");
+        }
+        cache.page_table[seq_id * cache.page_num_per_seq + relative_blocks] = last_page;
+        cache.seq_page_used[seq_id] = relative_blocks + 1;
+    } else {
+        cache.seq_page_used[seq_id] = relative_blocks;
+    }
+    cache.seq_lengths[seq_id] = cached_length;
+}
+static int assign_cell(struct llama_kv_cache & cache, llama_seq_id seq_id) {
+    GGML_ASSERT(seq_id < cache.seq_num_max);
+    int32_t last_page = -1;
+    if (cache.seq_page_used[seq_id] > 0) {
+        last_page = cache.page_table[seq_id * cache.page_num_per_seq + cache.seq_page_used[seq_id] - 1];
+    }
+    if (last_page != -1 && cache.page_used[last_page] < cache.page_size) {
+        cache.page_used[last_page]++;
+        cache.seq_lengths[seq_id]++;
+        return last_page * cache.page_size + cache.page_used[last_page] - 1;
+    }
+    for (int i = 0; i < cache.page_num; i++) {
+        if (cache.page_owner[i] == -1) {
+            cache.page_owner[i] = seq_id;
+            cache.page_used[i] = 1;
+            cache.seq_lengths[seq_id]++;
+            cache.seq_page_used[seq_id]++;
+            cache.page_table[seq_id * cache.page_num_per_seq + cache.seq_page_used[seq_id] - 1] = i;
+            return i * cache.page_size;
+        }
+    }
+    GGML_ABORT("not implemented: too much pages.");
 }
 
 bool llama_kv_cache_seq_rm(struct llama_kv_cache & cache, llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
@@ -189,6 +324,9 @@ bool llama_kv_cache_seq_rm(struct llama_kv_cache & cache, llama_seq_id seq_id, l
 
     // models like Mamba or RWKV can't have a state partially erased
     if (cache.recurrent) {
+        if (cache.page_attention) {
+            GGML_ABORT("not implemented");
+        }
         if (seq_id >= (int64_t) cache.size) {
             // could be fatal
             return false;
@@ -241,6 +379,10 @@ bool llama_kv_cache_seq_rm(struct llama_kv_cache & cache, llama_seq_id seq_id, l
     // If we freed up a slot, set head to it so searching can start there.
     if (new_head != cache.size && new_head < cache.head) {
         cache.head = new_head;
+    }
+
+    if (cache.page_attention) {
+        update_page_status(cache, seq_id);
     }
 
     return true;
@@ -342,6 +484,10 @@ void llama_kv_cache_seq_add(struct llama_kv_cache & cache, llama_seq_id seq_id, 
     // If we freed up a slot, set head to it so searching can start there.
     // Otherwise we just start the next search from the beginning.
     cache.head = new_head != cache.size ? new_head : 0;
+
+    if (cache.page_attention) {
+        update_page_status(cache, seq_id);
+    }
 }
 
 struct llama_kv_cache_slot_info llama_kv_cache_find_slot(struct llama_kv_cache &     cache,
@@ -401,6 +547,40 @@ struct llama_kv_cache_slot_info llama_kv_cache_find_slot(struct llama_kv_cache &
     cache.used += n_tokens;
 
     return llama_kv_cache_slot_info(cache.head, cache.head + n_tokens);
+}
+
+struct llama_kv_cache_slot_info llama_kv_cache_find_page_slot(struct llama_kv_cache &     cache,
+                                                         const struct llama_ubatch & ubatch) {
+    const uint32_t n_tokens     = ubatch.n_tokens;
+    const uint32_t n_seqs       = ubatch.n_seqs;
+    const uint32_t n_seq_tokens = ubatch.n_seq_tokens;
+
+    // simplified: only support non-recurrent models.
+    GGML_ASSERT(!cache.recurrent);
+
+    // otherwise, one cell per token.
+    if (n_tokens > cache.size) {
+        LLAMA_LOG_ERROR("%s: n_tokens=%d > cache.size=%d\n", __func__, n_tokens, cache.size);
+        return llama_kv_cache_slot_info_failed;
+    }
+    std::vector<int> slot_ids;
+
+    // for page attention, multiple seq_id in a cell is not allowed.
+    for (uint32_t s = 0; s < n_seqs; s++) {
+        for (uint32_t i = 0; i < n_seq_tokens; ++i) {
+            GGML_ASSERT(ubatch.n_seq_id[s] == 1);
+            llama_seq_id seq_id = ubatch.seq_id[s][0];
+
+            int32_t cell_id = assign_cell(cache, seq_id);
+            slot_ids.push_back(cell_id);
+
+            cache.cells[cell_id].pos = ubatch.pos[s * n_seq_tokens + i];
+            cache.cells[cell_id].seq_id.set(seq_id);
+        }
+    }
+    cache.used += n_tokens;
+
+    return llama_kv_cache_slot_info(slot_ids);
 }
 
 struct llama_kv_cache_slot_info llama_kv_cache_find_scatter_slot(struct llama_kv_cache &     cache,

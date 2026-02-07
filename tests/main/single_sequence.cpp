@@ -56,15 +56,15 @@ static struct DefaultMiniParams {
     uint32_t n_ctx = 2048;                                            // context size
 
     // cpu
-    uint32_t n_threads       = 4;                                // number of threads to use for computation
-    uint32_t n_threads_batch = 4;                                // number of threads to use for batch processing
+    uint32_t n_threads       = 1;                                // number of threads to use for computation
+    uint32_t n_threads_batch = 1;                                // number of threads to use for batch processing
 
     float                                 defrag_thold = 0.1f;   // defragmentation threshold
     bool                                  no_perf      = false;  // disable performance metrics
     std::vector<common_adapter_lora_info> lora_adapters;         // lora adapter path with user defined scale
 
     // some runtime parameters
-    int32_t                  n_batch = 4;  // logical batch size for prompt processing (must be >=32 to use BLAS)
+    int32_t                  n_batch = 1;  // logical batch size for prompt processing (must be >=32 to use BLAS)
     bool                     enable_chat_template = true;
     bool                     escape               = true;
     common_conversation_mode conversation_mode    = COMMON_CONVERSATION_MODE_ENABLED;
@@ -86,7 +86,7 @@ static llama_model_params common_model_params_to_llama_local() {
     mparams.enable_tensor_parallel      = false;
     mparams.enable_fused_moe            = true;
     mparams.enable_mla                  = true;
-    mparams.offload_input               = false;
+    mparams.offload_input               = true;
     mparams.enable_cann_flash_attention = false;
     return mparams;
 }
@@ -100,8 +100,9 @@ static llama_context_params common_context_params_to_llama_local() {
     cparams.n_threads_batch   = default_mini_params.n_threads_batch;
     cparams.defrag_thold      = default_mini_params.defrag_thold;
     cparams.no_perf           = default_mini_params.no_perf;
-    cparams.enable_ge         = false;
-    cparams.enable_scatter_kv = false;
+    cparams.enable_ge         = true;
+    cparams.enable_scatter_kv = true;
+    cparams.page_attention    = true;
     cparams.presample_count   = -1;
     return cparams;
 }

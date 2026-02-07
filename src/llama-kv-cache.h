@@ -39,6 +39,18 @@ struct llama_kv_cache {
     uint32_t size = 0;
     uint32_t used = 0;  // used cells (i.e. at least one seq_id)
 
+    // Page Attention
+    bool page_attention = false;
+    uint32_t page_size = 128;
+    uint32_t page_num = 0;
+    uint32_t page_num_per_seq = 0;
+    uint32_t seq_num_max = 0;
+    std::vector<int32_t> page_table;
+    std::vector<int32_t> seq_page_used;
+    std::vector<int64_t> seq_lengths;
+    std::vector<int32_t> page_used;
+    std::vector<llama_seq_id> page_owner;  // only one onwer now.
+
     // computed before each graph build
     uint32_t n = 0;
 
@@ -109,6 +121,9 @@ struct llama_kv_cache_slot_info llama_kv_cache_find_slot(struct llama_kv_cache &
 
 struct llama_kv_cache_slot_info llama_kv_cache_find_scatter_slot(struct llama_kv_cache &     cache,
                                                                  const struct llama_ubatch & batch, int require_slots);
+
+struct llama_kv_cache_slot_info llama_kv_cache_find_page_slot(struct llama_kv_cache &     cache,
+                                                              const struct llama_ubatch & batch);
 
 // find how many cells are currently in use
 uint32_t llama_kv_cache_cell_max(const struct llama_kv_cache & cache);

@@ -38,9 +38,6 @@ uint32_t llama_hparams::n_gqa(uint32_t il) const {
 }
 
 uint32_t llama_hparams::n_embd_k_gqa(uint32_t il) const {
-    if (enable_mla) {
-        return n_lora_kv + n_rot;
-    }
     const uint32_t n_head_kv  = this->n_head_kv(il);
     const int      head_split = (enable_tensor_parallel && !enable_data_parallel) ? num_parallel : 1;
     if (enable_cann_flash_attention) {
@@ -51,10 +48,14 @@ uint32_t llama_hparams::n_embd_k_gqa(uint32_t il) const {
     return n_embd_head_k * n_head_kv / head_split;
 }
 
-uint32_t llama_hparams::n_embd_v_gqa(uint32_t il) const {
+uint32_t llama_hparams::n_embd_k_cache(uint32_t il) const {
     if (enable_mla) {
         return n_lora_kv;
     }
+    return n_embd_k_gqa(il);
+}
+
+uint32_t llama_hparams::n_embd_v_gqa(uint32_t il) const {
     const uint32_t n_head_kv  = this->n_head_kv(il);
     const int      head_split = (enable_tensor_parallel && !enable_data_parallel) ? num_parallel : 1;
     if (enable_cann_flash_attention) {
@@ -63,6 +64,13 @@ uint32_t llama_hparams::n_embd_v_gqa(uint32_t il) const {
     }
 
     return n_embd_head_v * n_head_kv / head_split;
+}
+
+uint32_t llama_hparams::n_embd_v_cache(uint32_t il) const {
+    if (enable_mla) {
+        return n_rot;
+    }
+    return n_embd_v_gqa(il);
 }
 
 uint32_t llama_hparams::n_embd_k_s() const {

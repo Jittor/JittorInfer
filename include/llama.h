@@ -534,6 +534,7 @@ struct llama_context_params {
     bool no_perf;            // whether to measure performance timings
     bool enable_ge;          // whether to enable Graph Engine
     bool enable_scatter_kv;  // whether to enable scatter kv
+    bool page_attention;     // whether to enable page attention
     int  presample_count;    // number of tokens to presample on npu
 
     // Abort callback

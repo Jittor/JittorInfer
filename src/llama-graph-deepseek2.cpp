@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "ggml.h"
 #include "llama-context.h"
 
 llm_deepseek2_context::llm_deepseek2_context(llama_context & lctx, std::vector<uint8_t> & buf_compute_meta,
@@ -81,6 +82,7 @@ void llm_deepseek2_context::init() {
     lctx.inp_attn_indices  = nullptr;
     lctx.inp_length_q      = nullptr;
     lctx.inp_length_kv     = nullptr;
+    lctx.inp_page_table    = nullptr;
 }
 
 struct ggml_tensor * llm_deepseek2_context::build_inp_pos() {
@@ -88,6 +90,31 @@ struct ggml_tensor * llm_deepseek2_context::build_inp_pos() {
     cb(lctx.inp_pos, "inp_pos", -1);
     ggml_set_input(lctx.inp_pos);
     return lctx.inp_pos;
+}
+
+struct ggml_tensor * llm_deepseek2_context::build_inp_page_table() {
+    lctx.inp_page_table = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, kv_self.page_num_per_seq, n_tokens);
+    cb(lctx.inp_page_table, "inp_page_table", -1);
+    ggml_set_input(lctx.inp_page_table);
+    return lctx.inp_page_table;
+}
+
+struct ggml_tensor * llm_deepseek2_context::build_length_kv() {
+    int32_t size = 1;
+    if (hparams.enable_mla) {
+        size = n_tokens;
+    }
+    lctx.inp_length_kv = ggml_new_tensor_1d(ctx0, GGML_TYPE_I64, size);
+    cb(lctx.inp_length_kv, "inp_length_kv", -1);
+    ggml_set_input(lctx.inp_length_kv);
+    return lctx.inp_length_kv;
+}
+
+struct ggml_tensor * llm_deepseek2_context::build_attn_indices() {
+    lctx.inp_attn_indices = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_tokens);
+    cb(lctx.inp_attn_indices, "inp_attn_indices", -1);
+    ggml_set_input(lctx.inp_attn_indices);
+    return lctx.inp_attn_indices;
 }
 
 struct ggml_tensor * llm_deepseek2_context::build_inp_KQ_mask(bool causal) {
@@ -141,6 +168,9 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
     struct ggml_tensor * inpL;
     struct ggml_tensor * inp_pos;
     struct ggml_tensor * KQ_mask;
+    struct ggml_tensor * page_table;
+    struct ggml_tensor * length_kv;
+    struct ggml_tensor * indices;
 
     // {n_embd, n_tokens}
     if (!run_mlp_only) {
@@ -149,8 +179,17 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
         // inp_pos - contains the positions
         inp_pos = build_inp_pos();
 
-        // KQ_mask (mask for 1 head, it will be broadcasted to all heads)
-        KQ_mask = build_inp_KQ_mask();
+        if (cparams.page_attention) {
+            // Page Table
+            page_table = build_inp_page_table();
+
+            length_kv = build_length_kv();
+
+            indices = build_attn_indices();
+        } else {
+            // KQ_mask (mask for 1 head, it will be broadcasted to all heads)
+            KQ_mask = build_inp_KQ_mask();
+        }
     }
 
     for (int il = 0; il < n_layer; ++il) {
@@ -236,9 +275,13 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
                 struct ggml_tensor * kv_states = ggml_concat(ctx0, kv_compressed, k_pe, 0);
                 cb(kv_states, "kv_states", il);
 
+                q_nope = ggml_cont(ctx0, q_nope);
+
                 cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, model.layers[il].wkv_b,
-                                   kv_states, q_nope, q_pe, KQ_mask, n_tokens, kv_head, n_kv, n_embd_head_qk_nope,
-                                   n_embd_head_v, n_head_act, n_embd_head_qk_rope, kq_scale, cb, il);
+                                   kv_compressed, k_pe, q_nope, q_pe, indices,
+                                   page_table, length_kv,
+                                   n_embd_head_qk_nope, n_tokens, n_head_act,
+                                   kq_scale, cb, il);
             } else {
                 // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_tokens} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_tokens}
                 struct ggml_tensor * kv = ggml_mul_mat(ctx0, model.layers[il].wkv_b, kv_compressed);

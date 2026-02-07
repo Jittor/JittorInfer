@@ -132,10 +132,6 @@ struct llama_context * llama_init_from_model(struct llama_model * model, struct 
             }
 
             if (cparams.enable_ge) {
-                if (!hparams.enable_cann_flash_attention) {
-                    LLAMA_LOG_ERROR("cann flash attention should be enabled when ge is enabled");
-                    return nullptr;
-                }
                 if (!initialize_sched_and_reserve(ctx, model, params, backend_buft, backend_ptrs,
                                                   ctx->buf_compute_meta_decode, ctx->sched_decode)) {
                     return nullptr;
@@ -222,14 +218,14 @@ bool check_llama_init_context(llama_model * model, const llama_context_params & 
     }
 
     if (params.enable_ge) {
-        if (model->hparams.enable_mla) {
-            LLAMA_LOG_ERROR("%s: enable_ge is not compatible with enable_mla - forcing off\n", __func__);
+        if (!model->hparams.enable_cann_flash_attention && !model->hparams.enable_mla) {
+            LLAMA_LOG_ERROR("%s: cann flash attention or mla is required when enable_ge is set\n", __func__);
             return false;
         }
-        if (!model->hparams.enable_cann_flash_attention) {
-            LLAMA_LOG_ERROR("%s: cann flash attention is required when enable_ge is set\n", __func__);
-            return false;
-        }
+    }
+    if (model->hparams.enable_cann_flash_attention && model->hparams.enable_mla) {
+        LLAMA_LOG_ERROR("%s: cann flash attention and mla cannot be enabled at the same time\n", __func__);
+        return false;
     }
 
     return true;
@@ -252,6 +248,7 @@ void build_cparams_by_params_and_hparams(struct llama_cparams & cparams, const s
     cparams.pooling_type      = params.pooling_type;
     cparams.enable_ge         = params.enable_ge;
     cparams.enable_scatter_kv = params.enable_scatter_kv;
+    cparams.page_attention    = params.page_attention;
     cparams.presample_count   = params.presample_count;
 
     cparams.n_ctx           = params.n_ctx == 0 ? hparams.n_ctx_train : params.n_ctx;
@@ -267,7 +264,7 @@ void build_cparams_by_params_and_hparams(struct llama_cparams & cparams, const s
     // the batch has to be at least GGML_KQ_MASK_PAD because we will be padding the KQ_mask
     // this is required by GPU kernels in order to avoid out-of-bounds accesses (e.g. ggml_flash_attn_ext)
     // ref: https://github.com/ggerganov/llama.cpp/pull/5021
-    if (cparams.n_batch < GGML_KQ_MASK_PAD && !cparams.enable_ge) {
+    if (cparams.n_batch < GGML_KQ_MASK_PAD && !cparams.enable_ge && !hparams.enable_mla) {
         LLAMA_LOG_WARN("%s: n_batch is less than GGML_KQ_MASK_PAD - increasing to %d\n", __func__, GGML_KQ_MASK_PAD);
         cparams.n_batch = GGML_KQ_MASK_PAD;
     }
@@ -276,6 +273,12 @@ void build_cparams_by_params_and_hparams(struct llama_cparams & cparams, const s
         if (!cparams.enable_scatter_kv) {
             LLAMA_LOG_WARN("%s: enable_scatter_kv is not set when enable_ge is set - forcing on\n", __func__);
             cparams.enable_scatter_kv = true;
+        }
+    }
+    if (hparams.enable_mla) {
+        if (!cparams.page_attention) {
+            LLAMA_LOG_WARN("%s: page_attention is not set when enable_mla is set - forcing on\n", __func__);
+            cparams.page_attention = true;
         }
     }
 

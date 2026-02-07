@@ -279,6 +279,7 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
     if (ubatch.pos && lctx.inp_pos) {
         const int64_t n_tokens = ubatch.n_tokens;
         auto          n_pos    = lctx.n_pos_per_token;
+        ggml_backend_tensor_memset(lctx.inp_pos, 0, 0, ggml_nbytes(lctx.inp_pos));
         ggml_backend_tensor_set(lctx.inp_pos, ubatch.pos, 0, n_tokens * n_pos * ggml_element_size(lctx.inp_pos));
     }
 
@@ -424,10 +425,12 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
 
     if (lctx.inp_attn_indices) {
         GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_attn_indices->buffer));
-        GGML_ASSERT(lctx.kv_slots.size() == cparams.n_ubatch);
         int32_t * data_attn_indices = (int32_t *) lctx.inp_attn_indices->data;
-        for (int i = 0; i < cparams.n_ubatch; ++i) {
+        for (size_t i = 0; i < lctx.kv_slots.size(); ++i) {
             data_attn_indices[i] = lctx.kv_slots[i];
+        }
+        for (size_t i = lctx.kv_slots.size(); i < lctx.inp_attn_indices->ne[0]; ++i) {
+            data_attn_indices[i] = 0;
         }
     }
     if (lctx.inp_length_q) {
@@ -442,11 +445,48 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
     }
     if (lctx.inp_length_kv) {
         GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_length_kv->buffer));
-        int64_t * data_length_kv = (int64_t *) lctx.inp_length_kv->data;
-        data_length_kv[0]        = kv_self.n;
+        // Dummy Process of Page Attention
+        if (cparams.page_attention) {
+            int64_t * data_length_kv = (int64_t *) lctx.inp_length_kv->data;
+            for (int i = 0; i < ubatch.n_tokens; ++i) {
+                llama_seq_id seq_id = ubatch.seq_id[i][0];
+                int32_t count_larger = 0;
+                for (int j = 0; j < ubatch.n_tokens; ++j) {
+                    llama_seq_id seq_id_j = ubatch.seq_id[j][0];
+                    int32_t pos = ubatch.pos[j];
+                    if (seq_id_j == seq_id && pos > ubatch.pos[i]) {
+                        count_larger++;
+                    }
+                }
+                data_length_kv[i] = lctx.kv_self.seq_lengths[seq_id] - count_larger;
+            }
+            for (int i = ubatch.n_tokens; i < lctx.inp_length_kv->ne[0]; ++i) {
+                data_length_kv[i] = 0;
+            }
+        } else {
+            int64_t * data_length_kv = (int64_t *) lctx.inp_length_kv->data;
+            data_length_kv[0]        = kv_self.n;
+        }
+    }
+    if (lctx.inp_page_table) {
+        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_page_table->buffer));
+        int32_t * data_page_table = (int32_t *) lctx.inp_page_table->data;
+        for (int i = 0; i < ubatch.n_tokens; ++i) {
+            llama_seq_id seq_id = ubatch.seq_id[i][0];
+            for (int j = 0; j < lctx.kv_self.page_num_per_seq; ++j) {
+                int32_t page_id = lctx.kv_self.page_table[seq_id * lctx.kv_self.page_num_per_seq + j];
+                data_page_table[i * lctx.kv_self.page_num_per_seq + j] = page_id;
+            }
+        }
+        for (int i = ubatch.n_tokens; i < lctx.inp_page_table->ne[1]; ++i) {
+            for (int j = 0; j < lctx.inp_page_table->ne[0]; ++j) {
+                data_page_table[i * lctx.inp_page_table->ne[0] + j] = 0;
+            }
+        }
     }
 
-    if (cparams.enable_ge) {
+    // mask is not used for mla.
+    if (cparams.enable_ge && !hparams.enable_mla) {
         llama_kv_cache &    kv_self      = lctx.kv_self;
         const int64_t       n_seq_tokens = ubatch.n_seq_tokens;
         const int64_t       n_seqs       = ubatch.n_seqs;

@@ -3177,6 +3177,7 @@ ge::Operator handle_mla_op(
     struct ggml_tensor *context_length = node->src[5];
     struct ggml_tensor *mask = node->src[6];
     struct ggml_tensor *qSeq_length = node->src[7];
+    std::string op_suffix = "_" + std::to_string(op_index);
 
     GGML_ASSERT(query->type == GGML_TYPE_F16);
     GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
@@ -3229,6 +3230,8 @@ ge::Operator handle_mla_op(
     if (gmml_tensor_to_ge_op_map.find(block_tables) !=
         gmml_tensor_to_ge_op_map.end()) {
         op_block_tables = gmml_tensor_to_ge_op_map[block_tables];
+        op_block_tables = create_reshape_op(graph, "mla_block_tables_", op_suffix,
+            op_block_tables, {block_tables->ne[1], block_tables->ne[0]});
     } else {
         assert(false);
     }
@@ -3258,45 +3261,43 @@ ge::Operator handle_mla_op(
     int kSeqLen = params->kSeqLen;
     float qkScale = params->qkScale;
     int blockSize = params->blockSize;
+    std::string input_layout = "BNSD";
+    int64_t sparse_mode = 0;
 
     std::string mla_name = "mla_" + std::to_string(op_index);
-    ge::op::MLA mla_op(mla_name);
+    ge::op::FusedInferAttentionScore mla_op(mla_name);
 
-    mla_op.set_input_qNope(op_query);
-    mla_op.set_input_qRope(op_query_rope);
-    mla_op.set_input_ctKV(op_context_kv);
-    mla_op.set_input_kRope(op_key_rope);
-    mla_op.set_input_blockTables(op_block_tables);
-    mla_op.set_input_contextLens(op_context_length);
+    // q, k, v
+    mla_op.set_input_query(op_query);
+    mla_op.create_dynamic_input_byindex_key(1, 1);
+    mla_op.set_dynamic_input_key(0, op_context_kv);
+    mla_op.create_dynamic_input_byindex_value(1, 2);
+    mla_op.set_dynamic_input_value(0, op_context_kv);
+
+    // rope
+    mla_op.set_input_query_rope(op_query_rope);
+    mla_op.set_input_key_rope(op_key_rope);
+
+    // actual seq length
+    mla_op.set_input_actual_seq_lengths_kv(op_context_length);
+    mla_op.set_input_block_table(op_block_tables);
+
+    // attrs
+    mla_op.set_attr_num_heads(headNum);
+    mla_op.set_attr_num_key_value_heads(kvHeadNum);
+    mla_op.set_attr_scale(qkScale);
+    mla_op.set_attr_input_layout(input_layout);
+    mla_op.set_attr_block_size(blockSize);
 
     if (mask != nullptr) {
-        ge::Operator op_mask;
-        if (gmml_tensor_to_ge_op_map.find(mask) !=
-            gmml_tensor_to_ge_op_map.end()) {
-            op_mask = gmml_tensor_to_ge_op_map[mask];
-        } else {
-            assert(false);
-        }
-        mla_op.set_input_mask(op_mask);
+        // not implemented
+        assert(false);
     }
 
     if (qSeq_length != nullptr) {
-        ge::Operator op_qseq_length;
-        if (gmml_tensor_to_ge_op_map.find(qSeq_length) !=
-            gmml_tensor_to_ge_op_map.end()) {
-            op_qseq_length = gmml_tensor_to_ge_op_map[qSeq_length];
-        } else {
-            assert(false);
-        }
-        mla_op.set_input_qseqlen(op_qseq_length);
+        // not implemented
+        assert(false);
     }
-
-    mla_op.set_attr_headNum(headNum);
-    mla_op.set_attr_qkScale(qkScale);
-    mla_op.set_attr_kvHeadNum(kvHeadNum);
-    mla_op.set_attr_maskType(0);
-    mla_op.set_attr_calcType(0);
-    mla_op.set_attr_cacheMode(0);
 
     // 计算输出形状
     std::vector<int64_t> output_shape = build_output_shape(node);
@@ -3304,14 +3305,14 @@ ge::Operator handle_mla_op(
 
     // 设置输出描述
     ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
-    mla_op.update_output_desc_attenOut(desc_out);
+    mla_op.update_output_desc_attention_out(desc_out);
 
     // 添加算子到图中
     graph.AddOp(mla_op);
 
     std::string identity_name = "mla_identity_" + std::to_string(op_index);
     ge::op::Identity identity_op(identity_name);
-    identity_op.set_input_x_by_name(mla_op, "attenOut");
+    identity_op.set_input_x_by_name(mla_op, "attention_out");
     identity_op.update_output_desc_y(desc_out);
     graph.AddOp(identity_op);
 
