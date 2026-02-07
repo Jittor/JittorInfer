@@ -228,21 +228,21 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
                                   struct ggml_tensor * wkv_b, struct ggml_tensor * kv_nope, struct ggml_tensor * kv_pe,
                                   struct ggml_tensor * q_nope, struct ggml_tensor * q_pe, struct ggml_tensor * indices,
                                   struct ggml_tensor * page_table, struct ggml_tensor * length_kv,
-                                  int32_t n_embd_head_qk_nope, int n_tokens, int32_t n_head,
-                                  float kq_scale, const llm_build_cb & cb, int il) {
-    const llama_hparams & hparams      = lctx.model.hparams;
-    const llama_cparams & cparams      = lctx.cparams;
+                                  int32_t n_embd_head_qk_nope, int n_tokens, int32_t n_head, float kq_scale,
+                                  const llm_build_cb & cb, int il) {
+    const llama_hparams & hparams        = lctx.model.hparams;
+    const llama_cparams & cparams        = lctx.cparams;
     const int64_t         n_embd_k_cache = hparams.n_embd_k_cache(il);
     const int64_t         n_embd_v_cache = hparams.n_embd_v_cache(il);
-    const uint32_t        kv_lora_rank = hparams.n_lora_kv;
-    const int64_t         n_ctx        = cparams.n_ctx;
+    const uint32_t        kv_lora_rank   = hparams.n_lora_kv;
+    const int64_t         n_ctx          = cparams.n_ctx;
     const int64_t         n_embd_head_v  = n_embd_head_qk_nope;
-    const int64_t         page_size   = lctx.kv_self.page_size;
-    const int64_t         page_num    = lctx.kv_self.page_num;
+    const int64_t         page_size      = lctx.kv_self.page_size;
+    const int64_t         page_num       = lctx.kv_self.page_num;
 
     // recover k states and v states
     struct ggml_tensor * q_states;
-    bool use_jittor_mla = false;
+    bool                 use_jittor_mla = false;
 
     struct ggml_tensor * cache_kv_nope = ggml_reshape_2d(ctx, kv.k_l[il], n_embd_k_cache, n_ctx);
     cache_kv_nope = ggml_scatter_update(ctx, cache_kv_nope, indices, ggml_cast(ctx, kv_nope, GGML_TYPE_F16));
@@ -262,12 +262,12 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
     }
     cb(cache_kv_pe, "cache_kv_pe", il);
 
-    int32_t wk_b_size = n_head * kv_lora_rank * n_embd_head_qk_nope;
-    int32_t wv_b_size = n_head * n_embd_head_v * kv_lora_rank;
-    wkv_b = ggml_reshape_1d(ctx, wkv_b, wk_b_size + wv_b_size);
+    int32_t wk_b_size  = n_head * kv_lora_rank * n_embd_head_qk_nope;
+    int32_t wv_b_size  = n_head * n_embd_head_v * kv_lora_rank;
+    wkv_b              = ggml_reshape_1d(ctx, wkv_b, wk_b_size + wv_b_size);
     ggml_tensor * wk_b = ggml_get_slice(ctx, wkv_b, 0, wk_b_size, 0);
     cb(wk_b, "wk_b", il);
-    wk_b = ggml_reshape_3d(ctx, wk_b, n_embd_head_qk_nope, kv_lora_rank, n_head);
+    wk_b               = ggml_reshape_3d(ctx, wk_b, n_embd_head_qk_nope, kv_lora_rank, n_head);
     ggml_tensor * wv_b = ggml_get_slice(ctx, wkv_b, wk_b_size, wk_b_size + wv_b_size, 0);
     cb(wv_b, "wv_b", il);
     wv_b = ggml_reshape_3d(ctx, wv_b, kv_lora_rank, n_embd_head_v, n_head);
@@ -292,13 +292,11 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
     struct ggml_tensor * cur;
     {
         q_nope = ggml_cast(ctx, q_nope, GGML_TYPE_F16);
-        q_pe = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
-        
-        struct ggml_tensor * kqv = ggml_mla_jittor(
-            ctx, q_nope, q_pe,
-            cache_kv_nope, cache_kv_pe,
-            page_table, length_kv, nullptr, nullptr,
-            n_tokens, n_tokens, n_head, 1, n_ctx, kq_scale, lctx.kv_self.page_size);
+        q_pe   = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
+
+        struct ggml_tensor * kqv =
+            ggml_mla_jittor(ctx, q_nope, q_pe, cache_kv_nope, cache_kv_pe, page_table, length_kv, nullptr, nullptr,
+                            n_tokens, n_tokens, n_head, 1, n_ctx, kq_scale, lctx.kv_self.page_size);
         // Keep debug tensor for backward compatibility
         // struct ggml_tensor * debug = ggml_cont(ctx, page_table);
         // debug->flags |= GGML_TENSOR_FLAG_OUTPUT;

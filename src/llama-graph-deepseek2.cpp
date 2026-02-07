@@ -278,10 +278,8 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
                 q_nope = ggml_cont(ctx0, q_nope);
 
                 cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, model.layers[il].wkv_b,
-                                   kv_compressed, k_pe, q_nope, q_pe, indices,
-                                   page_table, length_kv,
-                                   n_embd_head_qk_nope, n_tokens, n_head_act,
-                                   kq_scale, cb, il);
+                                   kv_compressed, k_pe, q_nope, q_pe, indices, page_table, length_kv,
+                                   n_embd_head_qk_nope, n_tokens, n_head_act, kq_scale, cb, il);
             } else {
                 // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_tokens} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_tokens}
                 struct ggml_tensor * kv = ggml_mul_mat(ctx0, model.layers[il].wkv_b, kv_compressed);

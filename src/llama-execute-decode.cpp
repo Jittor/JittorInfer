@@ -1,6 +1,6 @@
+#include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <cmath>
 #include <fstream>
 #include <string>
 
@@ -105,11 +105,11 @@ static int llama_prepare_ubatch(llama_context & lctx, llama_kv_slot_restorer & k
             kv_self.head = 0;
         }
 
-        const auto slot = cparams.page_attention ?
-        (llama_kv_cache_find_page_slot(kv_self, ubatch)) :
-        (cparams.enable_scatter_kv ?
-                              llama_kv_cache_find_scatter_slot(kv_self, ubatch, cparams.n_ubatch) :
-                              llama_kv_cache_find_slot(kv_self, ubatch));
+        const auto slot =
+            cparams.page_attention ?
+                (llama_kv_cache_find_page_slot(kv_self, ubatch)) :
+                (cparams.enable_scatter_kv ? llama_kv_cache_find_scatter_slot(kv_self, ubatch, cparams.n_ubatch) :
+                                             llama_kv_cache_find_slot(kv_self, ubatch));
         if (!slot) {
             return 1;
         }
@@ -266,7 +266,7 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
         // struct ggml_tensor * mla_input_page_table = nullptr;
         // struct ggml_tensor * mla_input_length_kv = nullptr;
         // struct ggml_tensor * mla_output_kqv = nullptr;
-        
+
         // // Scatter update tensors
         // struct ggml_tensor * scatter_nope_input_cache = nullptr;
         // struct ggml_tensor * scatter_nope_input_indices = nullptr;
@@ -277,7 +277,7 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
         // struct ggml_tensor * scatter_pe_input_updates = nullptr;
         // struct ggml_tensor * scatter_pe_output = nullptr;
         // {
-            
+
         //     for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
         //         struct ggml_tensor * node = ggml_graph_node(gf, i);
         //         if (strcmp(node->name, "debug-0") == 0) {
@@ -341,7 +341,7 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
         //     ggml_backend_tensor_get_async(backend_debug, debug_node, debug_data.data(), 0,
         //                                   debug_node->ne[0] * debug_node->ne[1] * debug_node->ne[2] * debug_node->ne[3] * sizeof(int));
         //     ggml_backend_synchronize(backend_debug);
-            
+
         //     // Check for inf/nan
         //     bool has_inf = false;
         //     bool has_nan = false;
@@ -353,7 +353,7 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
         //             has_nan = true;
         //         }
         //     }
-            
+
         //     // Print first 10 values
         //     printf("Debug node shape: [%zu, %zu, %zu, %zu]\n", debug_node->ne[0], debug_node->ne[1], debug_node->ne[2], debug_node->ne[3]);
         //     for (size_t d3 = 0; d3 < debug_node->ne[3]; d3++) {
@@ -367,7 +367,7 @@ static int llama_decode_impl(llama_context & lctx, llama_batch inp_batch, bool s
         //             }
         //         }
         //     }
-            
+
         //     // Print inf/nan status
         //     printf("Debug data status: has_inf=%s, has_nan=%s, total_size=%zu\n",
         //            has_inf ? "true" : "false",

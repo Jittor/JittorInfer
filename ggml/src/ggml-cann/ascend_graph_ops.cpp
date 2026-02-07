@@ -3230,8 +3230,9 @@ ge::Operator handle_mla_op(
     if (gmml_tensor_to_ge_op_map.find(block_tables) !=
         gmml_tensor_to_ge_op_map.end()) {
         op_block_tables = gmml_tensor_to_ge_op_map[block_tables];
-        op_block_tables = create_reshape_op(graph, "mla_block_tables_", op_suffix,
-            op_block_tables, {block_tables->ne[1], block_tables->ne[0]});
+        op_block_tables = create_reshape_op(
+            graph, "mla_block_tables_", op_suffix, op_block_tables,
+            {block_tables->ne[1], block_tables->ne[0]});
     } else {
         assert(false);
     }

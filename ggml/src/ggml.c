@@ -2715,7 +2715,7 @@ struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tens
                                      struct ggml_tensor * qSeq_length, int32_t batchSize, int32_t tokenNum,
                                      int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen, float qkScale,
                                      int32_t blockSize) {
-    bool use_jittor_mla = false;
+    bool    use_jittor_mla = false;
     int64_t ne[4];
     if (use_jittor_mla) {
         ne[0] = 512;
