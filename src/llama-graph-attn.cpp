@@ -225,7 +225,8 @@ struct ggml_tensor * llm_build_kv(struct ggml_context * ctx, struct llama_contex
 
 struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_context & lctx, const llama_kv_cache & kv,
                                   struct ggml_cgraph * graph, struct ggml_tensor * wo, struct ggml_tensor * wo_b,
-                                  struct ggml_tensor * wkv_b, struct ggml_tensor * kv_nope, struct ggml_tensor * kv_pe,
+                                  struct ggml_tensor * wk_b, struct ggml_tensor * wv_b,
+                                  struct ggml_tensor * kv_nope, struct ggml_tensor * kv_pe,
                                   struct ggml_tensor * q_nope, struct ggml_tensor * q_pe, struct ggml_tensor * indices,
                                   struct ggml_tensor * page_table, struct ggml_tensor * length_kv,
                                   int32_t n_embd_head_qk_nope, int n_tokens, int32_t n_head,
@@ -261,16 +262,6 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
         cache_kv_pe = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, page_size, 1, page_num);
     }
     cb(cache_kv_pe, "cache_kv_pe", il);
-
-    int32_t wk_b_size = n_head * kv_lora_rank * n_embd_head_qk_nope;
-    int32_t wv_b_size = n_head * n_embd_head_v * kv_lora_rank;
-    wkv_b = ggml_reshape_1d(ctx, wkv_b, wk_b_size + wv_b_size);
-    ggml_tensor * wk_b = ggml_get_slice(ctx, wkv_b, 0, wk_b_size, 0);
-    cb(wk_b, "wk_b", il);
-    wk_b = ggml_reshape_3d(ctx, wk_b, n_embd_head_qk_nope, kv_lora_rank, n_head);
-    ggml_tensor * wv_b = ggml_get_slice(ctx, wkv_b, wk_b_size, wk_b_size + wv_b_size, 0);
-    cb(wv_b, "wv_b", il);
-    wv_b = ggml_reshape_3d(ctx, wv_b, kv_lora_rank, n_embd_head_v, n_head);
 
     {
         // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_kv} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_kv}

@@ -91,7 +91,8 @@ struct ggml_tensor * llm_build_kv(struct ggml_context * ctx, struct llama_contex
 
 struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_context & lctx, const llama_kv_cache & kv,
                                   struct ggml_cgraph * graph, struct ggml_tensor * wo, struct ggml_tensor * wo_b,
-                                  struct ggml_tensor * wkv_b, struct ggml_tensor * kv_nope, struct ggml_tensor * kv_pe,
+                                  struct ggml_tensor * wk_b, struct ggml_tensor * wv_b,
+                                  struct ggml_tensor * kv_nope, struct ggml_tensor * kv_pe,
                                   struct ggml_tensor * q_nope, struct ggml_tensor * q_pe, struct ggml_tensor * indices,
                                   struct ggml_tensor * page_table, struct ggml_tensor * length_kv,
                                   int32_t n_embd_head_qk_nope, int n_tokens, int32_t n_head,

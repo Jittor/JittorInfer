@@ -414,6 +414,20 @@ void ggml_cann_get_slice(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_scatter_update(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
+ * @brief   Splits a tensor into multiple output tensors along a specified dimension.
+ *
+ * @param ctx CANN backend context
+ * @param dst The last output tensor with GGML_OP_SPLIT operation type.
+ *            The split parameters are stored in dst->op_params:
+ *            - op_params[0]: split_dim (dimension to split along)
+ *            - op_params[1]: num_split (number of output tensors)
+ *            - op_params[2..2+num_split-1]: size_splits (size of each split)
+ *            All output tensors are stored in the outputs array, with the last
+ *            one being dst itself.
+ */
+void ggml_cann_split(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
  * @brief   Computes the Root Mean Square (RMS) normalization of a ggml tensor
  *          using the CANN backend.
  *

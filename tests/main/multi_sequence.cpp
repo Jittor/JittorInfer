@@ -120,7 +120,7 @@ static struct DefaultMiniParams {
     bool                  use_mlock         = false;  // use mlock to keep model in memory
     bool                  check_tensors     = false;  // validate tensor data
 
-    std::string model = "/root/data/DeepSeek-V2-Lite-Chat-f16.gguf";
+    std::string model = "/root/flowey/gguf/DeepSeek-V2-Lite-MLA-Chat-f16.gguf";
 
     uint32_t n_ctx = 32768;  // context size
 

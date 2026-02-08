@@ -220,17 +220,13 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
                 cb(q, "q", il);
             }
 
-            // split into {n_head * n_embd_head_qk_nope, n_tokens}
-            struct ggml_tensor * q_nope = ggml_view_3d(ctx0, q, n_embd_head_qk_nope, n_head_act, n_tokens,
-                                                       ggml_row_size(q->type, hparams.n_embd_head_k),
-                                                       ggml_row_size(q->type, hparams.n_embd_head_k * n_head_act), 0);
+            q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
+            struct ggml_tensor * qsplit[2];
+            int32_t split_size[2] = {(int32_t)n_embd_head_qk_nope, (int32_t)n_embd_head_qk_rope};
+            ggml_build_forward_expand(gf, ggml_split(ctx0, q, qsplit, 3, 0, 2, split_size));
+            struct ggml_tensor * q_nope = qsplit[0];
             cb(q_nope, "q_nope", il);
-
-            // and {n_head * n_embd_head_qk_rope, n_tokens}
-            struct ggml_tensor * q_pe = ggml_view_3d(ctx0, q, n_embd_head_qk_rope, n_head_act, n_tokens,
-                                                     ggml_row_size(q->type, hparams.n_embd_head_k),
-                                                     ggml_row_size(q->type, hparams.n_embd_head_k * n_head_act),
-                                                     ggml_row_size(q->type, n_embd_head_qk_nope));
+            struct ggml_tensor * q_pe = qsplit[1];
             cb(q_pe, "q_pe", il);
 
             // {n_embd, kv_lora_rank + n_embd_head_qk_rope} * {n_embd, n_tokens} -> {kv_lora_rank + n_embd_head_qk_rope, n_tokens}
@@ -277,7 +273,8 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
 
                 q_nope = ggml_cont(ctx0, q_nope);
 
-                cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, model.layers[il].wkv_b,
+                cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL,
+                                   model.layers[il].wk_b, model.layers[il].wv_b,
                                    kv_compressed, k_pe, q_nope, q_pe, indices,
                                    page_table, length_kv,
                                    n_embd_head_qk_nope, n_tokens, n_head_act,

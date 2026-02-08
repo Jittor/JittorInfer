@@ -613,6 +613,13 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 }
                 break;
             }
+            case GGML_OP_SPLIT: {
+                // 处理张量拆分操作
+                handle_split_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                GGML_ASSERT(!(node == last_op_node));
+                break;
+            }
             case GGML_OP_FLASH_ATTN_PROMPT: {
                 Operator op_node = handle_flash_attn_prompt_op(
                     graph, node, ggml_tensor_to_ge_op_map, i);

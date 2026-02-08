@@ -2480,6 +2480,106 @@ ge::Operator handle_set_slice_op(
 }
 
 /**
+ * @brief 处理Split操作，将张量沿指定维度拆分为多个输出
+ *
+ * 使用SplitVD算子实现张量的拆分操作。从dst->op_params中提取拆分参数：
+ * - op_params[0]: split_dim (拆分维度)
+ * - op_params[1]: num_split (输出张量数量)
+ * - op_params[2..2+num_split-1]: size_splits (每个输出的大小)
+ *
+ * @param graph 计算图引用
+ * @param node 表示Split操作的张量节点
+ * @param ggml_tensor_to_ge_op_map 张量到算子的映射
+ * @param op_index 算子索引，用于生成唯一的算子名称
+ * @return 创建的SplitVD算子
+ */
+void handle_split_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
+    int op_index) {
+    // 获取输入张量
+    struct ggml_tensor *src = node->src[0];
+    assert(src && "SPLIT: missing input tensor");
+
+    // 获取输入张量对应的操作符
+    ge::Operator input_op;
+    if (ggml_tensor_to_ge_op_map.find(src) != ggml_tensor_to_ge_op_map.end()) {
+        input_op = ggml_tensor_to_ge_op_map[src];
+    } else {
+        assert(false && "SPLIT: input tensor not found in map");
+    }
+
+    // 从op_params中提取拆分参数
+    int32_t o_index = node->op_params[0];
+    int32_t n_dim = node->op_params[1];
+    int32_t split_dim = node->op_params[2];
+    int32_t num_split = node->op_params[3];
+    if (o_index != num_split-1) {
+        return;
+    }
+    
+    assert(num_split > 0 && "SPLIT: num_split must be positive");
+    assert(split_dim >= 0 && split_dim < GGML_MAX_DIMS && 
+           "SPLIT: split_dim out of range");
+
+    // 提取size_splits数组
+    std::vector<int64_t> size_splits;
+    size_splits.reserve(num_split);
+    for (int i = 0; i < num_split; i++) {
+        size_splits.push_back(static_cast<int64_t>(node->op_params[4 + i]));
+    }
+
+    // 验证size_splits的总和等于源张量在split_dim上的大小
+    int64_t total_size = 0;
+    for (auto size : size_splits) {
+        total_size += size;
+    }
+    assert(total_size == src->ne[split_dim] && 
+           "SPLIT: size_splits sum must equal source dimension");
+
+    // 维度翻转
+    split_dim = n_dim - split_dim - 1;
+
+    // 创建SplitVD算子
+    std::string split_name = "split_" + std::to_string(op_index);
+    ge::op::SplitVD split_op(split_name.c_str());
+
+    // 调整输入张量的维度
+    std::vector<int64_t> actual_shape;
+    actual_shape.reserve(n_dim);
+    for (int i = 0; i < n_dim; i++) {
+        actual_shape.push_back(src->ne[n_dim - i - 1]);
+    }
+    input_op = create_reshape_op(graph, input_op, actual_shape, "split_reshape_" + std::to_string(op_index), get_data_type(src->type));
+    // 设置输入
+    split_op.set_input_x(input_op);
+
+    // 设置属性
+    split_op.set_attr_size_splits(size_splits);
+    split_op.set_attr_split_dim(static_cast<int64_t>(split_dim));
+    split_op.set_attr_num_split(static_cast<int64_t>(num_split));
+
+    // 创建动态输出
+    split_op.create_dynamic_output_y(num_split);
+
+    // 为每个输出设置描述符
+    ge::DataType data_type = get_data_type(src->type);
+    for (int i = 0; i < num_split; i++) {
+        struct ggml_tensor * out_tensor = nullptr;
+        if (i < num_split - 1) {
+            out_tensor = node->src[i+1];
+        } else {
+            out_tensor = node;
+        }
+        std::string identity_name = "split_" + std::to_string(op_index) + "_identity_" + std::to_string(i);
+        ge::op::Identity identity_op(identity_name);
+        identity_op.set_input_x(split_op, "y" + std::to_string(i));
+        graph.AddOp(identity_op);
+        ggml_tensor_to_ge_op_map[out_tensor] = identity_op;
+    }
+}
+
+/**
  * @brief 创建通用的Reshape操作
  *
  * 这是一个通用的reshape函数，可以被多个算子调用

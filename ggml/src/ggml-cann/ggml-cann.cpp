@@ -1559,6 +1559,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_SCATTER_UPDATE:
             ggml_cann_scatter_update(ctx, dst);
             break;
+        case GGML_OP_SPLIT:
+            ggml_cann_split(ctx, dst);
+            break;
         default:
             return false;
     }
@@ -2146,6 +2149,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
 #endif
         case GGML_OP_TO_ZERO:
         case GGML_OP_SCATTER_UPDATE:
+        case GGML_OP_SPLIT:
         case GGML_OP_GET_SLICE:
         case GGML_OP_RMS_NORM_FUSED:
             return true;

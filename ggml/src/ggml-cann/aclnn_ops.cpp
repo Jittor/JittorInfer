@@ -49,6 +49,7 @@
 #include <aclnnop/aclnn_repeat_interleave.h>
 #include <aclnnop/aclnn_roll.h>
 #include <aclnnop/aclnn_scatter_update.h>
+#include <aclnnop/aclnn_split_with_size.h>
 #include <aclnnop/aclnn_sin.h>
 #include <aclnnop/aclnn_softmax.h>
 #include <aclnnop/aclnn_sub.h>
@@ -6596,4 +6597,72 @@ void ggml_cann_scatter_update(ggml_backend_cann_context& ctx,
     ACL_CHECK(aclDestroyTensor(acl_indices_tensor));
     ACL_CHECK(aclDestroyTensor(acl_updates_tensor));
     ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
+}
+
+void ggml_cann_split(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+    ggml_tensor* src = dst->src[0];
+    
+    // Get split parameters from op_params
+    int32_t o_index = dst->op_params[0];
+    int32_t n_dim = dst->op_params[1];
+    int32_t split_dim = dst->op_params[2];
+    int32_t num_split = dst->op_params[3];
+    if (o_index != num_split-1) {
+        return;
+    }
+    
+    GGML_ASSERT(src != NULL);
+    GGML_ASSERT(num_split > 0);
+    GGML_ASSERT(split_dim >= 0 && split_dim < n_dim);
+
+    // difference between huawei and ggml
+    split_dim = n_dim - split_dim - 1;
+    
+    // Extract size_splits from op_params
+    std::vector<int64_t> size_splits(num_split);
+    for (int i = 0; i < num_split; i++) {
+        size_splits[i] = dst->op_params[4 + i];
+    }
+    
+    // Create ACL tensor for source
+    aclTensor* acl_src_tensor = ggml_cann_create_tensor(src, nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
+    
+    // Create aclIntArray for split sizes
+    aclIntArray* split_size_array = aclCreateIntArray(size_splits.data(), num_split);
+    
+    std::vector<aclTensor*> output_tensors;
+    for (int i = 0; i < num_split - 1; i++) {
+        aclTensor* acl_output = ggml_cann_create_tensor(dst->src[i+1], nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
+        output_tensors.push_back(acl_output);
+    }
+    aclTensor* acl_output = ggml_cann_create_tensor(dst, nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
+    output_tensors.push_back(acl_output);
+    aclTensorList* acl_output_list = aclCreateTensorList(output_tensors.data(), num_split);
+    
+    // Get workspace size and executor
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor = nullptr;
+    void* workspaceAddr = nullptr;
+
+    ACL_CHECK(aclnnSplitWithSizeGetWorkspaceSize(
+        acl_src_tensor,
+        split_size_array,
+        split_dim,
+        acl_output_list,
+        &workspaceSize,
+        &executor));
+    
+    // Allocate workspace if needed
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
+    }    
+    
+    // Execute the split operation
+    ACL_CHECK(aclnnSplitWithSize(workspaceAddr, workspaceSize, executor, ctx.stream()));
+    
+    // Cleanup
+    ACL_CHECK(aclDestroyTensor(acl_src_tensor));
+    ACL_CHECK(aclDestroyIntArray(split_size_array));
+    ACL_CHECK(aclDestroyTensorList(acl_output_list));
 }
