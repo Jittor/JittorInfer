@@ -1714,10 +1714,10 @@ int main(int argc, char ** argv) {
     // cleanup function for proper resource release
     auto cleanup_and_exit = [&ctx_server, &svr]() {
         printf("Server Exit - Starting cleanup...\n");
-        
+
         // // Stop the HTTP server first
         // svr->stop();
-        
+
         // // Clear slots and their contexts
         // for (server_slot & slot : ctx_server.slots) {
         //     if (slot.smpl != nullptr) {
@@ -1726,25 +1726,25 @@ int main(int argc, char ** argv) {
         //     }
         //     llama_batch_free(slot.batch_spec);
         // }
-        
+
         // // Free batch
         // llama_batch_free(ctx_server.batch);
 
         printf("Server Exit - Freeing context...\n");
         llama_free(ctx_server.ctx);
-        
+
         // Reset the model and context pointers (unique_ptr will handle deletion)
         // ctx_server.llama_init.model.reset();
         // ctx_server.llama_init.context.reset();
         // ctx_server.llama_init_dft.model.reset();
         // ctx_server.llama_init_dft.context.reset();
-        
+
         // Call llama_backend_free for any remaining cleanup
         // llama_backend_free();
-        
+
         printf("Server Exit - Cleanup completed.\n");
     };
-    
+
     // register API routes
     svr->Post("/v1/completions", handle_completions_oai);
     svr->Post("/v1/chat/completions", handle_chat_completions);
@@ -1773,7 +1773,7 @@ int main(int argc, char ** argv) {
     auto clean_up = [&ctx_server, &svr]() {
         printf("Normal cleanup - Starting...\n");
         svr->stop();
-        
+
         // Clear slots
         for (server_slot & slot : ctx_server.slots) {
             if (slot.smpl != nullptr) {
@@ -1786,9 +1786,9 @@ int main(int argc, char ** argv) {
             }
             llama_batch_free(slot.batch_spec);
         }
-        
+
         llama_batch_free(ctx_server.batch);
-        
+
         printf("Normal cleanup - Freeing context...\n");
         llama_free(ctx_server.ctx);
 
@@ -1797,7 +1797,7 @@ int main(int argc, char ** argv) {
         ctx_server.llama_init.context.reset();
         ctx_server.llama_init_dft.model.reset();
         ctx_server.llama_init_dft.context.reset();
-        
+
         llama_backend_free();
         printf("Normal cleanup - Completed.\n");
     };

@@ -225,25 +225,24 @@ struct ggml_tensor * llm_build_kv(struct ggml_context * ctx, struct llama_contex
 
 struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_context & lctx, const llama_kv_cache & kv,
                                   struct ggml_cgraph * graph, struct ggml_tensor * wo, struct ggml_tensor * wo_b,
-                                  struct ggml_tensor * wk_b, struct ggml_tensor * wv_b,
-                                  struct ggml_tensor * kv_nope, struct ggml_tensor * kv_pe,
-                                  struct ggml_tensor * q_nope, struct ggml_tensor * q_pe, struct ggml_tensor * indices,
-                                  struct ggml_tensor * page_table, struct ggml_tensor * length_kv,
-                                  int32_t n_embd_head_qk_nope, int n_tokens, int32_t n_head,
-                                  float kq_scale, const llm_build_cb & cb, int il) {
-    const llama_hparams & hparams      = lctx.model.hparams;
-    const llama_cparams & cparams      = lctx.cparams;
+                                  struct ggml_tensor * wk_b, struct ggml_tensor * wv_b, struct ggml_tensor * kv_nope,
+                                  struct ggml_tensor * kv_pe, struct ggml_tensor * q_nope, struct ggml_tensor * q_pe,
+                                  struct ggml_tensor * indices, struct ggml_tensor * page_table,
+                                  struct ggml_tensor * length_kv, int32_t n_embd_head_qk_nope, int n_tokens,
+                                  int32_t n_head, float kq_scale, const llm_build_cb & cb, int il) {
+    const llama_hparams & hparams        = lctx.model.hparams;
+    const llama_cparams & cparams        = lctx.cparams;
     const int64_t         n_embd_k_cache = hparams.n_embd_k_cache(il);
     const int64_t         n_embd_v_cache = hparams.n_embd_v_cache(il);
-    const uint32_t        kv_lora_rank = hparams.n_lora_kv;
-    const int64_t         n_ctx        = cparams.n_ctx;
+    const uint32_t        kv_lora_rank   = hparams.n_lora_kv;
+    const int64_t         n_ctx          = cparams.n_ctx;
     const int64_t         n_embd_head_v  = n_embd_head_qk_nope;
-    const int64_t         page_size   = lctx.kv_self.page_size;
-    const int64_t         page_num    = lctx.kv_self.page_num;
+    const int64_t         page_size      = lctx.kv_self.page_size;
+    const int64_t         page_num       = lctx.kv_self.page_num;
 
     // recover k states and v states
     struct ggml_tensor * q_states;
-    bool use_jittor_mla = false;
+    bool                 use_jittor_mla = false;
 
     struct ggml_tensor * cache_kv_nope = ggml_reshape_2d(ctx, kv.k_l[il], n_embd_k_cache, n_ctx);
     cache_kv_nope = ggml_scatter_update(ctx, cache_kv_nope, indices, ggml_cast(ctx, kv_nope, GGML_TYPE_F16));
@@ -283,13 +282,11 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
     struct ggml_tensor * cur;
     {
         q_nope = ggml_cast(ctx, q_nope, GGML_TYPE_F16);
-        q_pe = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
-        
-        struct ggml_tensor * kqv = ggml_mla_jittor(
-            ctx, q_nope, q_pe,
-            cache_kv_nope, cache_kv_pe,
-            page_table, length_kv, nullptr, nullptr,
-            n_tokens, n_tokens, n_head, 1, n_ctx, kq_scale, lctx.kv_self.page_size);
+        q_pe   = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
+
+        struct ggml_tensor * kqv =
+            ggml_mla_jittor(ctx, q_nope, q_pe, cache_kv_nope, cache_kv_pe, page_table, length_kv, nullptr, nullptr,
+                            n_tokens, n_tokens, n_head, 1, n_ctx, kq_scale, lctx.kv_self.page_size);
         // Keep debug tensor for backward compatibility
         // struct ggml_tensor * debug = ggml_cont(ctx, page_table);
         // debug->flags |= GGML_TENSOR_FLAG_OUTPUT;

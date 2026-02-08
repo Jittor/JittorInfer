@@ -932,8 +932,8 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     // helper
     "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
     "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_MLA_JITTOR",
-    "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE", "GGML_OP_SPLIT",
-    "GGML_OP_RMS_NORM_FUSED"
+    "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE",
+    "GGML_OP_SPLIT", "GGML_OP_RMS_NORM_FUSED"
 };
 
 static_assert(GGML_OP_COUNT == 98, "GGML_OP_COUNT != 98");
@@ -2716,7 +2716,7 @@ struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tens
                                      struct ggml_tensor * qSeq_length, int32_t batchSize, int32_t tokenNum,
                                      int32_t headNum, int32_t kvHeadNum, int32_t kSeqLen, float qkScale,
                                      int32_t blockSize) {
-    bool use_jittor_mla = false;
+    bool    use_jittor_mla = false;
     int64_t ne[4];
     if (use_jittor_mla) {
         ne[0] = 512;
@@ -3289,13 +3289,13 @@ struct ggml_tensor * ggml_scatter_update(struct ggml_context * ctx, struct ggml_
 // ggml_split
 
 struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * src, struct ggml_tensor ** outputs,
-                int n_dim, int split_dim, int num_split, const int32_t * size_splits) {
+                                int n_dim, int split_dim, int num_split, const int32_t * size_splits) {
     GGML_ASSERT(src != NULL);
     GGML_ASSERT(outputs != NULL);
     GGML_ASSERT(num_split > 0);
     GGML_ASSERT(n_dim > 0);
     GGML_ASSERT(split_dim >= 0 && split_dim < n_dim);
-    
+
     // Validate size_splits sum equals src dimension
     int64_t total_size = 0;
     for (int i = 0; i < num_split; i++) {
@@ -3303,7 +3303,7 @@ struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * 
         total_size += size_splits[i];
     }
     GGML_ASSERT(total_size == src->ne[split_dim]);
-    
+
     // Create output tensors
     for (int i = 0; i < num_split; i++) {
         // Calculate output shape
@@ -3312,14 +3312,14 @@ struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * 
             ne[d] = src->ne[d];
         }
         ne[split_dim] = size_splits[i];
-        
+
         // Create view tensor for this split
         struct ggml_tensor * output = ggml_new_tensor(ctx, src->type, GGML_MAX_DIMS, ne);
-        
+
         // Set operation type: last tensor is GGML_OP_SPLIT, others are GGML_OP_NONE
         output->src[0] = src;
         for (int j = 0; j < i; j++) {
-            output->src[j+1] = outputs[j];
+            output->src[j + 1] = outputs[j];
         }
         output->op_params[0] = i;
         output->op_params[1] = n_dim;
@@ -3329,7 +3329,7 @@ struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * 
             output->op_params[4 + j] = size_splits[j];
         }
         output->op = GGML_OP_SPLIT;
-        
+
         outputs[i] = output;
     }
     return outputs[num_split - 1];

@@ -1145,8 +1145,9 @@ GGML_API struct ggml_tensor * ggml_get_slice(struct ggml_context * ctx, struct g
 GGML_API struct ggml_tensor * ggml_scatter_update(struct ggml_context * ctx, struct ggml_tensor * var,
                                                   struct ggml_tensor * indices, struct ggml_tensor * update);
 
-GGML_API struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * src, struct ggml_tensor ** outputs,
-    int n_dim, int split_dim, int num_split, const int32_t * size_splits);
+GGML_API struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * src,
+                                         struct ggml_tensor ** outputs, int n_dim, int split_dim, int num_split,
+                                         const int32_t * size_splits);
 // supports 3D: a->ne[2] == b->ne[1]
 GGML_API struct ggml_tensor * ggml_get_rows(struct ggml_context * ctx,
                                             struct ggml_tensor *  a,  // data

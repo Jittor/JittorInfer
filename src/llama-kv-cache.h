@@ -40,15 +40,15 @@ struct llama_kv_cache {
     uint32_t used = 0;  // used cells (i.e. at least one seq_id)
 
     // Page Attention
-    bool page_attention = false;
-    uint32_t page_size = 128;
-    uint32_t page_num = 0;
-    uint32_t page_num_per_seq = 0;
-    uint32_t seq_num_max = 0;
-    std::vector<int32_t> page_table;
-    std::vector<int32_t> seq_page_used;
-    std::vector<int64_t> seq_lengths;
-    std::vector<int32_t> page_used;
+    bool                      page_attention   = false;
+    uint32_t                  page_size        = 128;
+    uint32_t                  page_num         = 0;
+    uint32_t                  page_num_per_seq = 0;
+    uint32_t                  seq_num_max      = 0;
+    std::vector<int32_t>      page_table;
+    std::vector<int32_t>      seq_page_used;
+    std::vector<int64_t>      seq_lengths;
+    std::vector<int32_t>      page_used;
     std::vector<llama_seq_id> page_owner;  // only one onwer now.
 
     // computed before each graph build

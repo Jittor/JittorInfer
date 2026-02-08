@@ -798,19 +798,19 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                           tn(LLM_TENSOR_ATTN_KV_A_MQA, "weight", i), 0, local_dev);
                         if (hparams.enable_mla) {
                             layer.wk_b = create_tensor({ n_embd_head_qk_nope, kv_lora_rank, n_head },
-                                use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_3d_DIM2,
-                                tn(LLM_TENSOR_ATTN_K_B, "weight", i), 0, local_dev);
+                                                       use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_3d_DIM2,
+                                                       tn(LLM_TENSOR_ATTN_K_B, "weight", i), 0, local_dev);
                             layer.wv_b = create_tensor({ kv_lora_rank, n_embd_head_v, n_head },
-                                use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_3d_DIM2,
-                                tn(LLM_TENSOR_ATTN_V_B, "weight", i), 0, local_dev);
+                                                       use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_3d_DIM2,
+                                                       tn(LLM_TENSOR_ATTN_V_B, "weight", i), 0, local_dev);
                         } else {
                             layer.wkv_b = create_tensor({ kv_lora_rank, n_embd_head_qk_nope + n_embd_head_v, n_head },
-                                use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM2_MERGE12,
-                                tn(LLM_TENSOR_ATTN_KV_B, "weight", i), 0, local_dev);
+                                                        use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM2_MERGE12,
+                                                        tn(LLM_TENSOR_ATTN_KV_B, "weight", i), 0, local_dev);
                         }
-                        layer.wo    = create_tensor({ n_embd_head_v, n_head, n_embd },
+                        layer.wo = create_tensor({ n_embd_head_v, n_head, n_embd },
                                                  use_dp ? LLM_SPLIT_3d_MERGE01 : LLM_SPLIT_3d_DIM1_MERGE01,
-                                                    tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
+                                                 tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
 
                         layer.ffn_norm = create_tensor({ n_embd }, LLM_SPLIT_REPEAT,
                                                        tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
@@ -1037,16 +1037,16 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     //     const int32_t n_embd_head_qk_nope = hparams.n_embd_head_k - hparams.n_rot;
     //     const int32_t kv_lora_rank        = hparams.n_lora_kv;
     //     const int32_t n_embd_head_v       = hparams.n_embd_head_v;
-        
+
     //     for (uint32_t i = 0; i < hparams.n_layer; ++i) {
     //         auto & layer = layers[i];
     //         if (layer.wkv_b == nullptr) {
     //             continue;
     //         }
-            
+
     //         const int n_head = (hparams.enable_tensor_parallel && !hparams.enable_data_parallel) ?
     //                            hparams.n_head() / hparams.num_parallel : hparams.n_head();
-            
+
     //         // Find the context from ctx_map
     //         ggml_context * ctx = nullptr;
     //         for (auto & it : ctx_map) {
@@ -1061,25 +1061,25 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     //                 break;
     //             }
     //         }
-            
+
     //         if (ctx == nullptr) {
     //             LLAMA_LOG_WARN("%s: could not find context for wkv_b in layer %d, skipping tensor creation\n", __func__, i);
     //             continue;
     //         }
-            
+
     //         const int32_t wk_b_size = n_head * kv_lora_rank * n_embd_head_qk_nope;
     //         const int32_t wv_b_size = n_head * n_embd_head_v * kv_lora_rank;
-            
+
     //         // Get wkv_b data pointer
     //         uint8_t * wkv_b_data = (uint8_t *) layer.wkv_b->data;
     //         ggml_type wkv_b_type = layer.wkv_b->type;
-            
+
     //         // Create wk_b tensor pointing to first part of wkv_b
     //         layer.wk_b = ggml_new_tensor_3d(ctx, wkv_b_type, n_embd_head_qk_nope, kv_lora_rank, n_head);
     //         layer.wk_b->data   = wkv_b_data;
     //         layer.wk_b->buffer = layer.wkv_b->buffer;
     //         ggml_set_name(layer.wk_b, (std::string("blk.") + std::to_string(i) + ".wk_b").c_str());
-            
+
     //         // Create wv_b tensor pointing to second part of wkv_b
     //         layer.wv_b = ggml_new_tensor_3d(ctx, wkv_b_type, kv_lora_rank, n_embd_head_v, n_head);
     //         layer.wv_b->data   = wkv_b_data + ggml_row_size(wkv_b_type, wk_b_size);

@@ -222,7 +222,7 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
 
             q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
             struct ggml_tensor * qsplit[2];
-            int32_t split_size[2] = {(int32_t)n_embd_head_qk_nope, (int32_t)n_embd_head_qk_rope};
+            int32_t              split_size[2] = { (int32_t) n_embd_head_qk_nope, (int32_t) n_embd_head_qk_rope };
             ggml_build_forward_expand(gf, ggml_split(ctx0, q, qsplit, 3, 0, 2, split_size));
             struct ggml_tensor * q_nope = qsplit[0];
             cb(q_nope, "q_nope", il);
@@ -273,12 +273,9 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
 
                 q_nope = ggml_cont(ctx0, q_nope);
 
-                cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL,
-                                   model.layers[il].wk_b, model.layers[il].wv_b,
-                                   kv_compressed, k_pe, q_nope, q_pe, indices,
-                                   page_table, length_kv,
-                                   n_embd_head_qk_nope, n_tokens, n_head_act,
-                                   kq_scale, cb, il);
+                cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, model.layers[il].wk_b,
+                                   model.layers[il].wv_b, kv_compressed, k_pe, q_nope, q_pe, indices, page_table,
+                                   length_kv, n_embd_head_qk_nope, n_tokens, n_head_act, kq_scale, cb, il);
             } else {
                 // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_tokens} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_tokens}
                 struct ggml_tensor * kv = ggml_mul_mat(ctx0, model.layers[il].wkv_b, kv_compressed);
