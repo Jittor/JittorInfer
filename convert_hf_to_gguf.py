@@ -989,6 +989,7 @@ class DeepseekV2Model(Model):
                 self.gguf_writer.add_rope_scaling_yarn_log_mul(0.1 * hparams["rope_scaling"]["mscale_all_dim"])
 
     _experts: list[dict[str, Tensor]] | None = None
+    _shared_experts: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         # rename e_score_correction_bias tensors
@@ -1048,6 +1049,45 @@ class DeepseekV2Model(Model):
                 return tensors
             else:
                 return []
+
+        if name.find("mlp.shared_experts") != -1:
+            if self._shared_experts is None:
+                self._shared_experts = [{} for _ in range(self.block_count)]
+
+            self._shared_experts[bid][name] = data_torch
+
+            if len(self._shared_experts[bid]) >= 3:
+                tensors: list[tuple[str, Tensor]] = []
+
+                for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    merged_name = f"model.layers.{bid}.mlp.shared_experts.{w_name}.weight"
+                    data_torch = self._shared_experts[bid][merged_name]
+                    new_name = self.map_tensor_name(merged_name)
+                    tensors.append((new_name, data_torch))
+                up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
+                tensors = [tensors[0], (tensors[2][0], up_proj)]
+                return tensors
+            return []
+
+        elif name.find("mlp.down_proj.weight") != -1 or name.find("mlp.up_proj.weight") != -1 or name.find("mlp.gate_proj.weight") != -1:
+            if self._shared_experts is None:
+                self._shared_experts = [{} for _ in range(self.block_count)]
+
+            self._shared_experts[bid][name] = data_torch
+
+            if len(self._shared_experts[bid]) >= 3:
+                tensors: list[tuple[str, Tensor]] = []
+
+                for w_name in ["down_proj", "gate_proj", "up_proj"]:
+                    merged_name = f"model.layers.{bid}.mlp.{w_name}.weight"
+                    data_torch = self._shared_experts[bid][merged_name]
+                    new_name = self.map_tensor_name(merged_name)
+                    tensors.append((new_name, data_torch))
+                up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
+                tensors = [tensors[0], (tensors[2][0], up_proj)]
+                return tensors
+            return []
+
 
         return [(self.map_tensor_name(name), data_torch)]
 

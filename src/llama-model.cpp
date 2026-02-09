@@ -817,12 +817,19 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                                        tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
 
                         if (i < (int) hparams.n_layer_dense_lead) {
-                            layer.ffn_gate = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
-                                                           tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
-                            layer.ffn_down = create_tensor({ n_ff, n_embd }, LLM_SPLIT_2d_DIM0,
-                                                           tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
-                            layer.ffn_up   = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
-                                                           tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
+                            if (merge_matrix) {
+                                layer.ffn_up   = create_tensor({ n_embd, n_ff, 2}, LLM_SPLIT_3d_DIM1_MERGE12,
+                                                            tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
+                                layer.ffn_down = create_tensor({ n_ff, n_embd }, LLM_SPLIT_2d_DIM0,
+                                                            tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
+                            } else {
+                                layer.ffn_gate = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
+                                                            tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
+                                layer.ffn_down = create_tensor({ n_ff, n_embd }, LLM_SPLIT_2d_DIM0,
+                                                            tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
+                                layer.ffn_up   = create_tensor({ n_embd, n_ff }, LLM_SPLIT_2d_DIM1,
+                                                            tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
+                            }
                         } else {
                             layer.ffn_gate_inp = create_tensor({ n_embd, n_expert }, LLM_SPLIT_REPEAT,
                                                                tn(LLM_TENSOR_FFN_GATE_INP, "weight", i), 0, local_dev);
@@ -870,16 +877,25 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 }
                             }
 
-                            // Shared expert branch
-                            layer.ffn_gate_shexp =
-                                create_tensor({ n_embd, n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
-                                              tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), 0, local_dev);
-                            layer.ffn_down_shexp =
-                                create_tensor({ n_ff_exp, n_expert_shared, n_embd }, LLM_SPLIT_3d_DIM0_MERGE01,
-                                              tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), 0, local_dev);
-                            layer.ffn_up_shexp =
-                                create_tensor({ n_embd, n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
-                                              tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), 0, local_dev);
+                            if (merge_matrix) {
+                                layer.ffn_down_shexp =
+                                    create_tensor({ n_ff_exp, n_expert_shared, n_embd }, LLM_SPLIT_3d_DIM0_MERGE01,
+                                                tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), 0, local_dev);
+                                layer.ffn_up_shexp =
+                                    create_tensor({ n_embd, n_ff_exp + n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
+                                                tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), 0, local_dev);
+                            } else {
+                                // Shared expert branch
+                                layer.ffn_gate_shexp =
+                                    create_tensor({ n_embd, n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
+                                                tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), 0, local_dev);
+                                layer.ffn_down_shexp =
+                                    create_tensor({ n_ff_exp, n_expert_shared, n_embd }, LLM_SPLIT_3d_DIM0_MERGE01,
+                                                tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), 0, local_dev);
+                                layer.ffn_up_shexp =
+                                    create_tensor({ n_embd, n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
+                                                tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), 0, local_dev);
+                            }
                         }
                     }
                 }

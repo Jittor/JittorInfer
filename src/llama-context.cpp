@@ -313,8 +313,24 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
             } else {
                 GGML_ASSERT(lctx.n_outputs == 0);
             }
-            for (int i = n_tokens; i < cparams.n_ubatch; ++i) {
-                data[i] = n_tokens - 1;
+            int32_t dummy_idx = 0;
+            while(dummy_idx < cparams.n_ubatch) {
+                bool flag = true;
+                for (int i = 0; i < lctx.n_outputs; ++i) {
+                    if (data[i] == dummy_idx) {
+                        flag = false;
+                        break;
+                    }
+                }
+                if (flag) {
+                    break;
+                }
+                dummy_idx++;
+            }
+            if (dummy_idx < cparams.n_ubatch) {
+                for (int i = lctx.n_outputs; i < lctx.inp_out_ids->ne[0]; ++i) {
+                    data[i] = n_tokens;
+                }
             }
         }
     }

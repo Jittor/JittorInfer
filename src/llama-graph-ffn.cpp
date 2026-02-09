@@ -84,18 +84,8 @@ struct ggml_tensor * llm_build_ffn(struct ggml_context * ctx, struct llama_conte
             break;
         case LLM_FFN_SWIGLU:
             {
-                // Project to 4h. If using swiglu double the output width, see https://arxiv.org/pdf/2002.05202.pdf
-                int64_t              split_point = cur->ne[0] / 2;
-                struct ggml_tensor * x0 =
-                    ggml_cont(ctx, ggml_view_2d(ctx, cur, split_point, cur->ne[1], cur->nb[1], 0));
-                struct ggml_tensor * x1 = ggml_cont(ctx, ggml_view_2d(ctx, cur, split_point, cur->ne[1], cur->nb[1],
-                                                                      split_point * ggml_element_size(cur)));
-
-                x0 = ggml_silu(ctx, x0);
-                cb(cur, "ffn_silu", il);
-
-                cur = ggml_mul(ctx, x0, x1);
-                cb(cur, "ffn_mul", il);
+                cur = ggml_moe_swiglu(ctx, cur, 0, 2);
+                cb(cur, "ffn_swiglu", il);
             }
             break;
     }

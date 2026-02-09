@@ -208,8 +208,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         // cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
 
         if ((uint32_t) il < hparams.n_layer_dense_lead) {
-            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, model.layers[il].ffn_gate, NULL,
-                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il,
+            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL,
+                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il,
                                 false);
             cb(cur, "ffn_out", il);
         } else {
@@ -227,8 +227,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             // FFN shared expert
             {
                 ggml_tensor * ffn_shexp = llm_build_ffn(
-                    ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL, model.layers[il].ffn_gate_shexp, NULL,
-                    NULL, model.layers[il].ffn_down_shexp, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il, false);
+                    ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL, NULL, NULL,
+                    NULL, model.layers[il].ffn_down_shexp, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, false);
                 cb(ffn_shexp, "ffn_shexp", il);
                 // cur = ggml_cast(ctx0, moe_out, GGML_TYPE_F32);
                 cur = ggml_add(ctx0, moe_out, ffn_shexp);
