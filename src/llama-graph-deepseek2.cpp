@@ -204,6 +204,10 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
         // self_attention
         if (!run_mlp_only) {
             struct ggml_tensor * q = NULL;
+            struct ggml_tensor * q_nope = NULL;
+            struct ggml_tensor * q_pe = NULL;
+            struct ggml_tensor * kv_compressed = NULL;
+            struct ggml_tensor * k_pe = NULL;
             if (!is_lite) {
                 // {n_embd, q_lora_rank} * {n_embd, n_tokens} -> {q_lora_rank, n_tokens}
                 q = ggml_mul_mat(ctx0, model.layers[il].wq_a, cur);
@@ -215,40 +219,66 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
                 // {q_lora_rank, n_head * hparams.n_embd_head_k} * {q_lora_rank, n_tokens} -> {n_head * hparams.n_embd_head_k, n_tokens}
                 q = ggml_mul_mat(ctx0, model.layers[il].wq_b, q);
                 cb(q, "q", il);
+
+                q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
+                struct ggml_tensor * qsplit[2];
+                int32_t              split_size[2] = { (int32_t) n_embd_head_qk_nope, (int32_t) n_embd_head_qk_rope };
+                ggml_build_forward_expand(gf, ggml_split(ctx0, q, qsplit, 3, 0, 2, split_size));
+                q_nope = qsplit[0];
+                cb(q_nope, "q_nope", il);
+                q_pe = qsplit[1];
+                cb(q_pe, "q_pe", il);
+
+                // {n_embd, kv_lora_rank + n_embd_head_qk_rope} * {n_embd, n_tokens} -> {kv_lora_rank + n_embd_head_qk_rope, n_tokens}
+                struct ggml_tensor * kv_pe_compresseed = ggml_mul_mat(ctx0, model.layers[il].wkv_a_mqa, cur);
+                cb(kv_pe_compresseed, "kv_pe_compresseed", il);
+
+                // split into {kv_lora_rank, n_tokens}
+                kv_compressed = ggml_view_2d(ctx0, kv_pe_compresseed, kv_lora_rank, n_tokens, kv_pe_compresseed->nb[1], 0);
+                cb(kv_compressed, "kv_compressed", il);
+
+                // and {n_embd_head_qk_rope, n_tokens}
+                k_pe = ggml_view_3d(ctx0, kv_pe_compresseed, n_embd_head_qk_rope, 1, n_tokens, kv_pe_compresseed->nb[1],
+                                kv_pe_compresseed->nb[1], ggml_row_size(kv_pe_compresseed->type, kv_lora_rank));
+                cb(k_pe, "k_pe", il);
+
+                // TODO: the CUDA backend used to not support non-cont. (RMS) norm, investigate removing ggml_cont
+                kv_compressed = ggml_cont(ctx0, kv_compressed);
+                kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
+                                            LLM_NORM_RMS, cb, il);
+                cb(kv_compressed, "kv_compressed", il);
             } else {
                 q = ggml_mul_mat(ctx0, model.layers[il].wq, cur);
                 cb(q, "q", il);
+
+                q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
+                struct ggml_tensor * qsplit[2];
+                int32_t              split_size[2] = { (int32_t) n_embd_head_qk_nope, (int32_t) n_embd_head_qk_rope };
+                ggml_build_forward_expand(gf, ggml_split(ctx0, q, qsplit, 3, 0, 2, split_size));
+                q_nope = qsplit[0];
+                cb(q_nope, "q_nope", il);
+                q_pe = qsplit[1];
+                cb(q_pe, "q_pe", il);
+
+                // {n_embd, kv_lora_rank + n_embd_head_qk_rope} * {n_embd, n_tokens} -> {kv_lora_rank + n_embd_head_qk_rope, n_tokens}
+                struct ggml_tensor * kv_pe_compresseed = ggml_mul_mat(ctx0, model.layers[il].wkv_a_mqa, cur);
+                cb(kv_pe_compresseed, "kv_pe_compresseed", il);
+
+                // split into {kv_lora_rank, n_tokens}
+                kv_compressed = ggml_view_2d(ctx0, kv_pe_compresseed, kv_lora_rank, n_tokens, kv_pe_compresseed->nb[1], 0);
+                cb(kv_compressed, "kv_compressed", il);
+
+                // and {n_embd_head_qk_rope, n_tokens}
+                k_pe = ggml_view_3d(ctx0, kv_pe_compresseed, n_embd_head_qk_rope, 1, n_tokens, kv_pe_compresseed->nb[1],
+                                kv_pe_compresseed->nb[1], ggml_row_size(kv_pe_compresseed->type, kv_lora_rank));
+                cb(k_pe, "k_pe", il);
+
+                // TODO: the CUDA backend used to not support non-cont. (RMS) norm, investigate removing ggml_cont
+                kv_compressed = ggml_cont(ctx0, kv_compressed);
+                kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
+                                            LLM_NORM_RMS, cb, il);
+                cb(kv_compressed, "kv_compressed", il);
             }
-
-            q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
-            struct ggml_tensor * qsplit[2];
-            int32_t              split_size[2] = { (int32_t) n_embd_head_qk_nope, (int32_t) n_embd_head_qk_rope };
-            ggml_build_forward_expand(gf, ggml_split(ctx0, q, qsplit, 3, 0, 2, split_size));
-            struct ggml_tensor * q_nope = qsplit[0];
-            cb(q_nope, "q_nope", il);
-            struct ggml_tensor * q_pe = qsplit[1];
-            cb(q_pe, "q_pe", il);
-
-            // {n_embd, kv_lora_rank + n_embd_head_qk_rope} * {n_embd, n_tokens} -> {kv_lora_rank + n_embd_head_qk_rope, n_tokens}
-            struct ggml_tensor * kv_pe_compresseed = ggml_mul_mat(ctx0, model.layers[il].wkv_a_mqa, cur);
-            cb(kv_pe_compresseed, "kv_pe_compresseed", il);
-
-            // split into {kv_lora_rank, n_tokens}
-            struct ggml_tensor * kv_compressed =
-                ggml_view_2d(ctx0, kv_pe_compresseed, kv_lora_rank, n_tokens, kv_pe_compresseed->nb[1], 0);
-            cb(kv_compressed, "kv_compressed", il);
-
-            // and {n_embd_head_qk_rope, n_tokens}
-            struct ggml_tensor * k_pe =
-                ggml_view_3d(ctx0, kv_pe_compresseed, n_embd_head_qk_rope, 1, n_tokens, kv_pe_compresseed->nb[1],
-                             kv_pe_compresseed->nb[1], ggml_row_size(kv_pe_compresseed->type, kv_lora_rank));
-            cb(k_pe, "k_pe", il);
-
-            // TODO: the CUDA backend used to not support non-cont. (RMS) norm, investigate removing ggml_cont
-            kv_compressed = ggml_cont(ctx0, kv_compressed);
-            kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
-                                           LLM_NORM_RMS, cb, il);
-            cb(kv_compressed, "kv_compressed", il);
 
             if (hparams.enable_mla) {
                 q_pe = ggml_cont(
