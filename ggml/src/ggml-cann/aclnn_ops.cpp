@@ -75,6 +75,7 @@
 #include "aclnnop/aclnn_moe_finalize_routing_v2.h"
 #include "aclnnop/aclnn_moe_init_routing.h"
 #include "aclnnop/aclnn_moe_init_routing_v2.h"
+#include "aclnnop/aclnn_swi_glu.h"
 #include "ggml-impl.h"
 #include "kernels/ascendc_kernels.h"
 
@@ -6893,5 +6894,46 @@ void ggml_cann_moe_finalize_routing(ggml_backend_cann_context& ctx, ggml_tensor*
     ACL_CHECK(aclDestroyTensor(acl_x));
     ACL_CHECK(aclDestroyTensor(acl_row_idx));
     ACL_CHECK(aclDestroyTensor(acl_scales));
+    ACL_CHECK(aclDestroyTensor(acl_dst));
+}
+
+void ggml_cann_moe_swiglu(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+    ggml_tensor* x = dst->src[0];
+    int64_t dim = ggml_get_op_params_i32(dst, 0);
+    int64_t ndim = ggml_get_op_params_i32(dst, 1);
+    
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(dim >= 0 && dim < ndim);
+    
+    // dim for aclnn
+    dim = ndim - dim - 1;
+
+    // Create ACL tensor for input
+    aclTensor* acl_x = ggml_cann_create_tensor(x, nullptr, nullptr, 
+                                               ndim, ACL_FORMAT_ND, 0);
+    
+    // Create ACL tensor for output
+    aclTensor* acl_dst = ggml_cann_create_tensor(dst, nullptr, nullptr, 
+                                                 ndim, ACL_FORMAT_ND, 0);
+    
+    // Get workspace size
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor = nullptr;
+    
+    ACL_CHECK(aclnnSwiGluGetWorkspaceSize(acl_x, dim, acl_dst, 
+                                          &workspaceSize, &executor));
+    
+    // Allocate workspace
+    void* workspaceAddr = nullptr;
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
+    }
+    
+    // Execute
+    ACL_CHECK(aclnnSwiGlu(workspaceAddr, workspaceSize, executor, ctx.stream()));
+    
+    // Cleanup
+    ACL_CHECK(aclDestroyTensor(acl_x));
     ACL_CHECK(aclDestroyTensor(acl_dst));
 }

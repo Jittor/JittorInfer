@@ -611,6 +611,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         const int64_t n_expert      = hparams.n_expert;
         const int64_t n_expert_used = hparams.n_expert_used;
         // const int64_t n_ctx_train   = hparams.n_ctx_train;
+        bool merge_matrix = true;
 
         if (n_expert > 0 && hparams.n_expert_used == 0) {
             throw std::runtime_error("model has expert layers but no expert layers are used");
@@ -835,28 +836,38 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             if (n_expert_used == 0) {
                                 throw std::runtime_error("n_expert_used must be > 0");
                             }
-
-                            // MoE branch
-                            if (hparams.enable_expert_parallel) {
-                                layer.ffn_gate_exps =
-                                    create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM2,
-                                                  tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0, local_dev);
-                                layer.ffn_down_exps =
-                                    create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_3d_DIM2,
-                                                  tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0, local_dev);
+                            if (merge_matrix) {
+                                // merge gate
                                 layer.ffn_up_exps =
-                                    create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM2,
+                                    create_tensor({ n_embd, n_ff_exp + n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
                                                   tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0, local_dev);
-                            } else {
-                                layer.ffn_gate_exps =
-                                    create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
-                                                  tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0, local_dev);
                                 layer.ffn_down_exps =
                                     create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_3d_DIM0,
                                                   tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0, local_dev);
-                                layer.ffn_up_exps =
-                                    create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
-                                                  tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0, local_dev);
+                            } else {
+
+                                // MoE branch
+                                if (hparams.enable_expert_parallel) {
+                                    layer.ffn_gate_exps =
+                                        create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM2,
+                                                    tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0, local_dev);
+                                    layer.ffn_down_exps =
+                                        create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_3d_DIM2,
+                                                    tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0, local_dev);
+                                    layer.ffn_up_exps =
+                                        create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM2,
+                                                    tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0, local_dev);
+                                } else {
+                                    layer.ffn_gate_exps =
+                                        create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
+                                                    tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), 0, local_dev);
+                                    layer.ffn_down_exps =
+                                        create_tensor({ n_ff_exp, n_embd, n_expert }, LLM_SPLIT_3d_DIM0,
+                                                    tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), 0, local_dev);
+                                    layer.ffn_up_exps =
+                                        create_tensor({ n_embd, n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
+                                                    tn(LLM_TENSOR_FFN_UP_EXPS, "weight", i), 0, local_dev);
+                                }
                             }
 
                             // Shared expert branch

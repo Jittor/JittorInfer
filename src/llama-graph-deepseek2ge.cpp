@@ -216,7 +216,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             // MoE branch
             ggml_tensor * moe_out = llm_build_moe_ffn_merge(
                 ctx0, lctx, gf, cur, model.layers[il].ffn_gate_inp, model.layers[il].ffn_up_exps,
-                model.layers[il].ffn_gate_exps, model.layers[il].ffn_down_exps, model.layers[il].ffn_exp_probs_b,
+                model.layers[il].ffn_down_exps, model.layers[il].ffn_exp_probs_b,
                 n_expert, n_expert_used,
                 hparams.expert_weights_norm, true, hparams.expert_weights_scale,
                 (enum llama_expert_gating_func_type) hparams.expert_gating_func, cb, il);

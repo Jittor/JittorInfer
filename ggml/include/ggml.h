@@ -549,6 +549,7 @@ enum ggml_op {
     GGML_OP_MOE_INIT_ROUTING,
     GGML_OP_MOE_GROUPED_MATMUL,
     GGML_OP_MOE_FINALIZE_ROUTING,
+    GGML_OP_MOE_SWIGLU,
     GGML_OP_RMS_NORM_FUSED,
 
     GGML_OP_COUNT,
@@ -996,6 +997,9 @@ GGML_API struct ggml_tensor * ggml_moe_grouped_matmul(
 
 GGML_API struct ggml_tensor * ggml_moe_finalize_routing(
     struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * row_idx, struct ggml_tensor * scales);
+
+GGML_API struct ggml_tensor * ggml_moe_swiglu(
+    struct ggml_context * ctx, struct ggml_tensor * x, int dim, int ndim);
 
 GGML_API struct ggml_tensor * ggml_moe_fused_fp16(
     struct ggml_context * ctx, struct ggml_tensor * input, struct ggml_tensor * ids, struct ggml_tensor * topk_weights,

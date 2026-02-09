@@ -1043,6 +1043,8 @@ class DeepseekV2Model(Model):
                     new_name = self.map_tensor_name(merged_name)
 
                     tensors.append((new_name, data_torch))
+                up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=1)
+                tensors = [tensors[0], (tensors[2][0], up_proj)]
                 return tensors
             else:
                 return []

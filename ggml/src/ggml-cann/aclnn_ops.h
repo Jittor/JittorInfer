@@ -473,6 +473,20 @@ void ggml_cann_moe_grouped_matmul(ggml_backend_cann_context& ctx, ggml_tensor* d
 void ggml_cann_moe_finalize_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
+ * @brief   Performs MOE SwiGLU activation using aclnnSwiGlu.
+ *
+ * @param ctx CANN backend context
+ * @param dst Output tensor with GGML_OP_MOE_SWIGLU operation type.
+ *            Input tensors:
+ *            - src[0]: x (input tensor)
+ *            Parameters:
+ *            - op_params[0]: dim (dimension along which to split)
+ *            Output tensor:
+ *            - dst: result (same shape as input)
+ */
+void ggml_cann_moe_swiglu(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
  * @brief   Computes the Root Mean Square (RMS) normalization of a ggml tensor
  *          using the CANN backend.
  *

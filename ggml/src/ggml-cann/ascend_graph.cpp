@@ -647,6 +647,16 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 }
                 break;
             }
+            case GGML_OP_MOE_SWIGLU: {
+                // 处理MOE SwiGLU激活操作
+                Operator swiglu_op = handle_moe_swiglu_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = swiglu_op;
+                if (node == last_op_node) {
+                    graph_outputs.push_back(swiglu_op);
+                }
+                break;
+            }
             case GGML_OP_FLASH_ATTN_PROMPT: {
                 Operator op_node = handle_flash_attn_prompt_op(
                     graph, node, ggml_tensor_to_ge_op_map, i);

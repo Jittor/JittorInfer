@@ -2857,6 +2857,75 @@ ge::Operator handle_moe_finalize_routing_op(
 }
 
 /**
+ * @brief 处理MOE SwiGLU激活算子
+ *
+ * 使用SwiGlu接口完成SwiGLU激活函数
+ * 输入: x (input tensor)
+ * 参数: dim (dimension along which to split)
+ * 输出: result (same shape as input)
+ *
+ * @param graph 计算图引用
+ * @param node 当前节点
+ * @param ggml_tensor_to_ge_op_map 张量到算子的映射
+ * @param op_index 算子索引
+ * @return 创建的SwiGlu算子
+ */
+ge::Operator handle_moe_swiglu_op(
+    ge::Graph &graph, ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
+    int op_index) {
+    
+    // 获取输入张量
+    struct ggml_tensor *x = node->src[0];
+    
+    assert(x && "MOE_SWIGLU: missing input tensor x");
+    
+    // 获取dim参数
+    int64_t dim = node->op_params[0];
+    int64_t ndim = node->op_params[1];
+    dim = ndim - dim - 1;
+    
+    // 获取输入算子
+    ge::Operator x_op;
+    if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
+        x_op = ggml_tensor_to_ge_op_map[x];
+    } else {
+        assert(false && "MOE_SWIGLU: x tensor not found in map");
+    }
+    // 确保维度合法
+    std::vector<int64_t> target_shape;
+    target_shape.resize(ndim);
+    for (int64_t i = 0; i < ndim; i++) {
+        target_shape[i] = x->ne[ndim-i-1];
+    }
+    x_op = create_reshape_op(graph, x_op,
+        target_shape,
+        "moe_swiglu_reshape_x" + std::to_string(op_index), get_data_type(x->type));
+    
+    // 创建SwiGlu算子
+    std::string op_name = "moe_swiglu_" + std::to_string(op_index);
+    ge::op::SwiGlu swiglu_op(op_name.c_str());
+    
+    // 设置输入
+    swiglu_op.set_input_x(x_op);
+    
+    // 设置属性
+    swiglu_op.set_attr_dim(dim);
+    
+    // 设置输出描述
+    ge::TensorDesc output_desc(
+        ge::Shape({node->ne[3], node->ne[2], node->ne[1], node->ne[0]}),
+        ge::FORMAT_ND,
+        get_data_type(node->type)
+    );
+    swiglu_op.update_output_desc_y(output_desc);
+    
+    graph.AddOp(swiglu_op);
+    
+    return swiglu_op;
+}
+
+/**
  * @brief 创建通用的Reshape操作
  *
  * 这是一个通用的reshape函数，可以被多个算子调用

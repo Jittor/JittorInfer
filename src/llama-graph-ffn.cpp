@@ -288,8 +288,7 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
 }
 
 struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_cgraph * graph, struct ggml_tensor * cur,
-                                       struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps,
-                                       struct ggml_tensor * gate_exps, struct ggml_tensor * down_exps,
+                                       struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps, struct ggml_tensor * down_exps,
                                        struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
                                        bool norm_w, bool scale_w, float w_scale,
                                        llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il) {
@@ -377,12 +376,7 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
     cb(token_count, "ffn_moe_token_count", il);
     ggml_tensor * ffn_moe_up = ggml_moe_grouped_matmul(ctx, cur_new, up_exps, token_count, true);
     cb(ffn_moe_up, "ffn_moe_up", il);
-    ggml_tensor * ffn_moe_gate = ggml_moe_grouped_matmul(ctx, cur_new, gate_exps, token_count, true);
-    cb(ffn_moe_gate, "ffn_moe_gate", il);
-    ffn_moe_gate = ggml_cast(ctx, ffn_moe_gate, GGML_TYPE_F32);
-    ffn_moe_gate = ggml_silu(ctx, ffn_moe_gate);
-    ffn_moe_gate = ggml_cast(ctx, ffn_moe_gate, GGML_TYPE_F16);
-    ggml_tensor * ffn_moe_par = ggml_mul(ctx, ffn_moe_up, ffn_moe_gate);
+    ggml_tensor * ffn_moe_par = ggml_moe_swiglu(ctx, ffn_moe_up, 0, 2);
     cb(ffn_moe_par, "ffn_moe_par", il);
     ggml_tensor * ffn_moe_down = ggml_moe_grouped_matmul(ctx, ffn_moe_par, down_exps, token_count, true);
     cb(ffn_moe_down, "ffn_moe_down", il);

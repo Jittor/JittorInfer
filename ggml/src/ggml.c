@@ -933,10 +933,10 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
     "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_MLA_JITTOR",
     "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE", "GGML_OP_SPLIT",
-    "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_RMS_NORM_FUSED"
+    "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_MOE_SWIGLU", "GGML_OP_RMS_NORM_FUSED"
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
@@ -1049,9 +1049,10 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "moe_init_routing(x, expert_idx)",
                                                       "moe_grouped_matmul(x, weight, token_count)",
                                                       "moe_finalize_routing(x, row_idx, scales)",
+                                                      "moe_swiglu(x, dim)",
                                                       "rms_norm(x, w)" };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -2731,6 +2732,33 @@ struct ggml_tensor * ggml_moe_finalize_routing(
     result->src[0] = x;
     result->src[1] = row_idx;
     result->src[2] = scales;
+    
+    return result;
+}
+
+// ggml_moe_swiglu
+
+struct ggml_tensor * ggml_moe_swiglu(
+    struct ggml_context * ctx, struct ggml_tensor * x, int dim, int ndim) {
+    
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(dim >= 0 && dim < ndim);
+    GGML_ASSERT(x->ne[dim] % 2 == 0);
+    
+    // x: input tensor
+    // dim: dimension along which to split for SwiGLU
+    // output: same shape as input
+    
+    int64_t ne[GGML_MAX_DIMS];
+    for (int i = 0; i < ndim; i++) {
+        ne[i] = x->ne[i];
+    }
+    ne[dim] = ne[dim] / 2;
+    struct ggml_tensor * result = ggml_new_tensor(ctx, x->type, ndim, ne);
+    result->op = GGML_OP_MOE_SWIGLU;
+    result->src[0] = x;
+    ggml_set_op_params_i32(result, 0, dim);
+    ggml_set_op_params_i32(result, 1, ndim);
     
     return result;
 }
