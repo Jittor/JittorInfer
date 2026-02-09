@@ -287,6 +287,113 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
     return moe_out;
 }
 
+struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_cgraph * graph, struct ggml_tensor * cur,
+                                       struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps,
+                                       struct ggml_tensor * gate_exps, struct ggml_tensor * down_exps,
+                                       struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
+                                       bool norm_w, bool scale_w, float w_scale,
+                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il) {
+    ggml_tensor * cur_f32;
+    if (cur->type != GGML_TYPE_F32) {
+        cur_f32 = ggml_cast(ctx, cur, GGML_TYPE_F32);
+        cb(cur_f32, "moe_cast", il);
+    } else {
+        cur_f32 = cur;
+    }
+    int64_t n_embd   = cur->ne[0];
+    int64_t n_tokens = cur->ne[1];
+
+    ggml_tensor * logits = llm_build_lora_mm(lctx, ctx, gate_inp, cur_f32);  // [n_expert, n_tokens]
+    cb(logits, "ffn_moe_logits", il);
+
+    ggml_tensor * probs = nullptr;
+    switch (gating_op) {
+        case LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX:
+            {
+                probs = ggml_soft_max(ctx, logits);  // [n_expert, n_tokens]
+            }
+            break;
+        case LLAMA_EXPERT_GATING_FUNC_TYPE_SIGMOID:
+            {
+                probs = ggml_sigmoid(ctx, logits);  // [n_expert, n_tokens]
+            }
+            break;
+        default:
+            GGML_ABORT("fatal error");
+    }
+    cb(probs, "ffn_moe_probs", il);
+
+    // add experts selection bias - introduced in DeepSeek V3
+    // leave probs unbiased as it's later used to get expert weights
+    ggml_tensor * selection_probs = probs;
+    if (exp_probs_b != nullptr) {
+        selection_probs = ggml_add(ctx, probs, exp_probs_b);
+        cb(selection_probs, "ffn_moe_probs_biased", il);
+    }
+
+    // select experts
+    ggml_tensor * ffn_moe_argsort  = ggml_argsort(ctx, selection_probs, GGML_SORT_ORDER_DESC);
+    ggml_tensor * selected_experts = ggml_get_slice(ctx, ffn_moe_argsort, 0, n_expert_used, 0);
+    cb(ffn_moe_argsort, "ffn_moe_argsort", il);
+    cb(selected_experts, "ffn_moe_topk", il);
+
+    ggml_tensor * weights = ggml_get_rows(ctx, ggml_reshape_3d(ctx, probs, 1, n_expert, n_tokens),
+                                          selected_experts);  // [1, n_expert_used, n_tokens]
+    cb(weights, "ffn_moe_weights", il);
+
+    if (norm_w) {
+        weights = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
+
+        ggml_tensor * weights_sum = ggml_sum_rows(ctx, weights);  // [1, n_tokens]
+        cb(weights_sum, "ffn_moe_weights_sum", il);
+
+        weights = ggml_div(ctx, weights, weights_sum);  // [n_expert_used, n_tokens]
+        cb(weights, "ffn_moe_weights_norm", il);
+
+        weights = ggml_reshape_3d(ctx, weights, 1, n_expert_used, n_tokens);
+    }
+    if (scale_w) {
+        weights = ggml_scale(ctx, weights, w_scale);
+        cb(weights, "ffn_moe_weights_scaled", il);
+    }
+
+    // aggregate experts
+    ggml_tensor * moe_out = nullptr;
+
+    if (n_tokens == 0) {
+        moe_out = ggml_new_tensor_2d(ctx, cur->type, n_embd, n_tokens);
+        cb(moe_out, "moe_out_after_cast", il);
+        return moe_out;
+    }
+    ggml_tensor * cur_new;
+    ggml_tensor * premute_row_idx;
+    ggml_tensor * token_count;
+    cur = ggml_reshape_2d(ctx, cur, n_embd, n_tokens);
+    cur = ggml_cast(ctx, cur, GGML_TYPE_F16);
+    ggml_build_forward_expand(graph, ggml_moe_init_routing(ctx, cur, selected_experts, n_expert, &cur_new, &premute_row_idx, &token_count));
+    token_count = ggml_cast(ctx, token_count, GGML_TYPE_I64);
+    cb(cur_new, "ffn_moe_cur_new", il);
+    cb(premute_row_idx, "ffn_moe_premute_row_idx", il);
+    cb(token_count, "ffn_moe_token_count", il);
+    ggml_tensor * ffn_moe_up = ggml_moe_grouped_matmul(ctx, cur_new, up_exps, token_count, true);
+    cb(ffn_moe_up, "ffn_moe_up", il);
+    ggml_tensor * ffn_moe_gate = ggml_moe_grouped_matmul(ctx, cur_new, gate_exps, token_count, true);
+    cb(ffn_moe_gate, "ffn_moe_gate", il);
+    ffn_moe_gate = ggml_cast(ctx, ffn_moe_gate, GGML_TYPE_F32);
+    ffn_moe_gate = ggml_silu(ctx, ffn_moe_gate);
+    ffn_moe_gate = ggml_cast(ctx, ffn_moe_gate, GGML_TYPE_F16);
+    ggml_tensor * ffn_moe_par = ggml_mul(ctx, ffn_moe_up, ffn_moe_gate);
+    cb(ffn_moe_par, "ffn_moe_par", il);
+    ggml_tensor * ffn_moe_down = ggml_moe_grouped_matmul(ctx, ffn_moe_par, down_exps, token_count, true);
+    cb(ffn_moe_down, "ffn_moe_down", il);
+    weights = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
+    ffn_moe_down = ggml_cast(ctx, ffn_moe_down, GGML_TYPE_F32);
+    moe_out = ggml_moe_finalize_routing(ctx, ffn_moe_down, premute_row_idx, weights);
+
+    cb(moe_out, "moe_out_after_cast", il);
+
+    return moe_out;
+}
 struct ggml_tensor * llm_build_moe_ffn_ge(struct ggml_context * ctx, struct llama_context & lctx,
                                           struct ggml_tensor * cur, struct ggml_tensor * gate_inp,
                                           struct ggml_tensor * up_exps, struct ggml_tensor * gate_exps,

@@ -933,10 +933,10 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
     "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_MLA_JITTOR",
     "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE", "GGML_OP_SPLIT",
-    "GGML_OP_RMS_NORM_FUSED"
+    "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_RMS_NORM_FUSED"
 };
 
-static_assert(GGML_OP_COUNT == 98, "GGML_OP_COUNT != 98");
+static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
@@ -1042,13 +1042,16 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "flash_attn_jittor_v1(q, k, v)",
                                                       "mla_jittor(q, qrope, ctkv, krope)",
                                                       "mla_prefill_jittor(q, qrope, k, krope, v)",
-                                                      "mla_preprocess(x, ...)"
+                                                      "mla_preprocess(x, ...)",
                                                       "get_slice(x, i)",
                                                       "scatter_update(x, y, i)",
                                                       "split(x, dim, sizes)",
+                                                      "moe_init_routing(x, expert_idx)",
+                                                      "moe_grouped_matmul(x, weight, token_count)",
+                                                      "moe_finalize_routing(x, row_idx, scales)",
                                                       "rms_norm(x, w)" };
 
-static_assert(GGML_OP_COUNT == 98, "GGML_OP_COUNT != 98");
+static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -2610,6 +2613,125 @@ struct ggml_tensor * ggml_moe_fused_cpu(struct ggml_context * ctx, struct ggml_t
 struct ggml_tensor * ggml_flash_attn_prompt_cpu(struct ggml_context * ctx, struct ggml_tensor * input) {
     struct ggml_tensor * result = ggml_dup(ctx, input);
     result->op                  = GGML_OP_FLASH_ATTN_PROMPT_CPU;
+    return result;
+}
+
+// ggml_moe_init_routing
+
+struct ggml_tensor * ggml_moe_init_routing(
+    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * expert_idx,
+    int32_t n_expert,
+    struct ggml_tensor ** output, struct ggml_tensor ** row_idx, struct ggml_tensor ** token_count) {
+    
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(expert_idx != NULL);
+
+    GGML_ASSERT(x->ne[2] == x->ne[3] == 1);
+    GGML_ASSERT(expert_idx->ne[2] == expert_idx->ne[3] == 1);
+    GGML_ASSERT(x->ne[1] == expert_idx->ne[1]);
+
+    int32_t now_rows = expert_idx->ne[1];
+    int32_t now_expert_per_row = expert_idx->ne[0];
+    int32_t h_x = x->ne[0];
+
+    struct ggml_tensor * output_tensor = ggml_new_tensor_2d(ctx, x->type, h_x, now_rows * now_expert_per_row);
+    struct ggml_tensor * row_idx_tensor = ggml_new_tensor_1d(ctx, expert_idx->type, now_rows * now_expert_per_row);
+    struct ggml_tensor * token_count_tensor = ggml_new_tensor_1d(ctx, expert_idx->type, n_expert);
+
+    output_tensor->op = GGML_OP_MOE_INIT_ROUTING;
+    output_tensor->src[0] = x;
+    output_tensor->src[1] = expert_idx;
+    ggml_set_op_params_i32(output_tensor, 0, 0);
+    ggml_set_op_params_i32(output_tensor, 1, n_expert);
+
+    row_idx_tensor->op = GGML_OP_MOE_INIT_ROUTING;
+    row_idx_tensor->src[0] = x;
+    row_idx_tensor->src[1] = expert_idx;
+    row_idx_tensor->src[2] = output_tensor;
+    ggml_set_op_params_i32(row_idx_tensor, 0, 1);
+    ggml_set_op_params_i32(row_idx_tensor, 1, n_expert);
+
+    token_count_tensor->op = GGML_OP_MOE_INIT_ROUTING;
+    token_count_tensor->src[0] = x;
+    token_count_tensor->src[1] = expert_idx;
+    token_count_tensor->src[2] = output_tensor;
+    token_count_tensor->src[3] = row_idx_tensor;
+    ggml_set_op_params_i32(token_count_tensor, 0, 2);
+    ggml_set_op_params_i32(token_count_tensor, 1, n_expert);
+
+    *output = output_tensor;
+    *row_idx = row_idx_tensor;
+    *token_count = token_count_tensor;
+    
+    return token_count_tensor;
+}
+
+// ggml_moe_grouped_matmul
+
+struct ggml_tensor * ggml_moe_grouped_matmul(
+    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * weight, struct ggml_tensor * token_count,
+    bool transpose_weight) {
+    
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(weight != NULL);
+    GGML_ASSERT(token_count != NULL);
+    
+    // x: [h_x, total_tokens]
+    // weight: [h_out, h_x, n_expert]
+    // token_count: [n_expert]
+    // output: [h_out, total_tokens]
+    
+    GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);
+    GGML_ASSERT(weight->ne[3] == 1);
+    GGML_ASSERT(token_count->ne[1] == 1 && token_count->ne[2] == 1 && token_count->ne[3] == 1);
+    if (!transpose_weight) {
+        GGML_ASSERT(x->ne[0] == weight->ne[1]); // h_x must match
+    } else {
+        GGML_ASSERT(x->ne[0] == weight->ne[0]); // h_x must match
+    }
+    GGML_ASSERT(weight->ne[2] == token_count->ne[0]); // n_expert must match
+    
+    int64_t h_out = transpose_weight ? weight->ne[1] : weight->ne[0];
+    int64_t total_tokens = x->ne[1];
+    
+    struct ggml_tensor * result = ggml_new_tensor_2d(ctx, x->type, h_out, total_tokens);
+    result->op = GGML_OP_MOE_GROUPED_MATMUL;
+    result->src[0] = x;
+    result->src[1] = weight;
+    result->src[2] = token_count;
+    ggml_set_op_params_i32(result, 0, transpose_weight);
+    
+    return result;
+}
+
+// ggml_moe_finalize_routing
+
+struct ggml_tensor * ggml_moe_finalize_routing(
+    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * row_idx, struct ggml_tensor * scales) {
+    
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(row_idx != NULL);
+    GGML_ASSERT(scales != NULL);
+    
+    // x: [h, total_tokens] - input from grouped matmul
+    // row_idx: [k * n_tokens] - original row indices
+    // scales: [k, n_tokens] - scaling factors
+    // output: [h, n_tokens] - finalized output
+    
+    GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);
+    GGML_ASSERT(row_idx->ne[1] == 1 && row_idx->ne[2] == 1 && row_idx->ne[3] == 1);
+    GGML_ASSERT(scales->ne[2] == 1 && scales->ne[3] == 1);
+    GGML_ASSERT(row_idx->ne[0] == scales->ne[0] * scales->ne[1]); // k must match
+    
+    int64_t h = x->ne[0];
+    int64_t n_tokens = scales->ne[1];
+    
+    struct ggml_tensor * result = ggml_new_tensor_2d(ctx, x->type, h, n_tokens);
+    result->op = GGML_OP_MOE_FINALIZE_ROUTING;
+    result->src[0] = x;
+    result->src[1] = row_idx;
+    result->src[2] = scales;
+    
     return result;
 }
 

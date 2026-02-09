@@ -383,10 +383,10 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
             cb(cur, "ffn_out", il);
         } else {
             // MoE branch
-            ggml_tensor * moe_out = llm_build_moe_ffn(
-                ctx0, lctx, cur, model.layers[il].ffn_gate_inp, model.layers[il].ffn_up_exps,
+            ggml_tensor * moe_out = llm_build_moe_ffn_merge(
+                ctx0, lctx, gf, cur, model.layers[il].ffn_gate_inp, model.layers[il].ffn_up_exps,
                 model.layers[il].ffn_gate_exps, model.layers[il].ffn_down_exps, model.layers[il].ffn_exp_probs_b,
-                n_expert, n_expert_used, expert_group_id, n_expert_groups, LLM_FFN_SILU, hparams.enable_fused_moe,
+                n_expert, n_expert_used,
                 hparams.expert_weights_norm, true, hparams.expert_weights_scale,
                 (enum llama_expert_gating_func_type) hparams.expert_gating_func, cb, il);
             cb(moe_out, "ffn_moe_out", il);

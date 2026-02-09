@@ -428,6 +428,51 @@ void ggml_cann_scatter_update(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_split(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
+ * @brief   Performs MOE (Mixture of Experts) initialization routing operation.
+ *
+ * @param ctx CANN backend context
+ * @param dst The last output tensor with GGML_OP_MOE_INIT_ROUTING operation type.
+ *            The active_num parameter is stored in dst->op_params[0].
+ *            Input tensors:
+ *            - src[0]: x (input tensor)
+ *            - src[1]: row_idx
+ *            - src[2]: expert_idx
+ *            Output tensors:
+ *            - src[3]: output (expanded x)
+ *            - src[4]: expand_row_idx
+ *            - src[5]: expand_expert_idx (dst itself)
+ */
+void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
+ * @brief   Performs MOE grouped matrix multiplication using aclnnGroupedMatmulV4.
+ *
+ * @param ctx CANN backend context
+ * @param dst Output tensor with GGML_OP_MOE_GROUPED_MATMUL operation type.
+ *            Input tensors:
+ *            - src[0]: x (input tensor, shape: [h_x, total_tokens])
+ *            - src[1]: weight (expert weights, shape: [h_out, h_x, n_expert])
+ *            - src[2]: token_count (tokens per expert, shape: [n_expert])
+ *            Output tensor:
+ *            - dst: result (shape: [h_out, total_tokens])
+ */
+void ggml_cann_moe_grouped_matmul(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
+ * @brief   Performs MOE finalize routing using aclnnMoeFinalizeRoutingV2.
+ *
+ * @param ctx CANN backend context
+ * @param dst Output tensor with GGML_OP_MOE_FINALIZE_ROUTING operation type.
+ *            Input tensors:
+ *            - src[0]: x (expanded input from grouped matmul, shape: [h, total_tokens])
+ *            - src[1]: row_idx (original row indices, shape: [k, n_tokens])
+ *            - src[2]: scales (scaling factors, shape: [k, n_tokens])
+ *            Output tensor:
+ *            - dst: result (shape: [h, n_tokens])
+ */
+void ggml_cann_moe_finalize_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
  * @brief   Computes the Root Mean Square (RMS) normalization of a ggml tensor
  *          using the CANN backend.
  *

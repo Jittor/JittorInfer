@@ -73,7 +73,7 @@ struct ggml_tensor * llm_build_ffn(struct ggml_context * ctx, struct llama_conte
                                    bool enable_fp16 = false);
 
 // moe ffn
-struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_tensor * cur,
+struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_cgraph * graph, struct ggml_tensor * cur,
                                        struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps,
                                        struct ggml_tensor * gate_exps, struct ggml_tensor * down_exps,
                                        struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
@@ -81,6 +81,13 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
                                        bool enable_fused_moe, bool norm_w, bool scale_w, float w_scale,
                                        llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il,
                                        bool enable_fp16 = false);
+
+struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_cgraph * graph, struct ggml_tensor * cur,
+                                       struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps,
+                                       struct ggml_tensor * gate_exps, struct ggml_tensor * down_exps,
+                                       struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
+                                       bool norm_w, bool scale_w, float w_scale,
+                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il);
 
 // attention
 struct ggml_tensor * llm_build_kv(struct ggml_context * ctx, struct llama_context & lctx, const llama_kv_cache & kv,

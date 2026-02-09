@@ -109,6 +109,20 @@ ge::Operator handle_moe_fused_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
+
+void handle_moe_init_routing_op(
+    ge::Graph &graph, ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_idx);
+ge::Operator handle_moe_grouped_matmul_op(
+    ge::Graph &graph, ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+ge::Operator handle_moe_finalize_routing_op(
+    ge::Graph &graph, ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
 ge::Operator handle_arange_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,

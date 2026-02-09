@@ -620,6 +620,33 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 GGML_ASSERT(!(node == last_op_node));
                 break;
             }
+            case GGML_OP_MOE_INIT_ROUTING: {
+                // 处理MOE初始化路由操作（多输出算子）
+                handle_moe_init_routing_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                GGML_ASSERT(!(node == last_op_node));
+                break;
+            }
+            case GGML_OP_MOE_GROUPED_MATMUL: {
+                // 处理MOE分组矩阵乘法操作
+                Operator grouped_matmul_op = handle_moe_grouped_matmul_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = grouped_matmul_op;
+                if (node == last_op_node) {
+                    graph_outputs.push_back(grouped_matmul_op);
+                }
+                break;
+            }
+            case GGML_OP_MOE_FINALIZE_ROUTING: {
+                // 处理MOE最终路由操作
+                Operator finalize_routing_op = handle_moe_finalize_routing_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = finalize_routing_op;
+                if (node == last_op_node) {
+                    graph_outputs.push_back(finalize_routing_op);
+                }
+                break;
+            }
             case GGML_OP_FLASH_ATTN_PROMPT: {
                 Operator op_node = handle_flash_attn_prompt_op(
                     graph, node, ggml_tensor_to_ge_op_map, i);

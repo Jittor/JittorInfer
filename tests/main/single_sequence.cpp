@@ -100,7 +100,7 @@ static llama_context_params common_context_params_to_llama_local() {
     cparams.n_threads_batch   = default_mini_params.n_threads_batch;
     cparams.defrag_thold      = default_mini_params.defrag_thold;
     cparams.no_perf           = default_mini_params.no_perf;
-    cparams.enable_ge         = false;
+    cparams.enable_ge         = true;
     cparams.enable_scatter_kv = false;
     cparams.page_attention    = true;
     cparams.presample_count   = -1;

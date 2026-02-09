@@ -1562,6 +1562,15 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_SPLIT:
             ggml_cann_split(ctx, dst);
             break;
+        case GGML_OP_MOE_INIT_ROUTING:
+            ggml_cann_moe_init_routing(ctx, dst);
+            break;
+        case GGML_OP_MOE_GROUPED_MATMUL:
+            ggml_cann_moe_grouped_matmul(ctx, dst);
+            break;
+        case GGML_OP_MOE_FINALIZE_ROUTING:
+            ggml_cann_moe_finalize_routing(ctx, dst);
+            break;
         default:
             return false;
     }
@@ -2150,6 +2159,9 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_TO_ZERO:
         case GGML_OP_SCATTER_UPDATE:
         case GGML_OP_SPLIT:
+        case GGML_OP_MOE_INIT_ROUTING:
+        case GGML_OP_MOE_GROUPED_MATMUL:
+        case GGML_OP_MOE_FINALIZE_ROUTING:
         case GGML_OP_GET_SLICE:
         case GGML_OP_RMS_NORM_FUSED:
             return true;
