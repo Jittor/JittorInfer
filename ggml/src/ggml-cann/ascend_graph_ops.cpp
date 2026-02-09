@@ -2587,7 +2587,8 @@ void handle_split_op(
  *
  * 这是一个多输出算子，使用MoeInitRoutingV2接口
  * 输入: x (input tensor), expert_idx (expert indices)
- * 输出: output (expanded x), row_idx (expanded row indices), token_count (tokens per expert)
+ * 输出: output (expanded x), row_idx (expanded row indices), token_count
+ * (tokens per expert)
  *
  * @param graph 计算图引用
  * @param node 当前节点
@@ -2598,23 +2599,22 @@ void handle_moe_init_routing_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
     int op_idx) {
-    
     // 从op_params中提取输出索引
     int32_t output_id = node->op_params[0];
     int32_t n_expert = node->op_params[1];
-    
+
     // 只在最后一个输出时执行
     if (output_id != 2) {
         return;
     }
-    
+
     // 获取输入张量
     struct ggml_tensor *x = node->src[0];
     struct ggml_tensor *expert_idx = node->src[1];
-    
+
     assert(x && "MOE_INIT_ROUTING: missing input tensor x");
     assert(expert_idx && "MOE_INIT_ROUTING: missing expert_idx tensor");
-    
+
     // 获取输入算子
     ge::Operator x_op, expert_idx_op;
     if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
@@ -2622,40 +2622,46 @@ void handle_moe_init_routing_op(
     } else {
         assert(false && "MOE_INIT_ROUTING: x tensor not found in map");
     }
-    
-    if (ggml_tensor_to_ge_op_map.find(expert_idx) != ggml_tensor_to_ge_op_map.end()) {
+
+    if (ggml_tensor_to_ge_op_map.find(expert_idx) !=
+        ggml_tensor_to_ge_op_map.end()) {
         expert_idx_op = ggml_tensor_to_ge_op_map[expert_idx];
     } else {
         assert(false && "MOE_INIT_ROUTING: expert_idx tensor not found in map");
     }
 
     // 确保维度合法
-    x_op = create_reshape_op(graph, x_op, {x->ne[1], x->ne[0]},
-        "moe_init_routing_reshape_x" + std::to_string(op_idx), get_data_type(x->type));
-    expert_idx_op = create_reshape_op(graph, expert_idx_op, {expert_idx->ne[1], expert_idx->ne[0]},
-        "moe_init_routing_reshape_expert_idx" + std::to_string(op_idx), get_data_type(expert_idx->type));
+    x_op =
+        create_reshape_op(graph, x_op, {x->ne[1], x->ne[0]},
+                          "moe_init_routing_reshape_x" + std::to_string(op_idx),
+                          get_data_type(x->type));
+    expert_idx_op = create_reshape_op(
+        graph, expert_idx_op, {expert_idx->ne[1], expert_idx->ne[0]},
+        "moe_init_routing_reshape_expert_idx" + std::to_string(op_idx),
+        get_data_type(expert_idx->type));
 
     // 获取输出张量
     struct ggml_tensor *output = node->src[2];
     struct ggml_tensor *row_idx = node->src[3];
     struct ggml_tensor *token_count = node;
-    
+
     // 创建MoeInitRoutingV2算子
     std::string op_name = "moe_init_routing_v2_" + std::to_string(op_idx);
     ge::op::MoeInitRoutingV2 moe_init_op(op_name.c_str());
-    
+
     // 设置输入
     moe_init_op.set_input_x(x_op);
     moe_init_op.set_input_expert_idx(expert_idx_op);
-    
+
     // 设置属性
-    moe_init_op.set_attr_active_num(0);  // 0表示使用所有token
+    moe_init_op.set_attr_active_num(0);       // 0表示使用所有token
     moe_init_op.set_attr_expert_capacity(0);  // 0表示无容量限制
     moe_init_op.set_attr_expert_num(n_expert);
     moe_init_op.set_attr_drop_pad_mode(0);
-    moe_init_op.set_attr_expert_tokens_count_or_cumsum_flag(1);  // 1表示输出前缀和
+    moe_init_op.set_attr_expert_tokens_count_or_cumsum_flag(
+        1);  // 1表示输出前缀和
     moe_init_op.set_attr_expert_tokens_before_capacity_flag(false);
-    
+
     // 为每个输出创建Identity算子并映射
     // output: expanded_x
     std::string output_identity_name = op_name + "_output_identity";
@@ -2663,18 +2669,19 @@ void handle_moe_init_routing_op(
     output_identity.set_input_x(moe_init_op, "expanded_x");
     graph.AddOp(output_identity);
     ggml_tensor_to_ge_op_map[output] = output_identity;
-    
+
     // row_idx: expanded_row_idx
     std::string row_idx_identity_name = op_name + "_row_idx_identity";
     ge::op::Identity row_idx_identity(row_idx_identity_name);
     row_idx_identity.set_input_x(moe_init_op, "expanded_row_idx");
     graph.AddOp(row_idx_identity);
     ggml_tensor_to_ge_op_map[row_idx] = row_idx_identity;
-    
+
     // token_count: expert_tokens_count_or_cumsum
     std::string token_count_identity_name = op_name + "_token_count_identity";
     ge::op::Identity token_count_identity(token_count_identity_name);
-    token_count_identity.set_input_x(moe_init_op, "expert_tokens_count_or_cumsum");
+    token_count_identity.set_input_x(moe_init_op,
+                                     "expert_tokens_count_or_cumsum");
     graph.AddOp(token_count_identity);
     ggml_tensor_to_ge_op_map[token_count] = token_count_identity;
 }
@@ -2683,8 +2690,8 @@ void handle_moe_init_routing_op(
  * @brief 处理MOE分组矩阵乘法算子
  *
  * 使用GroupedMatmulV4接口执行分组矩阵乘法
- * 输入: x (input tensor), weight (expert weights), token_count (tokens per expert)
- * 输出: result (grouped matmul result)
+ * 输入: x (input tensor), weight (expert weights), token_count (tokens per
+ * expert) 输出: result (grouped matmul result)
  *
  * @param graph 计算图引用
  * @param node 当前节点
@@ -2696,17 +2703,16 @@ ge::Operator handle_moe_grouped_matmul_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
     int op_index) {
-    
     // 获取输入张量
     struct ggml_tensor *x = node->src[0];
     struct ggml_tensor *weight = node->src[1];
     struct ggml_tensor *token_count = node->src[2];
     bool transpose_weight = node->op_params[0];
-    
+
     assert(x && "MOE_GROUPED_MATMUL: missing input tensor x");
     assert(weight && "MOE_GROUPED_MATMUL: missing weight tensor");
     assert(token_count && "MOE_GROUPED_MATMUL: missing token_count tensor");
-    
+
     // 获取输入算子
     ge::Operator x_op, weight_op, token_count_op;
     if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
@@ -2714,41 +2720,49 @@ ge::Operator handle_moe_grouped_matmul_op(
     } else {
         assert(false && "MOE_GROUPED_MATMUL: x tensor not found in map");
     }
-    
-    if (ggml_tensor_to_ge_op_map.find(weight) != ggml_tensor_to_ge_op_map.end()) {
+
+    if (ggml_tensor_to_ge_op_map.find(weight) !=
+        ggml_tensor_to_ge_op_map.end()) {
         weight_op = ggml_tensor_to_ge_op_map[weight];
     } else {
         assert(false && "MOE_GROUPED_MATMUL: weight tensor not found in map");
     }
-    
-    if (ggml_tensor_to_ge_op_map.find(token_count) != ggml_tensor_to_ge_op_map.end()) {
+
+    if (ggml_tensor_to_ge_op_map.find(token_count) !=
+        ggml_tensor_to_ge_op_map.end()) {
         token_count_op = ggml_tensor_to_ge_op_map[token_count];
     } else {
-        assert(false && "MOE_GROUPED_MATMUL: token_count tensor not found in map");
+        assert(false &&
+               "MOE_GROUPED_MATMUL: token_count tensor not found in map");
     }
 
     // dummy bias
-    ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND, get_data_type(x->type));
+    ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND,
+                               get_data_type(x->type));
     ge::Tensor scale_tensor = ge::Tensor(tensor_desc, nullptr, 0);
-    ge::op::Const scale_const_op =
-        ge::op::Const("moe_grouped_matmul_dummy_const" + std::to_string(op_index));
+    ge::op::Const scale_const_op = ge::op::Const(
+        "moe_grouped_matmul_dummy_const" + std::to_string(op_index));
     scale_const_op.set_attr_value(
         scale_tensor);  // 用于占位，如果不需要scale和offset可以传入空操作
 
     // 确保维度合法
-    x_op = create_reshape_op(graph, x_op, {x->ne[1], x->ne[0]},
-        "moe_grouped_matmul_reshape_x" + std::to_string(op_index), get_data_type(x->type));
-    weight_op = create_reshape_op(graph, weight_op,
-        {weight->ne[2], weight->ne[1], weight->ne[0]},
-        "moe_grouped_matmul_reshape_weight" + std::to_string(op_index), get_data_type(weight->type));
-    token_count_op = create_reshape_op(graph, token_count_op,
-        {token_count->ne[0]},
-        "moe_grouped_matmul_reshape_token_count" + std::to_string(op_index), get_data_type(token_count->type));
-    
+    x_op = create_reshape_op(
+        graph, x_op, {x->ne[1], x->ne[0]},
+        "moe_grouped_matmul_reshape_x" + std::to_string(op_index),
+        get_data_type(x->type));
+    weight_op = create_reshape_op(
+        graph, weight_op, {weight->ne[2], weight->ne[1], weight->ne[0]},
+        "moe_grouped_matmul_reshape_weight" + std::to_string(op_index),
+        get_data_type(weight->type));
+    token_count_op = create_reshape_op(
+        graph, token_count_op, {token_count->ne[0]},
+        "moe_grouped_matmul_reshape_token_count" + std::to_string(op_index),
+        get_data_type(token_count->type));
+
     // 创建GroupedMatmulV4算子
     std::string op_name = "grouped_matmul_" + std::to_string(op_index);
     ge::op::GroupedMatmul grouped_matmul_op(op_name.c_str());
-    
+
     // 设置输入
     grouped_matmul_op.create_dynamic_input_byindex_x(1, 0);
     grouped_matmul_op.create_dynamic_input_byindex_weight(1, 1);
@@ -2765,12 +2779,12 @@ ge::Operator handle_moe_grouped_matmul_op(
     grouped_matmul_op.set_dynamic_input_antiquant_scale(0, scale_const_op);
     grouped_matmul_op.set_dynamic_input_antiquant_offset(0, scale_const_op);
     grouped_matmul_op.set_input_group_list(token_count_op);
-    
+
     // 设置属性
     grouped_matmul_op.set_attr_split_item(2);
     grouped_matmul_op.set_attr_group_type(0);
     grouped_matmul_op.set_attr_group_list_type(0);  // 前缀和
-    grouped_matmul_op.set_attr_act_type(0);  // 无激活函数
+    grouped_matmul_op.set_attr_act_type(0);         // 无激活函数
     grouped_matmul_op.set_attr_transpose_x(false);
     grouped_matmul_op.set_attr_transpose_weight(transpose_weight);
 
@@ -2802,16 +2816,15 @@ ge::Operator handle_moe_finalize_routing_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
     int op_index) {
-    
     // 获取输入张量
     struct ggml_tensor *x = node->src[0];
     struct ggml_tensor *row_idx = node->src[1];
     struct ggml_tensor *scales = node->src[2];
-    
+
     assert(x && "MOE_FINALIZE_ROUTING: missing input tensor x");
     assert(row_idx && "MOE_FINALIZE_ROUTING: missing row_idx tensor");
     assert(scales && "MOE_FINALIZE_ROUTING: missing scales tensor");
-    
+
     // 获取输入算子
     ge::Operator x_op, row_idx_op, scales_op;
     if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
@@ -2819,43 +2832,49 @@ ge::Operator handle_moe_finalize_routing_op(
     } else {
         assert(false && "MOE_FINALIZE_ROUTING: x tensor not found in map");
     }
-    
-    if (ggml_tensor_to_ge_op_map.find(row_idx) != ggml_tensor_to_ge_op_map.end()) {
+
+    if (ggml_tensor_to_ge_op_map.find(row_idx) !=
+        ggml_tensor_to_ge_op_map.end()) {
         row_idx_op = ggml_tensor_to_ge_op_map[row_idx];
     } else {
-        assert(false && "MOE_FINALIZE_ROUTING: row_idx tensor not found in map");
+        assert(false &&
+               "MOE_FINALIZE_ROUTING: row_idx tensor not found in map");
     }
-    
-    if (ggml_tensor_to_ge_op_map.find(scales) != ggml_tensor_to_ge_op_map.end()) {
+
+    if (ggml_tensor_to_ge_op_map.find(scales) !=
+        ggml_tensor_to_ge_op_map.end()) {
         scales_op = ggml_tensor_to_ge_op_map[scales];
     } else {
         assert(false && "MOE_FINALIZE_ROUTING: scales tensor not found in map");
     }
 
     // 确保维度合法
-    x_op = create_reshape_op(graph, x_op,
-        {x->ne[1], x->ne[0]},
-        "moe_finalize_routing_reshape_x" + std::to_string(op_index), get_data_type(x->type));
-    row_idx_op = create_reshape_op(graph, row_idx_op,
-        {row_idx->ne[0]},
-        "moe_finalize_routing_reshape_row_idx" + std::to_string(op_index), get_data_type(row_idx->type));
-    scales_op = create_reshape_op(graph, scales_op,
-        {scales->ne[1], scales->ne[0]},
-        "moe_finalize_routing_reshape_scales" + std::to_string(op_index), get_data_type(scales->type));
-    
+    x_op = create_reshape_op(
+        graph, x_op, {x->ne[1], x->ne[0]},
+        "moe_finalize_routing_reshape_x" + std::to_string(op_index),
+        get_data_type(x->type));
+    row_idx_op = create_reshape_op(
+        graph, row_idx_op, {row_idx->ne[0]},
+        "moe_finalize_routing_reshape_row_idx" + std::to_string(op_index),
+        get_data_type(row_idx->type));
+    scales_op = create_reshape_op(
+        graph, scales_op, {scales->ne[1], scales->ne[0]},
+        "moe_finalize_routing_reshape_scales" + std::to_string(op_index),
+        get_data_type(scales->type));
+
     // 创建MoeFinalizeRoutingV2算子
     std::string op_name = "moe_finalize_routing_v2_" + std::to_string(op_index);
     ge::op::MoeFinalizeRoutingV2 finalize_op(op_name.c_str());
-    
+
     // 设置输入
     finalize_op.set_input_expanded_x(x_op);
     finalize_op.set_input_expanded_row_idx(row_idx_op);
     finalize_op.set_input_scales(scales_op);
-    
+
     // 设置属性
     finalize_op.set_attr_drop_pad_mode(2);  // Matching to init v2
     graph.AddOp(finalize_op);
-    
+
     return finalize_op;
 }
 
@@ -2877,17 +2896,16 @@ ge::Operator handle_moe_swiglu_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
     int op_index) {
-    
     // 获取输入张量
     struct ggml_tensor *x = node->src[0];
-    
+
     assert(x && "MOE_SWIGLU: missing input tensor x");
-    
+
     // 获取dim参数
     int64_t dim = node->op_params[0];
     int64_t ndim = node->op_params[1];
     dim = ndim - dim - 1;
-    
+
     // 获取输入算子
     ge::Operator x_op;
     if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
@@ -2899,32 +2917,30 @@ ge::Operator handle_moe_swiglu_op(
     std::vector<int64_t> target_shape;
     target_shape.resize(ndim);
     for (int64_t i = 0; i < ndim; i++) {
-        target_shape[i] = x->ne[ndim-i-1];
+        target_shape[i] = x->ne[ndim - i - 1];
     }
-    x_op = create_reshape_op(graph, x_op,
-        target_shape,
-        "moe_swiglu_reshape_x" + std::to_string(op_index), get_data_type(x->type));
-    
+    x_op = create_reshape_op(graph, x_op, target_shape,
+                             "moe_swiglu_reshape_x" + std::to_string(op_index),
+                             get_data_type(x->type));
+
     // 创建SwiGlu算子
     std::string op_name = "moe_swiglu_" + std::to_string(op_index);
     ge::op::SwiGlu swiglu_op(op_name.c_str());
-    
+
     // 设置输入
     swiglu_op.set_input_x(x_op);
-    
+
     // 设置属性
     swiglu_op.set_attr_dim(dim);
-    
+
     // 设置输出描述
     ge::TensorDesc output_desc(
         ge::Shape({node->ne[3], node->ne[2], node->ne[1], node->ne[0]}),
-        ge::FORMAT_ND,
-        get_data_type(node->type)
-    );
+        ge::FORMAT_ND, get_data_type(node->type));
     swiglu_op.update_output_desc_y(output_desc);
-    
+
     graph.AddOp(swiglu_op);
-    
+
     return swiglu_op;
 }
 

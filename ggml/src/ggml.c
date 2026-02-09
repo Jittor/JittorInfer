@@ -933,8 +933,9 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GGML_OP_DPSKV2_FUSED_MOE", "GGML_OP_TO_ZERO", "GGML_OP_MOE_FUSED", "GGML_OP_MOE_FUSED_CPU",
     "GGML_OP_FLASH_ATTN_PROMPT", "GGML_OP_FLASH_ATTN_PROMPT_CPU", "GGML_OP_FLASH_ATTN_JITTOR_V1", "GGML_OP_MLA_JITTOR",
 <<<<<<< HEAD
-    "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE", "GGML_OP_SPLIT",
-    "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_MOE_SWIGLU", "GGML_OP_RMS_NORM_FUSED"
+    "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE",
+    "GGML_OP_SPLIT", "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING",
+    "GGML_OP_MOE_SWIGLU", "GGML_OP_RMS_NORM_FUSED"
 =======
     "GGML_OP_MLA_PREFILL_JITTOR", "GGML_OP_MLA_PREPROCESS", "GGML_OP_GET_SLICE", "GGML_OP_SCATTER_UPDATE",
     "GGML_OP_SPLIT", "GGML_OP_RMS_NORM_FUSED"
@@ -2624,11 +2625,10 @@ struct ggml_tensor * ggml_flash_attn_prompt_cpu(struct ggml_context * ctx, struc
 
 // ggml_moe_init_routing
 
-struct ggml_tensor * ggml_moe_init_routing(
-    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * expert_idx,
-    int32_t n_expert,
-    struct ggml_tensor ** output, struct ggml_tensor ** row_idx, struct ggml_tensor ** token_count) {
-    
+struct ggml_tensor * ggml_moe_init_routing(struct ggml_context * ctx, struct ggml_tensor * x,
+                                           struct ggml_tensor * expert_idx, int32_t n_expert,
+                                           struct ggml_tensor ** output, struct ggml_tensor ** row_idx,
+                                           struct ggml_tensor ** token_count) {
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(expert_idx != NULL);
 
@@ -2636,28 +2636,28 @@ struct ggml_tensor * ggml_moe_init_routing(
     GGML_ASSERT(expert_idx->ne[2] == expert_idx->ne[3] == 1);
     GGML_ASSERT(x->ne[1] == expert_idx->ne[1]);
 
-    int32_t now_rows = expert_idx->ne[1];
+    int32_t now_rows           = expert_idx->ne[1];
     int32_t now_expert_per_row = expert_idx->ne[0];
-    int32_t h_x = x->ne[0];
+    int32_t h_x                = x->ne[0];
 
-    struct ggml_tensor * output_tensor = ggml_new_tensor_2d(ctx, x->type, h_x, now_rows * now_expert_per_row);
-    struct ggml_tensor * row_idx_tensor = ggml_new_tensor_1d(ctx, expert_idx->type, now_rows * now_expert_per_row);
+    struct ggml_tensor * output_tensor      = ggml_new_tensor_2d(ctx, x->type, h_x, now_rows * now_expert_per_row);
+    struct ggml_tensor * row_idx_tensor     = ggml_new_tensor_1d(ctx, expert_idx->type, now_rows * now_expert_per_row);
     struct ggml_tensor * token_count_tensor = ggml_new_tensor_1d(ctx, expert_idx->type, n_expert);
 
-    output_tensor->op = GGML_OP_MOE_INIT_ROUTING;
+    output_tensor->op     = GGML_OP_MOE_INIT_ROUTING;
     output_tensor->src[0] = x;
     output_tensor->src[1] = expert_idx;
     ggml_set_op_params_i32(output_tensor, 0, 0);
     ggml_set_op_params_i32(output_tensor, 1, n_expert);
 
-    row_idx_tensor->op = GGML_OP_MOE_INIT_ROUTING;
+    row_idx_tensor->op     = GGML_OP_MOE_INIT_ROUTING;
     row_idx_tensor->src[0] = x;
     row_idx_tensor->src[1] = expert_idx;
     row_idx_tensor->src[2] = output_tensor;
     ggml_set_op_params_i32(row_idx_tensor, 0, 1);
     ggml_set_op_params_i32(row_idx_tensor, 1, n_expert);
 
-    token_count_tensor->op = GGML_OP_MOE_INIT_ROUTING;
+    token_count_tensor->op     = GGML_OP_MOE_INIT_ROUTING;
     token_count_tensor->src[0] = x;
     token_count_tensor->src[1] = expert_idx;
     token_count_tensor->src[2] = output_tensor;
@@ -2665,106 +2665,102 @@ struct ggml_tensor * ggml_moe_init_routing(
     ggml_set_op_params_i32(token_count_tensor, 0, 2);
     ggml_set_op_params_i32(token_count_tensor, 1, n_expert);
 
-    *output = output_tensor;
-    *row_idx = row_idx_tensor;
+    *output      = output_tensor;
+    *row_idx     = row_idx_tensor;
     *token_count = token_count_tensor;
-    
+
     return token_count_tensor;
 }
 
 // ggml_moe_grouped_matmul
 
-struct ggml_tensor * ggml_moe_grouped_matmul(
-    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * weight, struct ggml_tensor * token_count,
-    bool transpose_weight) {
-    
+struct ggml_tensor * ggml_moe_grouped_matmul(struct ggml_context * ctx, struct ggml_tensor * x,
+                                             struct ggml_tensor * weight, struct ggml_tensor * token_count,
+                                             bool transpose_weight) {
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(weight != NULL);
     GGML_ASSERT(token_count != NULL);
-    
+
     // x: [h_x, total_tokens]
     // weight: [h_out, h_x, n_expert]
     // token_count: [n_expert]
     // output: [h_out, total_tokens]
-    
+
     GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);
     GGML_ASSERT(weight->ne[3] == 1);
     GGML_ASSERT(token_count->ne[1] == 1 && token_count->ne[2] == 1 && token_count->ne[3] == 1);
     if (!transpose_weight) {
-        GGML_ASSERT(x->ne[0] == weight->ne[1]); // h_x must match
+        GGML_ASSERT(x->ne[0] == weight->ne[1]);        // h_x must match
     } else {
-        GGML_ASSERT(x->ne[0] == weight->ne[0]); // h_x must match
+        GGML_ASSERT(x->ne[0] == weight->ne[0]);        // h_x must match
     }
-    GGML_ASSERT(weight->ne[2] == token_count->ne[0]); // n_expert must match
-    
-    int64_t h_out = transpose_weight ? weight->ne[1] : weight->ne[0];
+    GGML_ASSERT(weight->ne[2] == token_count->ne[0]);  // n_expert must match
+
+    int64_t h_out        = transpose_weight ? weight->ne[1] : weight->ne[0];
     int64_t total_tokens = x->ne[1];
-    
+
     struct ggml_tensor * result = ggml_new_tensor_2d(ctx, x->type, h_out, total_tokens);
-    result->op = GGML_OP_MOE_GROUPED_MATMUL;
-    result->src[0] = x;
-    result->src[1] = weight;
-    result->src[2] = token_count;
+    result->op                  = GGML_OP_MOE_GROUPED_MATMUL;
+    result->src[0]              = x;
+    result->src[1]              = weight;
+    result->src[2]              = token_count;
     ggml_set_op_params_i32(result, 0, transpose_weight);
-    
+
     return result;
 }
 
 // ggml_moe_finalize_routing
 
-struct ggml_tensor * ggml_moe_finalize_routing(
-    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * row_idx, struct ggml_tensor * scales) {
-    
+struct ggml_tensor * ggml_moe_finalize_routing(struct ggml_context * ctx, struct ggml_tensor * x,
+                                               struct ggml_tensor * row_idx, struct ggml_tensor * scales) {
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(row_idx != NULL);
     GGML_ASSERT(scales != NULL);
-    
+
     // x: [h, total_tokens] - input from grouped matmul
     // row_idx: [k * n_tokens] - original row indices
     // scales: [k, n_tokens] - scaling factors
     // output: [h, n_tokens] - finalized output
-    
+
     GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);
     GGML_ASSERT(row_idx->ne[1] == 1 && row_idx->ne[2] == 1 && row_idx->ne[3] == 1);
     GGML_ASSERT(scales->ne[2] == 1 && scales->ne[3] == 1);
-    GGML_ASSERT(row_idx->ne[0] == scales->ne[0] * scales->ne[1]); // k must match
-    
-    int64_t h = x->ne[0];
+    GGML_ASSERT(row_idx->ne[0] == scales->ne[0] * scales->ne[1]);  // k must match
+
+    int64_t h        = x->ne[0];
     int64_t n_tokens = scales->ne[1];
-    
+
     struct ggml_tensor * result = ggml_new_tensor_2d(ctx, x->type, h, n_tokens);
-    result->op = GGML_OP_MOE_FINALIZE_ROUTING;
-    result->src[0] = x;
-    result->src[1] = row_idx;
-    result->src[2] = scales;
-    
+    result->op                  = GGML_OP_MOE_FINALIZE_ROUTING;
+    result->src[0]              = x;
+    result->src[1]              = row_idx;
+    result->src[2]              = scales;
+
     return result;
 }
 
 // ggml_moe_swiglu
 
-struct ggml_tensor * ggml_moe_swiglu(
-    struct ggml_context * ctx, struct ggml_tensor * x, int dim, int ndim) {
-    
+struct ggml_tensor * ggml_moe_swiglu(struct ggml_context * ctx, struct ggml_tensor * x, int dim, int ndim) {
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(dim >= 0 && dim < ndim);
     GGML_ASSERT(x->ne[dim] % 2 == 0);
-    
+
     // x: input tensor
     // dim: dimension along which to split for SwiGLU
     // output: same shape as input
-    
+
     int64_t ne[GGML_MAX_DIMS];
     for (int i = 0; i < ndim; i++) {
         ne[i] = x->ne[i];
     }
-    ne[dim] = ne[dim] / 2;
+    ne[dim]                     = ne[dim] / 2;
     struct ggml_tensor * result = ggml_new_tensor(ctx, x->type, ndim, ne);
-    result->op = GGML_OP_MOE_SWIGLU;
-    result->src[0] = x;
+    result->op                  = GGML_OP_MOE_SWIGLU;
+    result->src[0]              = x;
     ggml_set_op_params_i32(result, 0, dim);
     ggml_set_op_params_i32(result, 1, ndim);
-    
+
     return result;
 }
 

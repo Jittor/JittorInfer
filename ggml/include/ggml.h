@@ -986,20 +986,19 @@ GGML_API struct ggml_tensor * ggml_moe_fused(struct ggml_context * ctx, struct g
                                              struct ggml_tensor * expert_gate_weights,
                                              struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx);
 
-GGML_API struct ggml_tensor * ggml_moe_init_routing(
-    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * expert_idx,
-    int32_t n_expert,
-    struct ggml_tensor ** output, struct ggml_tensor ** row_idx, struct ggml_tensor ** token_count);
+GGML_API struct ggml_tensor * ggml_moe_init_routing(struct ggml_context * ctx, struct ggml_tensor * x,
+                                                    struct ggml_tensor * expert_idx, int32_t n_expert,
+                                                    struct ggml_tensor ** output, struct ggml_tensor ** row_idx,
+                                                    struct ggml_tensor ** token_count);
 
-GGML_API struct ggml_tensor * ggml_moe_grouped_matmul(
-    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * weight, struct ggml_tensor * token_count,
-    bool transpose_weight);
+GGML_API struct ggml_tensor * ggml_moe_grouped_matmul(struct ggml_context * ctx, struct ggml_tensor * x,
+                                                      struct ggml_tensor * weight, struct ggml_tensor * token_count,
+                                                      bool transpose_weight);
 
-GGML_API struct ggml_tensor * ggml_moe_finalize_routing(
-    struct ggml_context * ctx, struct ggml_tensor * x, struct ggml_tensor * row_idx, struct ggml_tensor * scales);
+GGML_API struct ggml_tensor * ggml_moe_finalize_routing(struct ggml_context * ctx, struct ggml_tensor * x,
+                                                        struct ggml_tensor * row_idx, struct ggml_tensor * scales);
 
-GGML_API struct ggml_tensor * ggml_moe_swiglu(
-    struct ggml_context * ctx, struct ggml_tensor * x, int dim, int ndim);
+GGML_API struct ggml_tensor * ggml_moe_swiglu(struct ggml_context * ctx, struct ggml_tensor * x, int dim, int ndim);
 
 GGML_API struct ggml_tensor * ggml_moe_fused_fp16(
     struct ggml_context * ctx, struct ggml_tensor * input, struct ggml_tensor * ids, struct ggml_tensor * topk_weights,

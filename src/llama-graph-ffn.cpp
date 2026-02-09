@@ -277,11 +277,13 @@ struct ggml_tensor * llm_build_moe_ffn(struct ggml_context * ctx, struct llama_c
     return moe_out;
 }
 
-struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct llama_context & lctx, struct ggml_cgraph * graph, struct ggml_tensor * cur,
-                                       struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps, struct ggml_tensor * down_exps,
-                                       struct ggml_tensor * exp_probs_b, int64_t n_expert, int64_t n_expert_used,
-                                       bool norm_w, bool scale_w, float w_scale,
-                                       llama_expert_gating_func_type gating_op, const llm_build_cb & cb, int il) {
+struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct llama_context & lctx,
+                                             struct ggml_cgraph * graph, struct ggml_tensor * cur,
+                                             struct ggml_tensor * gate_inp, struct ggml_tensor * up_exps,
+                                             struct ggml_tensor * down_exps, struct ggml_tensor * exp_probs_b,
+                                             int64_t n_expert, int64_t n_expert_used, bool norm_w, bool scale_w,
+                                             float w_scale, llama_expert_gating_func_type gating_op,
+                                             const llm_build_cb & cb, int il) {
     ggml_tensor * cur_f32;
     if (cur->type != GGML_TYPE_F32) {
         cur_f32 = ggml_cast(ctx, cur, GGML_TYPE_F32);
@@ -359,7 +361,8 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
     ggml_tensor * token_count;
     cur = ggml_reshape_2d(ctx, cur, n_embd, n_tokens);
     cur = ggml_cast(ctx, cur, GGML_TYPE_F16);
-    ggml_build_forward_expand(graph, ggml_moe_init_routing(ctx, cur, selected_experts, n_expert, &cur_new, &premute_row_idx, &token_count));
+    ggml_build_forward_expand(
+        graph, ggml_moe_init_routing(ctx, cur, selected_experts, n_expert, &cur_new, &premute_row_idx, &token_count));
     token_count = ggml_cast(ctx, token_count, GGML_TYPE_I64);
     cb(cur_new, "ffn_moe_cur_new", il);
     cb(premute_row_idx, "ffn_moe_premute_row_idx", il);
@@ -370,14 +373,15 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
     cb(ffn_moe_par, "ffn_moe_par", il);
     ggml_tensor * ffn_moe_down = ggml_moe_grouped_matmul(ctx, ffn_moe_par, down_exps, token_count, true);
     cb(ffn_moe_down, "ffn_moe_down", il);
-    weights = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
+    weights      = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
     ffn_moe_down = ggml_cast(ctx, ffn_moe_down, GGML_TYPE_F32);
-    moe_out = ggml_moe_finalize_routing(ctx, ffn_moe_down, premute_row_idx, weights);
+    moe_out      = ggml_moe_finalize_routing(ctx, ffn_moe_down, premute_row_idx, weights);
 
     cb(moe_out, "moe_out_after_cast", il);
 
     return moe_out;
 }
+
 struct ggml_tensor * llm_build_moe_ffn_ge(struct ggml_context * ctx, struct llama_context & lctx,
                                           struct ggml_tensor * cur, struct ggml_tensor * gate_inp,
                                           struct ggml_tensor * up_exps, struct ggml_tensor * gate_exps,

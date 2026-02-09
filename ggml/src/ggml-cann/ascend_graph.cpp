@@ -621,8 +621,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
             }
             case GGML_OP_MOE_INIT_ROUTING: {
                 // 处理MOE初始化路由操作（多输出算子）
-                handle_moe_init_routing_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i);
+                handle_moe_init_routing_op(graph, node,
+                                           ggml_tensor_to_ge_op_map, i);
                 GGML_ASSERT(!(node == last_op_node));
                 break;
             }
