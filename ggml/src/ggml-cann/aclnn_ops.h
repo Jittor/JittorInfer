@@ -414,7 +414,8 @@ void ggml_cann_get_slice(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_scatter_update(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
- * @brief   Splits a tensor into multiple output tensors along a specified dimension.
+ * @brief   Splits a tensor into multiple output tensors along a specified
+ * dimension.
  *
  * @param ctx CANN backend context
  * @param dst The last output tensor with GGML_OP_SPLIT operation type.

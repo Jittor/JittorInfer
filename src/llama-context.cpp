@@ -465,11 +465,11 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
         if (cparams.page_attention) {
             int64_t * data_length_kv = (int64_t *) lctx.inp_length_kv->data;
             for (int i = 0; i < ubatch.n_tokens; ++i) {
-                llama_seq_id seq_id = ubatch.seq_id[i][0];
-                int32_t count_larger = 0;
+                llama_seq_id seq_id       = ubatch.seq_id[i][0];
+                int32_t      count_larger = 0;
                 for (int j = 0; j < ubatch.n_tokens; ++j) {
                     llama_seq_id seq_id_j = ubatch.seq_id[j][0];
-                    int32_t pos = ubatch.pos[j];
+                    int32_t      pos      = ubatch.pos[j];
                     if (seq_id_j == seq_id && pos > ubatch.pos[i]) {
                         count_larger++;
                     }

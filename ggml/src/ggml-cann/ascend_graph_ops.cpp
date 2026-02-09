@@ -2514,12 +2514,12 @@ void handle_split_op(
     int32_t n_dim = node->op_params[1];
     int32_t split_dim = node->op_params[2];
     int32_t num_split = node->op_params[3];
-    if (o_index != num_split-1) {
+    if (o_index != num_split - 1) {
         return;
     }
-    
+
     assert(num_split > 0 && "SPLIT: num_split must be positive");
-    assert(split_dim >= 0 && split_dim < GGML_MAX_DIMS && 
+    assert(split_dim >= 0 && split_dim < GGML_MAX_DIMS &&
            "SPLIT: split_dim out of range");
 
     // 提取size_splits数组
@@ -2534,7 +2534,7 @@ void handle_split_op(
     for (auto size : size_splits) {
         total_size += size;
     }
-    assert(total_size == src->ne[split_dim] && 
+    assert(total_size == src->ne[split_dim] &&
            "SPLIT: size_splits sum must equal source dimension");
 
     // 维度翻转
@@ -2550,7 +2550,9 @@ void handle_split_op(
     for (int i = 0; i < n_dim; i++) {
         actual_shape.push_back(src->ne[n_dim - i - 1]);
     }
-    input_op = create_reshape_op(graph, input_op, actual_shape, "split_reshape_" + std::to_string(op_index), get_data_type(src->type));
+    input_op = create_reshape_op(graph, input_op, actual_shape,
+                                 "split_reshape_" + std::to_string(op_index),
+                                 get_data_type(src->type));
     // 设置输入
     split_op.set_input_x(input_op);
 
@@ -2565,13 +2567,14 @@ void handle_split_op(
     // 为每个输出设置描述符
     ge::DataType data_type = get_data_type(src->type);
     for (int i = 0; i < num_split; i++) {
-        struct ggml_tensor * out_tensor = nullptr;
+        struct ggml_tensor *out_tensor = nullptr;
         if (i < num_split - 1) {
-            out_tensor = node->src[i+1];
+            out_tensor = node->src[i + 1];
         } else {
             out_tensor = node;
         }
-        std::string identity_name = "split_" + std::to_string(op_index) + "_identity_" + std::to_string(i);
+        std::string identity_name = "split_" + std::to_string(op_index) +
+                                    "_identity_" + std::to_string(i);
         ge::op::Identity identity_op(identity_name);
         identity_op.set_input_x(split_op, "y" + std::to_string(i));
         graph.AddOp(identity_op);
@@ -3676,8 +3679,9 @@ ge::Operator handle_mla_op(
     if (gmml_tensor_to_ge_op_map.find(block_tables) !=
         gmml_tensor_to_ge_op_map.end()) {
         op_block_tables = gmml_tensor_to_ge_op_map[block_tables];
-        op_block_tables = create_reshape_op(graph, "mla_block_tables_", op_suffix,
-            op_block_tables, {block_tables->ne[1], block_tables->ne[0]});
+        op_block_tables = create_reshape_op(
+            graph, "mla_block_tables_", op_suffix, op_block_tables,
+            {block_tables->ne[1], block_tables->ne[0]});
     } else {
         assert(false);
     }

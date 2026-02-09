@@ -49,9 +49,9 @@
 #include <aclnnop/aclnn_repeat_interleave.h>
 #include <aclnnop/aclnn_roll.h>
 #include <aclnnop/aclnn_scatter_update.h>
-#include <aclnnop/aclnn_split_with_size.h>
 #include <aclnnop/aclnn_sin.h>
 #include <aclnnop/aclnn_softmax.h>
+#include <aclnnop/aclnn_split_with_size.h>
 #include <aclnnop/aclnn_sub.h>
 #include <aclnnop/aclnn_tril.h>
 #include <aclnnop/aclnn_triu.h>
@@ -5761,28 +5761,33 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     int64_t sparseMode = 0;
 
     aclTensor* acl_query_tensor = ggml_cann_create_tensor(
-        query, query->ne, query->nb, use_jittor_mla? ggml_n_dims(query) : 4);
-    aclTensor* acl_query_rope_tensor = ggml_cann_create_tensor(
-        query_rope, query_rope->ne, query_rope->nb, use_jittor_mla? ggml_n_dims(query_rope) : 4);
-    aclTensor* acl_context_KV_tensor = ggml_cann_create_tensor(
-        context_KV, context_KV->ne, context_KV->nb, use_jittor_mla? ggml_n_dims(context_KV) : 4);
+        query, query->ne, query->nb, use_jittor_mla ? ggml_n_dims(query) : 4);
+    aclTensor* acl_query_rope_tensor =
+        ggml_cann_create_tensor(query_rope, query_rope->ne, query_rope->nb,
+                                use_jittor_mla ? ggml_n_dims(query_rope) : 4);
+    aclTensor* acl_context_KV_tensor =
+        ggml_cann_create_tensor(context_KV, context_KV->ne, context_KV->nb,
+                                use_jittor_mla ? ggml_n_dims(context_KV) : 4);
 
     // build tensor list
     const int kvTensorNum = 1;
     aclTensor* tensorsOfKey[kvTensorNum];
     tensorsOfKey[0] = acl_context_KV_tensor;
-    auto* acl_context_KV_tensor_list = aclCreateTensorList(tensorsOfKey, kvTensorNum);
+    auto* acl_context_KV_tensor_list =
+        aclCreateTensorList(tensorsOfKey, kvTensorNum);
 
-    aclTensor* acl_key_rope_tensor = ggml_cann_create_tensor(
-        key_rope, key_rope->ne, key_rope->nb, use_jittor_mla? ggml_n_dims(key_rope) : 4);
+    aclTensor* acl_key_rope_tensor =
+        ggml_cann_create_tensor(key_rope, key_rope->ne, key_rope->nb,
+                                use_jittor_mla ? ggml_n_dims(key_rope) : 4);
     aclTensor* acl_block_table_tensor =
-        ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb, use_jittor_mla? ggml_n_dims(block_table) : 2);
+        ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb,
+                                use_jittor_mla ? ggml_n_dims(block_table) : 2);
     aclTensor* acl_mask_tensor =
         mask != nullptr ? ggml_cann_create_tensor(mask, mask->ne, mask->nb,
                                                   ggml_n_dims(mask))
                         : nullptr;
-    aclTensor* acl_dst_tensor =
-        ggml_cann_create_tensor(dst, dst->ne, dst->nb, use_jittor_mla? ggml_n_dims(dst) : 4);
+    aclTensor* acl_dst_tensor = ggml_cann_create_tensor(
+        dst, dst->ne, dst->nb, use_jittor_mla ? ggml_n_dims(dst) : 4);
 
     std::vector<int64_t> context_length_host;
     const int64_t* context_length_ptr = nullptr;
@@ -5819,28 +5824,21 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     if (use_jittor_mla) {
         ACL_CHECK(aclnnMLAGetWorkspaceSize(
             acl_query_tensor, acl_query_rope_tensor, acl_context_KV_tensor,
-            acl_key_rope_tensor, acl_block_table_tensor, acl_context_length_array,
-            acl_mask_tensor, acl_qseq_length_array, nullptr, nullptr, headNum,
-            qkScale, kvHeadNum, 0, 0, 0, acl_dst_tensor, &workspaceSize,
-            &executor));
+            acl_key_rope_tensor, acl_block_table_tensor,
+            acl_context_length_array, acl_mask_tensor, acl_qseq_length_array,
+            nullptr, nullptr, headNum, qkScale, kvHeadNum, 0, 0, 0,
+            acl_dst_tensor, &workspaceSize, &executor));
     } else {
         ACL_CHECK(aclnnFusedInferAttentionScoreV3GetWorkspaceSize(
-            acl_query_tensor, acl_context_KV_tensor_list, acl_context_KV_tensor_list, nullptr,
-            nullptr, nullptr,
-            acl_context_length_array, nullptr,
-            nullptr, nullptr, nullptr,
-            nullptr, nullptr,
-            nullptr, acl_block_table_tensor,
-            nullptr, nullptr,
-            nullptr, nullptr,
-            nullptr, nullptr,
-            nullptr, nullptr,
-            nullptr, acl_query_rope_tensor,
-            acl_key_rope_tensor, nullptr,
-            headNum, qkScale, 2147483647,
-            2147483647, layerOut, kvHeadNum, sparseMode, 0,
-            blockSize, 0, false, 0, 0,
-            acl_dst_tensor, nullptr, &workspaceSize, &executor));
+            acl_query_tensor, acl_context_KV_tensor_list,
+            acl_context_KV_tensor_list, nullptr, nullptr, nullptr,
+            acl_context_length_array, nullptr, nullptr, nullptr, nullptr,
+            nullptr, nullptr, nullptr, acl_block_table_tensor, nullptr, nullptr,
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+            acl_query_rope_tensor, acl_key_rope_tensor, nullptr, headNum,
+            qkScale, 2147483647, 2147483647, layerOut, kvHeadNum, sparseMode, 0,
+            blockSize, 0, false, 0, 0, acl_dst_tensor, nullptr, &workspaceSize,
+            &executor));
     }
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
@@ -5848,9 +5846,11 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     }
 
     if (use_jittor_mla) {
-        ACL_CHECK(aclnnMLA(workspaceAddr, workspaceSize, executor, ctx.stream()));
+        ACL_CHECK(
+            aclnnMLA(workspaceAddr, workspaceSize, executor, ctx.stream()));
     } else {
-        ACL_CHECK(aclnnFusedInferAttentionScoreV3(workspaceAddr, workspaceSize, executor, ctx.stream()));
+        ACL_CHECK(aclnnFusedInferAttentionScoreV3(workspaceAddr, workspaceSize,
+                                                  executor, ctx.stream()));
     }
 
     ACL_CHECK(aclDestroyTensor(acl_query_tensor));
@@ -5861,7 +5861,6 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyIntArray(acl_context_length_array));
     ACL_CHECK(aclDestroyTensor(acl_mask_tensor));
     ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
-    
 }
 
 void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
@@ -6536,39 +6535,41 @@ void ggml_cann_scatter_update(ggml_backend_cann_context& ctx,
     // dst shape: [ne[0], ne[1], 1, 1] e.g., [512, 8192, 1, 1]
     // updates shape: [ne[0], n_indices, 1, 1] e.g., [512, 23, 1, 1]
     // indices shape: [n_indices, 1, 1, 1] e.g., [23, 1, 1, 1]
-    // 
+    //
     // For aclnnInplaceIndexCopy with dim=1:
     // - selfRef (dst) and source (updates) must have same shape on dim 0
     // - source's dim 1 must equal the number of indices
     // - All other dimensions must match
-    
-    int64_t feature_dim = dst->ne[0];      // e.g., 512 or 64
-    int64_t seq_len = dst->ne[1];          // e.g., 8192
-    int64_t n_indices = indices->ne[0];    // e.g., 23
-    
+
+    int64_t feature_dim = dst->ne[0];    // e.g., 512 or 64
+    int64_t seq_len = dst->ne[1];        // e.g., 8192
+    int64_t n_indices = indices->ne[0];  // e.g., 23
+
     GGML_ASSERT(updates->ne[0] == feature_dim);
     GGML_ASSERT(updates->ne[1] == n_indices);
-    
+
     // Create tensors for aclnnInplaceIndexCopy
     // Note: ggml_cann_create_tensor reverses dimensions for ACL
     // GGML layout: [feature_dim, seq_len] e.g., [512, 8192]
     // ACL layout after reverse: [seq_len, feature_dim] e.g., [8192, 512]
-    // 
+    //
     // For dst: GGML [512, 8192] -> ACL [8192, 512]
     // For updates: GGML [512, 23] -> ACL [23, 512]
-    // 
+    //
     // We want to index along the sequence dimension (8192 vs 23)
     // In ACL's reversed layout, this is dimension 0
-    
-    // selfRef: dst tensor as 2D [feature_dim, seq_len] -> ACL [seq_len, feature_dim]
+
+    // selfRef: dst tensor as 2D [feature_dim, seq_len] -> ACL [seq_len,
+    // feature_dim]
     aclTensor* acl_dst_tensor =
         ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    
+
     // index: indices tensor (1D, INT32 or INT64)
     aclTensor* acl_indices_tensor =
         ggml_cann_create_tensor(indices, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
-    
-    // source: updates tensor as 2D [feature_dim, n_indices] -> ACL [n_indices, feature_dim]
+
+    // source: updates tensor as 2D [feature_dim, n_indices] -> ACL [n_indices,
+    // feature_dim]
     aclTensor* acl_updates_tensor =
         ggml_cann_create_tensor(updates, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
 
@@ -6584,13 +6585,13 @@ void ggml_cann_scatter_update(ggml_backend_cann_context& ctx,
     ACL_CHECK(aclnnInplaceIndexCopyGetWorkspaceSize(
         acl_dst_tensor, dim, acl_indices_tensor, acl_updates_tensor,
         &workspaceSize, &executor));
-    
+
     // Allocate workspace if needed
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
-    
+
     // Execute the operation
     ACL_CHECK(aclnnInplaceIndexCopy(workspaceAddr, workspaceSize, executor,
                                     ctx.stream()));
@@ -6603,66 +6604,68 @@ void ggml_cann_scatter_update(ggml_backend_cann_context& ctx,
 
 void ggml_cann_split(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* src = dst->src[0];
-    
+
     // Get split parameters from op_params
     int32_t o_index = dst->op_params[0];
     int32_t n_dim = dst->op_params[1];
     int32_t split_dim = dst->op_params[2];
     int32_t num_split = dst->op_params[3];
-    if (o_index != num_split-1) {
+    if (o_index != num_split - 1) {
         return;
     }
-    
+
     GGML_ASSERT(src != NULL);
     GGML_ASSERT(num_split > 0);
     GGML_ASSERT(split_dim >= 0 && split_dim < n_dim);
 
     // difference between huawei and ggml
     split_dim = n_dim - split_dim - 1;
-    
+
     // Extract size_splits from op_params
     std::vector<int64_t> size_splits(num_split);
     for (int i = 0; i < num_split; i++) {
         size_splits[i] = dst->op_params[4 + i];
     }
-    
+
     // Create ACL tensor for source
-    aclTensor* acl_src_tensor = ggml_cann_create_tensor(src, nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_src_tensor =
+        ggml_cann_create_tensor(src, nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
+
     // Create aclIntArray for split sizes
-    aclIntArray* split_size_array = aclCreateIntArray(size_splits.data(), num_split);
-    
+    aclIntArray* split_size_array =
+        aclCreateIntArray(size_splits.data(), num_split);
+
     std::vector<aclTensor*> output_tensors;
     for (int i = 0; i < num_split - 1; i++) {
-        aclTensor* acl_output = ggml_cann_create_tensor(dst->src[i+1], nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
+        aclTensor* acl_output = ggml_cann_create_tensor(
+            dst->src[i + 1], nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
         output_tensors.push_back(acl_output);
     }
-    aclTensor* acl_output = ggml_cann_create_tensor(dst, nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
+    aclTensor* acl_output =
+        ggml_cann_create_tensor(dst, nullptr, nullptr, n_dim, ACL_FORMAT_ND, 0);
     output_tensors.push_back(acl_output);
-    aclTensorList* acl_output_list = aclCreateTensorList(output_tensors.data(), num_split);
-    
+    aclTensorList* acl_output_list =
+        aclCreateTensorList(output_tensors.data(), num_split);
+
     // Get workspace size and executor
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
     void* workspaceAddr = nullptr;
 
     ACL_CHECK(aclnnSplitWithSizeGetWorkspaceSize(
-        acl_src_tensor,
-        split_size_array,
-        split_dim,
-        acl_output_list,
-        &workspaceSize,
-        &executor));
-    
+        acl_src_tensor, split_size_array, split_dim, acl_output_list,
+        &workspaceSize, &executor));
+
     // Allocate workspace if needed
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
-    }    
-    
+    }
+
     // Execute the split operation
-    ACL_CHECK(aclnnSplitWithSize(workspaceAddr, workspaceSize, executor, ctx.stream()));
-    
+    ACL_CHECK(aclnnSplitWithSize(workspaceAddr, workspaceSize, executor,
+                                 ctx.stream()));
+
     // Cleanup
     ACL_CHECK(aclDestroyTensor(acl_src_tensor));
     ACL_CHECK(aclDestroyIntArray(split_size_array));
