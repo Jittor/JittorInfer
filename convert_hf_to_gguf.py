@@ -990,6 +990,7 @@ class DeepseekV2Model(Model):
 
     _experts: list[dict[str, Tensor]] | None = None
     _shared_experts: list[dict[str, Tensor]] | None = None
+    _q_mqa: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         # rename e_score_correction_bias tensors
@@ -1088,6 +1089,22 @@ class DeepseekV2Model(Model):
                 return tensors
             return []
 
+        if name.find("self_attn.kv_a_proj_with_mqa.weight") != -1 or name.find("self_attn.q_proj.weight") != -1:
+            if self._q_mqa is None:
+                self._q_mqa = [{} for _ in range(self.block_count)]
+            
+            self._q_mqa[bid][name] = data_torch
+            
+            if len(self._q_mqa[bid]) >= 2:
+                name_q = f"model.layers.{bid}.self_attn.q_proj.weight"
+                name_kv = f"model.layers.{bid}.self_attn.kv_a_proj_with_mqa.weight"
+                data_q = self._q_mqa[bid][name_q]
+                data_kv = self._q_mqa[bid][name_kv]
+                data_torch = torch.concat([data_q, data_kv], dim=0)
+                new_name = self.map_tensor_name(name_q)
+                print(data_torch.shape)
+                return [(new_name, data_torch)]
+            return []
 
         return [(self.map_tensor_name(name), data_torch)]
 
