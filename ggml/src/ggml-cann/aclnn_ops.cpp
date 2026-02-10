@@ -6672,7 +6672,8 @@ void ggml_cann_split(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyTensorList(acl_output_list));
 }
 
-void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx,
+                                ggml_tensor* dst) {
     int32_t output_id = ggml_get_op_params_i32(dst, 0);
     int32_t n_expert = ggml_get_op_params_i32(dst, 1);
     if (output_id != 2) {
@@ -6681,12 +6682,12 @@ void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst
     // Get input tensors
     ggml_tensor* x = dst->src[0];
     ggml_tensor* expert_idx = dst->src[1];
-    
+
     // Get output tensors
-    ggml_tensor* output = dst->src[2];           // expanded x
-    ggml_tensor* row_idx = dst->src[3];          // expanded expert_idx
-    ggml_tensor* token_count_tensor = dst;       // expanded expert_idx (dst itself)
-    
+    ggml_tensor* output = dst->src[2];      // expanded x
+    ggml_tensor* row_idx = dst->src[3];     // expanded expert_idx
+    ggml_tensor* token_count_tensor = dst;  // expanded expert_idx (dst itself)
+
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(expert_idx != NULL);
     GGML_ASSERT(output != NULL);
@@ -6696,16 +6697,21 @@ void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst
 
     int32_t now_rows_x_k = expert_idx->ne[0];
     int32_t h_x = x->ne[0];
-    
+
     // Create ACL tensors for inputs
-    aclTensor* acl_x = ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    aclTensor* acl_expert_idx = ggml_cann_create_tensor(expert_idx, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_x =
+        ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_expert_idx = ggml_cann_create_tensor(
+        expert_idx, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
     // Create ACL tensors for outputs
-    aclTensor* acl_output = ggml_cann_create_tensor(output, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    aclTensor* acl_row_idx = ggml_cann_create_tensor(row_idx, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
-    aclTensor* acl_token_count = ggml_cann_create_tensor(token_count_tensor, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_output =
+        ggml_cann_create_tensor(output, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_row_idx =
+        ggml_cann_create_tensor(row_idx, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_token_count = ggml_cann_create_tensor(
+        token_count_tensor, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+
     // Get workspace size and executor
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
@@ -6714,27 +6720,27 @@ void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst
     const int32_t expertCapacity = 0;
     const int32_t expertNum = n_expert;
     const int32_t dropPadMode = 0;
-    const int32_t expertTokensCountOrCumsumFlag = 1; // 表示输出的值为各个专家处理的token数量前缀和。
+    const int32_t expertTokensCountOrCumsumFlag =
+        1;  // 表示输出的值为各个专家处理的token数量前缀和。
     const bool expertTokensBeforeCapacityFlag = false;
-    
+
     ACL_CHECK(aclnnMoeInitRoutingV2GetWorkspaceSize(
         acl_x, acl_expert_idx, activeNum, expertCapacity, expertNum,
         dropPadMode, expertTokensCountOrCumsumFlag,
-        expertTokensBeforeCapacityFlag,
-        acl_output, acl_row_idx, acl_token_count, nullptr,
-        &workspaceSize,
-        &executor));
-    
+        expertTokensBeforeCapacityFlag, acl_output, acl_row_idx,
+        acl_token_count, nullptr, &workspaceSize, &executor));
+
     // Allocate workspace
     void* workspaceAddr = nullptr;
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
-    
+
     // Execute the operation
-    ACL_CHECK(aclnnMoeInitRoutingV2(workspaceAddr, workspaceSize, executor, ctx.stream()));
-    
+    ACL_CHECK(aclnnMoeInitRoutingV2(workspaceAddr, workspaceSize, executor,
+                                    ctx.stream()));
+
     // Cleanup
     ACL_CHECK(aclDestroyTensor(acl_x));
     ACL_CHECK(aclDestroyTensor(acl_expert_idx));
@@ -6743,22 +6749,24 @@ void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst
     ACL_CHECK(aclDestroyTensor(acl_token_count));
 }
 
-void ggml_cann_moe_grouped_matmul(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+void ggml_cann_moe_grouped_matmul(ggml_backend_cann_context& ctx,
+                                  ggml_tensor* dst) {
     // Get input tensors
     ggml_tensor* x = dst->src[0];
     ggml_tensor* weight = dst->src[1];
     ggml_tensor* token_count = dst->src[2];
     bool transpose_weight = ggml_get_op_params_i32(dst, 0);
-    
+
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(weight != NULL);
     GGML_ASSERT(token_count != NULL);
-    
+
     // Validate tensor shapes
     GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);
     GGML_ASSERT(weight->ne[3] == 1);
-    GGML_ASSERT(token_count->ne[1] == 1 && token_count->ne[2] == 1 && token_count->ne[3] == 1);
-    
+    GGML_ASSERT(token_count->ne[1] == 1 && token_count->ne[2] == 1 &&
+                token_count->ne[3] == 1);
+
     int64_t h_x = x->ne[0];
     int64_t total_tokens = x->ne[1];
     int64_t h_out = weight->ne[0];
@@ -6774,61 +6782,69 @@ void ggml_cann_moe_grouped_matmul(ggml_backend_cann_context& ctx, ggml_tensor* d
         std::swap(w_ne[0], w_ne[1]);
         std::swap(w_nb[0], w_nb[1]);
     }
-    
+
     // Create ACL tensors for inputs
-    aclTensor* acl_x = ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    aclTensor* acl_weight = ggml_cann_create_tensor(weight, w_ne, w_nb, 3, ACL_FORMAT_ND, 0);
-    aclTensor* acl_token_count = ggml_cann_create_tensor(token_count, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_x =
+        ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_weight =
+        ggml_cann_create_tensor(weight, w_ne, w_nb, 3, ACL_FORMAT_ND, 0);
+    aclTensor* acl_token_count = ggml_cann_create_tensor(
+        token_count, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+
     // Create ACL tensor for output
-    aclTensor* acl_dst = ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_dst =
+        ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
     // Create tensor lists for aclnnGroupedMatmulV4
     std::vector<aclTensor*> x_list{acl_x};
     std::vector<aclTensor*> weight_list{acl_weight};
     std::vector<aclTensor*> dst_list{acl_dst};
-    
-    aclTensorList* x_tensorList = aclCreateTensorList(x_list.data(), x_list.size());
-    aclTensorList* weight_tensorList = aclCreateTensorList(weight_list.data(), weight_list.size());
-    aclTensorList* dst_tensorList = aclCreateTensorList(dst_list.data(), dst_list.size());
-    
+
+    aclTensorList* x_tensorList =
+        aclCreateTensorList(x_list.data(), x_list.size());
+    aclTensorList* weight_tensorList =
+        aclCreateTensorList(weight_list.data(), weight_list.size());
+    aclTensorList* dst_tensorList =
+        aclCreateTensorList(dst_list.data(), dst_list.size());
+
     // Get workspace size and executor
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    
+
     ACL_CHECK(aclnnGroupedMatmulV4GetWorkspaceSize(
-        x_tensorList,           // const aclTensorList *x
-        weight_tensorList,      // const aclTensorList *weight
-        nullptr,                // const aclTensorList *biasOptional
-        nullptr,                // const aclTensorList *scaleOptional
-        nullptr,                // const aclTensorList *offsetOptional
-        nullptr,                // const aclTensorList *antiquantScaleOptional
-        nullptr,                // const aclTensorList *antiquantOffsetOptional
-        nullptr,                // const aclTensorList *perTokenScaleOptional
-        acl_token_count,        // const aclTensor *groupListOptional
-        nullptr,                // const aclTensorList *activationInputOptional
-        nullptr,                // const aclTensorList *activationQuantScaleOptional
-        nullptr,                // const aclTensorList *activationQuantOffsetOptional
-        2,                      // int64_t splitItem
-        0,                      // int64_t groupType
-        0,                      // int64_t groupListType，每一位为前缀和
-        0,                      // int64_t actType
-        dst_tensorList,         // aclTensorList *out
-        nullptr,                // aclTensorList *activationFeatureOutOptional
-        nullptr,                // aclTensorList *dynQuantScaleOutOptional
-        &workspaceSize,         // uint64_t *workspaceSize
-        &executor));            // aclOpExecutor **executor
-    
+        x_tensorList,       // const aclTensorList *x
+        weight_tensorList,  // const aclTensorList *weight
+        nullptr,            // const aclTensorList *biasOptional
+        nullptr,            // const aclTensorList *scaleOptional
+        nullptr,            // const aclTensorList *offsetOptional
+        nullptr,            // const aclTensorList *antiquantScaleOptional
+        nullptr,            // const aclTensorList *antiquantOffsetOptional
+        nullptr,            // const aclTensorList *perTokenScaleOptional
+        acl_token_count,    // const aclTensor *groupListOptional
+        nullptr,            // const aclTensorList *activationInputOptional
+        nullptr,            // const aclTensorList *activationQuantScaleOptional
+        nullptr,         // const aclTensorList *activationQuantOffsetOptional
+        2,               // int64_t splitItem
+        0,               // int64_t groupType
+        0,               // int64_t groupListType，每一位为前缀和
+        0,               // int64_t actType
+        dst_tensorList,  // aclTensorList *out
+        nullptr,         // aclTensorList *activationFeatureOutOptional
+        nullptr,         // aclTensorList *dynQuantScaleOutOptional
+        &workspaceSize,  // uint64_t *workspaceSize
+        &executor));     // aclOpExecutor **executor
+
     // Allocate workspace
     void* workspaceAddr = nullptr;
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
-    
+
     // Execute the grouped matmul operation
-    ACL_CHECK(aclnnGroupedMatmulV4(workspaceAddr, workspaceSize, executor, ctx.stream()));
-    
+    ACL_CHECK(aclnnGroupedMatmulV4(workspaceAddr, workspaceSize, executor,
+                                   ctx.stream()));
+
     // Cleanup
     ACL_CHECK(aclDestroyTensor(acl_token_count));
     ACL_CHECK(aclDestroyTensorList(x_tensorList));
@@ -6836,63 +6852,70 @@ void ggml_cann_moe_grouped_matmul(ggml_backend_cann_context& ctx, ggml_tensor* d
     ACL_CHECK(aclDestroyTensorList(dst_tensorList));
 }
 
-void ggml_cann_moe_finalize_routing(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+void ggml_cann_moe_finalize_routing(ggml_backend_cann_context& ctx,
+                                    ggml_tensor* dst) {
     // Get input tensors
-    ggml_tensor* x = dst->src[0];           // expanded x from grouped matmul
-    ggml_tensor* row_idx = dst->src[1];     // original row indices
-    ggml_tensor* scales = dst->src[2];      // scaling factors
-    
+    ggml_tensor* x = dst->src[0];        // expanded x from grouped matmul
+    ggml_tensor* row_idx = dst->src[1];  // original row indices
+    ggml_tensor* scales = dst->src[2];   // scaling factors
+
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(row_idx != NULL);
     GGML_ASSERT(scales != NULL);
-    
+
     // Validate tensor shapes
     GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);
-    GGML_ASSERT(row_idx->ne[1] == 1 && row_idx->ne[2] == 1 && row_idx->ne[3] == 1);
+    GGML_ASSERT(row_idx->ne[1] == 1 && row_idx->ne[2] == 1 &&
+                row_idx->ne[3] == 1);
     GGML_ASSERT(scales->ne[2] == 1 && scales->ne[3] == 1);
-    
+
     int64_t h = x->ne[0];
     int64_t total_tokens = x->ne[1];
     int64_t k = scales->ne[0];
     int64_t n_tokens = scales->ne[1];
-    
+
     // Create ACL tensors for inputs
-    aclTensor* acl_x = ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    aclTensor* acl_row_idx = ggml_cann_create_tensor(row_idx, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
-    aclTensor* acl_scales = ggml_cann_create_tensor(scales, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_x =
+        ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_row_idx =
+        ggml_cann_create_tensor(row_idx, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+    aclTensor* acl_scales =
+        ggml_cann_create_tensor(scales, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
     // Create ACL tensor for output
-    aclTensor* acl_dst = ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_dst =
+        ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
     // Get workspace size and executor
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    
-    const int64_t dropPadMode = 2;                  // Matching to init v2
-    
+
+    const int64_t dropPadMode = 2;  // Matching to init v2
+
     ACL_CHECK(aclnnMoeFinalizeRoutingV2GetWorkspaceSize(
-        acl_x,              // const aclTensor* expandedX
-        acl_row_idx,        // const aclTensor* expandedRowIdx
-        nullptr,            // const aclTensor* x1Optional
-        nullptr,            // const aclTensor* x2Optional
-        nullptr,            // const aclTensor* biasOptional
-        acl_scales,         // const aclTensor* scalesOptional
-        nullptr,            // const aclTensor* expertIdxOptional
-        dropPadMode,        // int64_t dropPadMode
-        acl_dst,            // const aclTensor* out
-        &workspaceSize,     // uint64_t* workspaceSize
-        &executor));        // aclOpExecutor** executor
-    
+        acl_x,           // const aclTensor* expandedX
+        acl_row_idx,     // const aclTensor* expandedRowIdx
+        nullptr,         // const aclTensor* x1Optional
+        nullptr,         // const aclTensor* x2Optional
+        nullptr,         // const aclTensor* biasOptional
+        acl_scales,      // const aclTensor* scalesOptional
+        nullptr,         // const aclTensor* expertIdxOptional
+        dropPadMode,     // int64_t dropPadMode
+        acl_dst,         // const aclTensor* out
+        &workspaceSize,  // uint64_t* workspaceSize
+        &executor));     // aclOpExecutor** executor
+
     // Allocate workspace
     void* workspaceAddr = nullptr;
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
-    
+
     // Execute the finalize routing operation
-    ACL_CHECK(aclnnMoeFinalizeRoutingV2(workspaceAddr, workspaceSize, executor, ctx.stream()));
-    
+    ACL_CHECK(aclnnMoeFinalizeRoutingV2(workspaceAddr, workspaceSize, executor,
+                                        ctx.stream()));
+
     // Cleanup
     ACL_CHECK(aclDestroyTensor(acl_x));
     ACL_CHECK(aclDestroyTensor(acl_row_idx));
@@ -6904,38 +6927,39 @@ void ggml_cann_moe_swiglu(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* x = dst->src[0];
     int64_t dim = ggml_get_op_params_i32(dst, 0);
     int64_t ndim = ggml_get_op_params_i32(dst, 1);
-    
+
     GGML_ASSERT(x != NULL);
     GGML_ASSERT(dim >= 0 && dim < ndim);
-    
+
     // dim for aclnn
     dim = ndim - dim - 1;
 
     // Create ACL tensor for input
-    aclTensor* acl_x = ggml_cann_create_tensor(x, nullptr, nullptr, 
-                                               ndim, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_x =
+        ggml_cann_create_tensor(x, nullptr, nullptr, ndim, ACL_FORMAT_ND, 0);
+
     // Create ACL tensor for output
-    aclTensor* acl_dst = ggml_cann_create_tensor(dst, nullptr, nullptr, 
-                                                 ndim, ACL_FORMAT_ND, 0);
-    
+    aclTensor* acl_dst =
+        ggml_cann_create_tensor(dst, nullptr, nullptr, ndim, ACL_FORMAT_ND, 0);
+
     // Get workspace size
     uint64_t workspaceSize = 0;
     aclOpExecutor* executor = nullptr;
-    
-    ACL_CHECK(aclnnSwiGluGetWorkspaceSize(acl_x, dim, acl_dst, 
-                                          &workspaceSize, &executor));
-    
+
+    ACL_CHECK(aclnnSwiGluGetWorkspaceSize(acl_x, dim, acl_dst, &workspaceSize,
+                                          &executor));
+
     // Allocate workspace
     void* workspaceAddr = nullptr;
     if (workspaceSize > 0) {
         ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
         workspaceAddr = workspace_allocator.get();
     }
-    
+
     // Execute
-    ACL_CHECK(aclnnSwiGlu(workspaceAddr, workspaceSize, executor, ctx.stream()));
-    
+    ACL_CHECK(
+        aclnnSwiGlu(workspaceAddr, workspaceSize, executor, ctx.stream()));
+
     // Cleanup
     ACL_CHECK(aclDestroyTensor(acl_x));
     ACL_CHECK(aclDestroyTensor(acl_dst));

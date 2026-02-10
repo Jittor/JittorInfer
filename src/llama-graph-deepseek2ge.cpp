@@ -231,16 +231,15 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         // cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
 
         if ((uint32_t) il < hparams.n_layer_dense_lead) {
-            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL,
-                                NULL, model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il,
-                                false);
+            cur =
+                llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL, NULL,
+                              model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, false);
             cb(cur, "ffn_out", il);
         } else {
             // MoE branch
             ggml_tensor * moe_out = llm_build_moe_ffn_merge(
                 ctx0, lctx, gf, cur, model.layers[il].ffn_gate_inp, model.layers[il].ffn_up_exps,
-                model.layers[il].ffn_down_exps, model.layers[il].ffn_exp_probs_b,
-                n_expert, n_expert_used,
+                model.layers[il].ffn_down_exps, model.layers[il].ffn_exp_probs_b, n_expert, n_expert_used,
                 hparams.expert_weights_norm, true, hparams.expert_weights_scale,
                 (enum llama_expert_gating_func_type) hparams.expert_gating_func, cb, il);
             cb(moe_out, "ffn_moe_out", il);
@@ -249,9 +248,9 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
 
             // FFN shared expert
             {
-                ggml_tensor * ffn_shexp = llm_build_ffn(
-                    ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL, NULL, NULL,
-                    NULL, model.layers[il].ffn_down_shexp, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, false);
+                ggml_tensor * ffn_shexp = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL,
+                                                        NULL, NULL, NULL, model.layers[il].ffn_down_shexp, NULL, NULL,
+                                                        NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, false);
                 cb(ffn_shexp, "ffn_shexp", il);
                 // cur = ggml_cast(ctx0, moe_out, GGML_TYPE_F32);
                 cur = ggml_add(ctx0, moe_out, ffn_shexp);

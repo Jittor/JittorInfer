@@ -314,7 +314,7 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
                 GGML_ASSERT(lctx.n_outputs == 0);
             }
             int32_t dummy_idx = 0;
-            while(dummy_idx < cparams.n_ubatch) {
+            while (dummy_idx < cparams.n_ubatch) {
                 bool flag = true;
                 for (int i = 0; i < lctx.n_outputs; ++i) {
                     if (data[i] == dummy_idx) {
