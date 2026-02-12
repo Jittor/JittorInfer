@@ -51,7 +51,7 @@ static struct DefaultMiniParams {
     bool                  use_mlock         = false;  // use mlock to keep model in memory
     bool                  check_tensors     = false;  // validate tensor data
 
-    std::string model = "/root/flowey/gguf/DeepSeek-V2-Lite-MLA-Chat-f16.gguf";  // Will be set from command line argument
+    std::string model = "/root/flowey/gguf/DeepSeek-V2-Lite-MLA-Chat-bf16.gguf";  // Will be set from command line argument
 
     uint32_t n_ctx = 2048;                                            // context size
 
@@ -103,6 +103,8 @@ static llama_context_params common_context_params_to_llama_local() {
     cparams.enable_ge         = true;
     cparams.enable_scatter_kv = false;
     cparams.page_attention    = true;
+    cparams.type_k            = GGML_TYPE_BF16;
+    cparams.type_v            = GGML_TYPE_BF16;
     cparams.presample_count   = -1;
     return cparams;
 }

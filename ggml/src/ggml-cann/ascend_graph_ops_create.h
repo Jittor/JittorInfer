@@ -46,6 +46,11 @@ ge::Operator create_const_float16_zero_op(ge::Graph& graph,
                                           const std::string& suffix,
                                           std::vector<int64_t>&& shape);
 
+ge::Operator create_const_bf16_zero_op(ge::Graph& graph,
+                                       const std::string& prefix,
+                                       const std::string& suffix,
+                                       std::vector<int64_t>&& shape);
+
 ge::Operator create_gather_op(ge::Graph& graph, const std::string& prefix,
                               const std::string& suffix, ge::Operator src,
                               ge::Operator indices, int axis = 0,

@@ -16,7 +16,11 @@ offload_input: true # offload input to GPU
 enable_ge: false # enable ge for deepseek
 display_chat: true # display chat info to console
 presample_count: 64 # presample on npu, -1 for disable
-enable_cann_flash_attention: false # disable cann flash attention
+enable_cann_flash_attention: false # enable cann flash attention
+
+# KV cache data types (options: f16, f32, bf16)
+type_k: f16  # data type for K cache (default: f16)
+type_v: f16  # data type for V cache (default: f16)
 
 # Generation parameters
 n_ctx: 1024  # context size (1024 * 16 * 16)

@@ -244,19 +244,17 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
     struct ggml_tensor * q_states;
 
     struct ggml_tensor * cache_kv_nope = ggml_reshape_2d(ctx, kv.k_l[il], n_embd_k_cache, n_ctx);
-    cache_kv_nope = ggml_scatter_update(ctx, cache_kv_nope, indices, ggml_cast(ctx, kv_nope, GGML_TYPE_F16));
+    cache_kv_nope = ggml_scatter_update(ctx, cache_kv_nope, indices, kv_nope);
     cache_kv_nope = ggml_reshape_4d(ctx, cache_kv_nope, n_embd_k_cache, page_size, 1, page_num);
     cb(cache_kv_nope, "cache_kv_nope", il);
 
     struct ggml_tensor * cache_kv_pe = ggml_reshape_2d(ctx, kv.v_l[il], n_embd_v_cache, n_ctx);
-    cache_kv_pe = ggml_scatter_update(ctx, cache_kv_pe, indices, ggml_cast(ctx, kv_pe, GGML_TYPE_F16));
+    cache_kv_pe = ggml_scatter_update(ctx, cache_kv_pe, indices, kv_pe);
     cache_kv_pe = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, page_size, 1, page_num);
     cb(cache_kv_pe, "cache_kv_pe", il);
 
     {
         // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_kv} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_kv}
-        q_pe   = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
-        q_nope = ggml_cast(ctx, q_nope, GGML_TYPE_F16);
         q_nope = ggml_mul_mat_transpose(ctx, q_nope, wk_b);
         cb(q_nope, "q_nope_absorb", il);
         // CANNMLA
@@ -279,7 +277,6 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
 
         cb(kqv, "kqv", il);
         kqv = ggml_reshape_4d(ctx, kqv, kv_lora_rank, n_head, n_tokens, 1);
-        kqv = ggml_cast(ctx, kqv, GGML_TYPE_F16);
         kqv = ggml_mul_mat_transpose(ctx, kqv, wv_b);
         cb(kqv, "kqv_absorb", il);
         cur = ggml_reshape_2d(ctx, kqv, n_embd_head_v * n_head, n_tokens);
@@ -288,7 +285,7 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
     ggml_build_forward_expand(graph, cur);
 
     if (wo) {
-        cur = llm_build_lora_mm(lctx, ctx, wo, cur);
+        cur = llm_build_lora_mm(lctx, ctx, wo, cur, true);
         cb(cur, "o_proj", il);
     }
 

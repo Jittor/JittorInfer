@@ -2046,6 +2046,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
                         return false;
                     }
                 case GGML_TYPE_F16:
+                case GGML_TYPE_BF16:
                 case GGML_TYPE_F32:
                 case GGML_TYPE_Q4_0:
                     return true;
@@ -2063,6 +2064,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
             switch (op->src[0]->type) {
                 case GGML_TYPE_F32:
                 case GGML_TYPE_F16:
+                case GGML_TYPE_BF16:
                 case GGML_TYPE_Q4_0:
                 case GGML_TYPE_Q8_0:
                     return true;
@@ -2073,6 +2075,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_CPY: {
             switch (op->type) {
                 case GGML_TYPE_F32:
+                case GGML_TYPE_BF16:
                 case GGML_TYPE_F16:
                 case GGML_TYPE_I32:
                 case GGML_TYPE_I64:
@@ -2088,6 +2091,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
             // TODO: support GGML_TYPE_BF16
             switch (op->src[0]->type) {
                 case GGML_TYPE_F32:
+                case GGML_TYPE_BF16:
                 case GGML_TYPE_F16:
                     return true;
                 default:

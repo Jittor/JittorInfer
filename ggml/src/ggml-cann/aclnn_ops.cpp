@@ -4451,7 +4451,8 @@ void ggml_cann_get_rows(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
                 ((ggml_tensor*)dst->extra)->nb);
             break;
         }
-        case GGML_TYPE_F16: {
+        case GGML_TYPE_F16:
+        case GGML_TYPE_BF16: {
 #ifdef ASCEND_310P
             // Special operation for get_row_f16 kernel of 310P: clear the
             // content of dest data buffer when row is not aligned to 32 bytes
@@ -4459,10 +4460,11 @@ void ggml_cann_get_rows(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
                 size_t dst_len =
                     src1->ne[0] * src1->ne[1] * src1->ne[2] * src0->ne[0] *
                     ggml_type_size(
-                        GGML_TYPE_F32);  // out is also f32, even input is f16
+                        GGML_TYPE_F32);  // out is also f32, even input is f16/bf16
                 ACL_CHECK(aclrtMemset((char*)dst->data, dst_len, 0, dst_len));
             }
 #endif
+            // BF16 and F16 have same memory layout (16-bit), can use same kernel
             aclrtlaunch_ascendc_get_row_f16(
                 24, ctx.stream(), src0->data, src1->data, dst->data,
                 ((ggml_tensor*)src0->extra)->ne,

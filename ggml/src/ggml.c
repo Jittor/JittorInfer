@@ -2465,7 +2465,7 @@ struct ggml_tensor * ggml_mul_mat_fp16(struct ggml_context * ctx, struct ggml_te
     GGML_ASSERT(!ggml_is_transposed(a));
 
     const int64_t        ne[4]  = { a->ne[1], b->ne[1], b->ne[2], b->ne[3] };
-    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, 4, ne);
+    struct ggml_tensor * result = ggml_new_tensor(ctx, b->type, 4, ne);
 
     result->op     = GGML_OP_MUL_MAT;
     result->src[0] = a;
@@ -2919,7 +2919,7 @@ struct ggml_tensor * ggml_mla_jittor(struct ggml_context * ctx, struct ggml_tens
         ne[2] = headNum;
         ne[3] = tokenNum;
     }
-    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F16, use_jittor_mla ? 3 : 4, ne);
+    struct ggml_tensor * result = ggml_new_tensor(ctx, query->type, use_jittor_mla ? 3 : 4, ne);
     result->op                  = GGML_OP_MLA_JITTOR;
     result->src[0]              = query;
     result->src[1]              = query_rope;
@@ -3565,6 +3565,19 @@ struct ggml_tensor * ggml_get_rows_fp16(struct ggml_context * ctx, struct ggml_t
     return result;
 }
 
+struct ggml_tensor * ggml_get_rows_a_type(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b) {
+    GGML_ASSERT(a->ne[2] == b->ne[1]);
+    GGML_ASSERT(b->ne[3] == 1);
+    GGML_ASSERT(b->type == GGML_TYPE_I32);
+
+    struct ggml_tensor * result = ggml_new_tensor_4d(ctx, a->type, a->ne[0], b->ne[0], b->ne[1], b->ne[2]);
+
+    result->op     = GGML_OP_GET_ROWS;
+    result->src[0] = a;
+    result->src[1] = b;
+
+    return result;
+}
 // ggml_get_rows_back
 
 struct ggml_tensor * ggml_get_rows_back(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b,
@@ -3870,7 +3883,7 @@ struct ggml_tensor * ggml_rope_multi_back(struct ggml_context * ctx, struct ggml
 struct ggml_tensor * ggml_rope_sin_cos(struct ggml_context * ctx, struct ggml_tensor * x,
                                        struct ggml_tensor * sin, struct ggml_tensor * cos) {
     GGML_ASSERT(ggml_are_same_shape(sin, cos));
-GGML_ASSERT(ggml_is_contiguous(x));
+    GGML_ASSERT(ggml_is_contiguous(x));
     GGML_ASSERT(ggml_is_contiguous(sin));
     GGML_ASSERT(ggml_is_contiguous(cos));
 

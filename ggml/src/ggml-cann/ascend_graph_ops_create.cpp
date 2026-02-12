@@ -5,6 +5,7 @@
 #include "selection.h"
 
 #define FLOAT16_SIZE 2
+#define BFLOAT16_SIZE 2
 
 ge::Operator create_reshape_op(ge::Graph& graph, const std::string& prefix,
                                const std::string& suffix, ge::Operator src,
@@ -86,71 +87,6 @@ ge::Operator create_identity_op_by_name(ge::Graph& graph,
     return identity_op;
 }
 
-// 对MOE_FUSED算子中的GroupMatmul算子进行封装，预定义好一些属性
-ge::Operator create_moe_grouped_matmul_op(
-    ge::Graph& graph, const std::string& prefix, const std::string& suffix,
-    ge::DataType weight_type, ge::Operator x, ge::Operator weight,
-    std::vector<int64_t>&& bias_shape, ge::Operator group_list) {
-    ge::Operator bias;
-    if (weight_type == ge::DT_FLOAT16) {
-        bias = create_const_float16_zero_op(
-            graph, prefix + "bias", suffix,
-            std::forward<std::vector<int64_t>>(bias_shape));
-    } else {
-        bias = create_const_float_op(
-            graph, prefix + "bias", suffix,
-            std::forward<std::vector<int64_t>>(bias_shape), weight_type, 0.0f);
-    }
-    // ge::Operator scale_const_op = create_const_float_op(graph, prefix +
-    // "_scale_", suffix, {0}, ge::DT_FLOAT, 0.0f);
-    ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND, weight_type);
-    ge::Tensor scale_tensor = ge::Tensor(tensor_desc, nullptr, 0);
-    ge::op::Const scale_const_op =
-        ge::op::Const(prefix + "scale_const" + suffix);
-    scale_const_op.set_attr_value(
-        scale_tensor);  // 用于占位，如果不需要scale和offset可以传入空操作
-
-    std::string op_name = prefix + "grouped_matmul" + suffix;
-    ge::op::GroupedMatmul matmul_op(op_name.c_str());
-    // 创建动态输入
-    matmul_op.create_dynamic_input_byindex_x(1, 0);
-    matmul_op.create_dynamic_input_byindex_weight(1, 1);
-    matmul_op.create_dynamic_input_byindex_bias(1, 2);
-    matmul_op.create_dynamic_input_byindex_scale(1, 3);
-    matmul_op.create_dynamic_input_byindex_offset(1, 4);
-    matmul_op.create_dynamic_input_byindex_antiquant_scale(1, 5);
-    matmul_op.create_dynamic_input_byindex_antiquant_offset(1, 6);
-    // 设置动态输入 - 使用Identity算子的输出
-    matmul_op.set_dynamic_input_x(0, x);
-    matmul_op.set_dynamic_input_weight(0, weight);
-    matmul_op.set_dynamic_input_bias(0, bias);
-    matmul_op.set_dynamic_input_scale(0, scale_const_op);
-    matmul_op.set_dynamic_input_offset(0, scale_const_op);
-    matmul_op.set_dynamic_input_antiquant_scale(0, scale_const_op);
-    matmul_op.set_dynamic_input_antiquant_offset(0, scale_const_op);
-    matmul_op.set_input_group_list(group_list);
-
-    // 设置属性
-    matmul_op.set_attr_split_item(2);
-    // up_matmul_op.set_attr_dtype(0);
-    matmul_op.set_attr_transpose_weight(false);
-    matmul_op.set_attr_transpose_x(false);
-    matmul_op.set_attr_group_type(0);
-    matmul_op.set_attr_group_list_type(1);
-    matmul_op.set_attr_act_type(0);
-
-    // 创建动态输出
-    matmul_op.create_dynamic_output_y(1);
-
-    // 参考 ggml_cann_moe_fused: moe_up_ne[2] = {k_dim, num_length}
-    // std::vector<int64_t> up_output_shape = {k_dim, num_length};
-    // ge::TensorDesc up_output_desc(ge::Shape(up_output_shape), ge::FORMAT_ND,
-    //                               get_data_type(expert_up_weights->type));
-    // matmul_op.update_dynamic_output_desc_y(0, up_output_desc);
-    graph.AddOp(matmul_op);
-    return matmul_op;
-}
-
 ge::Operator create_const_int32_op(ge::Graph& graph, const std::string& prefix,
                                    const std::string& suffix,
                                    std::vector<int64_t>&& shape,
@@ -201,6 +137,93 @@ ge::Operator create_const_float16_zero_op(ge::Graph& graph,
     const_op.update_output_desc_y(tensor_desc);
     graph.AddOp(const_op);
     return const_op;
+}
+
+ge::Operator create_const_bf16_zero_op(ge::Graph& graph,
+                                       const std::string& prefix,
+                                       const std::string& suffix,
+                                       std::vector<int64_t>&& shape) {
+    ge::TensorDesc tensor_desc(ge::Shape(shape), ge::FORMAT_ND, ge::DT_BF16);
+    int64_t len = std::accumulate(shape.begin(), shape.end(), 1,
+                                  std::multiplies<int64_t>());
+    ge::Tensor const_tensor(tensor_desc,
+                            std::vector<uint8_t>(len * BFLOAT16_SIZE, 0));
+    ge::op::Const const_op((prefix + "const" + suffix).c_str());
+    const_op.set_attr_value(const_tensor);
+    const_op.update_output_desc_y(tensor_desc);
+    graph.AddOp(const_op);
+    return const_op;
+}
+
+// 对MOE_FUSED算子中的GroupMatmul算子进行封装，预定义好一些属性
+ge::Operator create_moe_grouped_matmul_op(
+    ge::Graph& graph, const std::string& prefix, const std::string& suffix,
+    ge::DataType weight_type, ge::Operator x, ge::Operator weight,
+    std::vector<int64_t>&& bias_shape, ge::Operator group_list) {
+    ge::Operator bias;
+    if (weight_type == ge::DT_FLOAT16) {
+        bias = create_const_float16_zero_op(
+            graph, prefix + "bias", suffix,
+            std::forward<std::vector<int64_t>>(bias_shape));
+    } else if (weight_type == ge::DT_BF16) {
+        bias = create_const_bf16_zero_op(
+            graph, prefix + "bias", suffix,
+            std::forward<std::vector<int64_t>>(bias_shape));
+    } else if (weight_type == ge::DT_FLOAT) {
+        bias = create_const_float_op(
+            graph, prefix + "bias", suffix,
+            std::forward<std::vector<int64_t>>(bias_shape), weight_type, 0.0f);
+    } else {
+        GGML_ABORT("Unsupported weight_type for MOE grouped matmul: %d", weight_type);
+    }
+    // ge::Operator scale_const_op = create_const_float_op(graph, prefix +
+    // "_scale_", suffix, {0}, ge::DT_FLOAT, 0.0f);
+    ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND, weight_type);
+    ge::Tensor scale_tensor = ge::Tensor(tensor_desc, nullptr, 0);
+    ge::op::Const scale_const_op =
+        ge::op::Const(prefix + "scale_const" + suffix);
+    scale_const_op.set_attr_value(
+        scale_tensor);  // 用于占位，如果不需要scale和offset可以传入空操作
+
+    std::string op_name = prefix + "grouped_matmul" + suffix;
+    ge::op::GroupedMatmul matmul_op(op_name.c_str());
+    // 创建动态输入
+    matmul_op.create_dynamic_input_byindex_x(1, 0);
+    matmul_op.create_dynamic_input_byindex_weight(1, 1);
+    matmul_op.create_dynamic_input_byindex_bias(1, 2);
+    matmul_op.create_dynamic_input_byindex_scale(1, 3);
+    matmul_op.create_dynamic_input_byindex_offset(1, 4);
+    matmul_op.create_dynamic_input_byindex_antiquant_scale(1, 5);
+    matmul_op.create_dynamic_input_byindex_antiquant_offset(1, 6);
+    // 设置动态输入 - 使用Identity算子的输出
+    matmul_op.set_dynamic_input_x(0, x);
+    matmul_op.set_dynamic_input_weight(0, weight);
+    matmul_op.set_dynamic_input_bias(0, bias);
+    matmul_op.set_dynamic_input_scale(0, scale_const_op);
+    matmul_op.set_dynamic_input_offset(0, scale_const_op);
+    matmul_op.set_dynamic_input_antiquant_scale(0, scale_const_op);
+    matmul_op.set_dynamic_input_antiquant_offset(0, scale_const_op);
+    matmul_op.set_input_group_list(group_list);
+
+    // 设置属性
+    matmul_op.set_attr_split_item(2);
+    // up_matmul_op.set_attr_dtype(0);
+    matmul_op.set_attr_transpose_weight(false);
+    matmul_op.set_attr_transpose_x(false);
+    matmul_op.set_attr_group_type(0);
+    matmul_op.set_attr_group_list_type(1);
+    matmul_op.set_attr_act_type(0);
+
+    // 创建动态输出
+    matmul_op.create_dynamic_output_y(1);
+
+    // 参考 ggml_cann_moe_fused: moe_up_ne[2] = {k_dim, num_length}
+    // std::vector<int64_t> up_output_shape = {k_dim, num_length};
+    // ge::TensorDesc up_output_desc(ge::Shape(up_output_shape), ge::FORMAT_ND,
+    //                               get_data_type(expert_up_weights->type));
+    // matmul_op.update_dynamic_output_desc_y(0, up_output_desc);
+    graph.AddOp(matmul_op);
+    return matmul_op;
 }
 
 ge::Operator create_gather_op(ge::Graph& graph, const std::string& prefix,

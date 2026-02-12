@@ -360,7 +360,6 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
     ggml_tensor * premute_row_idx;
     ggml_tensor * token_count;
     cur = ggml_reshape_2d(ctx, cur, n_embd, n_tokens);
-    cur = ggml_cast(ctx, cur, GGML_TYPE_F16);
     ggml_build_forward_expand(
         graph, ggml_moe_init_routing(ctx, cur, selected_experts, n_expert, &cur_new, &premute_row_idx, &token_count));
     token_count = ggml_cast(ctx, token_count, GGML_TYPE_I64);
@@ -374,7 +373,6 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
     ggml_tensor * ffn_moe_down = ggml_moe_grouped_matmul(ctx, ffn_moe_par, down_exps, token_count, true);
     cb(ffn_moe_down, "ffn_moe_down", il);
     weights      = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
-    ffn_moe_down = ggml_cast(ctx, ffn_moe_down, GGML_TYPE_F32);
     moe_out      = ggml_moe_finalize_routing(ctx, ffn_moe_down, premute_row_idx, weights);
 
     cb(moe_out, "moe_out_after_cast", il);

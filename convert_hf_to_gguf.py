@@ -308,32 +308,32 @@ class Model:
                 data_qtype: gguf.GGMLQuantizationType | bool = self.tensor_force_quant(name, new_name, bid, n_dims)
 
                 # Most of the codebase that takes in 1D tensors or norms only handles F32 tensors
-                if n_dims <= 1 or new_name.endswith("_norm.weight"):
-                    data_qtype = gguf.GGMLQuantizationType.F32
+                # if n_dims <= 1 or new_name.endswith("_norm.weight"):
+                #     data_qtype = gguf.GGMLQuantizationType.F32
 
                 # Conditions should closely match those in llama_model_quantize_internal in llama.cpp
                 # Some tensor types are always in float32
-                if data_qtype is False and (
-                    any(
-                        self.match_model_tensor_name(new_name, key, bid)
-                        for key in (
-                            gguf.MODEL_TENSOR.FFN_GATE_INP,
-                            gguf.MODEL_TENSOR.POS_EMBD,
-                            gguf.MODEL_TENSOR.TOKEN_TYPES,
-                            gguf.MODEL_TENSOR.SSM_CONV1D,
-                            gguf.MODEL_TENSOR.TIME_MIX_FIRST,
-                            gguf.MODEL_TENSOR.TIME_MIX_W1,
-                            gguf.MODEL_TENSOR.TIME_MIX_W2,
-                            gguf.MODEL_TENSOR.TIME_MIX_DECAY_W1,
-                            gguf.MODEL_TENSOR.TIME_MIX_DECAY_W2,
-                            gguf.MODEL_TENSOR.TIME_MIX_LERP_FUSED,
-                            gguf.MODEL_TENSOR.POSNET_NORM1,
-                            gguf.MODEL_TENSOR.POSNET_NORM2,
-                        )
-                    )
-                    or not new_name.endswith(".weight")
-                ):
-                    data_qtype = gguf.GGMLQuantizationType.F32
+                # if data_qtype is False and (
+                #     any(
+                #         self.match_model_tensor_name(new_name, key, bid)
+                #         for key in (
+                #             gguf.MODEL_TENSOR.FFN_GATE_INP,
+                #             gguf.MODEL_TENSOR.POS_EMBD,
+                #             gguf.MODEL_TENSOR.TOKEN_TYPES,
+                #             gguf.MODEL_TENSOR.SSM_CONV1D,
+                #             gguf.MODEL_TENSOR.TIME_MIX_FIRST,
+                #             gguf.MODEL_TENSOR.TIME_MIX_W1,
+                #             gguf.MODEL_TENSOR.TIME_MIX_W2,
+                #             gguf.MODEL_TENSOR.TIME_MIX_DECAY_W1,
+                #             gguf.MODEL_TENSOR.TIME_MIX_DECAY_W2,
+                #             gguf.MODEL_TENSOR.TIME_MIX_LERP_FUSED,
+                #             gguf.MODEL_TENSOR.POSNET_NORM1,
+                #             gguf.MODEL_TENSOR.POSNET_NORM2,
+                #         )
+                #     )
+                #     or not new_name.endswith(".weight")
+                # ):
+                #     data_qtype = gguf.GGMLQuantizationType.F32
 
                 if data_qtype is False and any(
                     self.match_model_tensor_name(new_name, key, bid)

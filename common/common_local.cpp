@@ -161,6 +161,8 @@ struct common_init_result common_init_from_params(common_params & params) {
     cparams.enable_ge       = params.enable_ge;
     cparams.presample_count = params.presample_count;
     cparams.defrag_thold    = params.defrag_thold;
+    cparams.type_k          = params.type_k;
+    cparams.type_v          = params.type_v;
 
     llama_context * lctx = llama_init_from_model(model, cparams);
     if (lctx == NULL) {

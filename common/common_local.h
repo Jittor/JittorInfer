@@ -173,6 +173,9 @@ struct common_params {
     bool enable_fused_moe            = true;
     bool enable_cann_flash_attention = true;
 
+    enum ggml_type type_k = GGML_TYPE_F16;  // data type for K cache
+    enum ggml_type type_v = GGML_TYPE_F16;  // data type for V cache
+
     uint32_t n_threads       = 64;        // number of threads to use for computation
     uint32_t n_threads_batch = 64;        // number of threads to use for batch processing
 
@@ -257,6 +260,32 @@ struct common_params {
             }
             if (config["display_chat"]) {
                 display_chat = config["display_chat"].as<bool>();
+            }
+
+            // Load KV cache data types
+            if (config["type_k"]) {
+                std::string type_str = config["type_k"].as<std::string>();
+                if (type_str == "f32" || type_str == "F32" || type_str == "GGML_TYPE_F32") {
+                    type_k = GGML_TYPE_F32;
+                } else if (type_str == "f16" || type_str == "F16" || type_str == "GGML_TYPE_F16") {
+                    type_k = GGML_TYPE_F16;
+                } else if (type_str == "bf16" || type_str == "BF16" || type_str == "GGML_TYPE_BF16") {
+                    type_k = GGML_TYPE_BF16;
+                } else {
+                    fprintf(stderr, "Warning: Unknown type_k '%s', using default F16\n", type_str.c_str());
+                }
+            }
+            if (config["type_v"]) {
+                std::string type_str = config["type_v"].as<std::string>();
+                if (type_str == "f32" || type_str == "F32" || type_str == "GGML_TYPE_F32") {
+                    type_v = GGML_TYPE_F32;
+                } else if (type_str == "f16" || type_str == "F16" || type_str == "GGML_TYPE_F16") {
+                    type_v = GGML_TYPE_F16;
+                } else if (type_str == "bf16" || type_str == "BF16" || type_str == "GGML_TYPE_BF16") {
+                    type_v = GGML_TYPE_BF16;
+                } else {
+                    fprintf(stderr, "Warning: Unknown type_v '%s', using default F16\n", type_str.c_str());
+                }
             }
 
             // Load generation parameters

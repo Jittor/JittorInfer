@@ -27,18 +27,18 @@
  * @return std::vector<int64_t> 输出形状向量
  */
 std::vector<int64_t> build_output_shape(const struct ggml_tensor *tensor,
-                                        bool reverse = true) {
+                                        bool reverse = true, int ndims = GGML_MAX_DIMS) {
     std::vector<int64_t> output_shape;
     if (reverse) {
         // 反转维度顺序(从高维到低维)
-        for (int d = GGML_MAX_DIMS - 1; d >= 0; d--) {
+        for (int d = ndims - 1; d >= 0; d--) {
             if (tensor->ne[d] > 0) {
                 output_shape.push_back(tensor->ne[d]);
             }
         }
     } else {
         // 保持原始维度顺序(从低维到高维)
-        for (int d = 0; d < GGML_MAX_DIMS; d++) {
+        for (int d = 0; d < ndims; d++) {
             if (tensor->ne[d] > 0) {
                 output_shape.push_back(tensor->ne[d]);
             }
@@ -165,6 +165,8 @@ ge::DataType get_data_type(enum ggml_type type) {
             return ge::DT_FLOAT;
         case GGML_TYPE_F16:
             return ge::DT_FLOAT16;
+        case GGML_TYPE_BF16:
+            return ge::DT_BF16;
         case GGML_TYPE_Q4_0:
             return ge::DT_INT4;
         case GGML_TYPE_Q8_0:
@@ -178,7 +180,9 @@ ge::DataType get_data_type(enum ggml_type type) {
         case GGML_TYPE_I64:
             return ge::DT_INT64;
         default:
-            return ge::DT_FLOAT;
+            GGML_ABORT("Unsupported GGML type for GE conversion: %d (%s)", 
+                       type, ggml_type_name(type));
+            return ge::DT_FLOAT;  // unreachable, but keeps compiler happy
     }
 }
 
@@ -449,6 +453,13 @@ ge::Operator handle_mul_mat_transpose_op(
     transpose_matmul_op.set_attr_perm_x2({0, 1, 2});
     // permY: [1, 0, 2] - 转置输出的前两个维度
     transpose_matmul_op.set_attr_perm_y({1, 0, 2});
+
+    // 设置MoeInitRoutingV2算子的输出描述符
+    // expanded_x输出
+    std::vector<int64_t> output_shape = build_output_shape(node, true, 3);
+    ge::DataType output_dtype = get_data_type(node->type);
+    ge::TensorDesc expanded_x_desc(ge::Shape(output_shape), ge::FORMAT_ND, output_dtype);
+    transpose_matmul_op.update_output_desc_y(expanded_x_desc);
 
     // 添加到图中
     graph.AddOp(transpose_matmul_op);
@@ -1567,8 +1578,14 @@ ge::Operator handle_rms_norm_op(
     std::string identity_name = "rms_norm_identity_" + std::to_string(op_index);
     ge::op::Identity identity_op(identity_name);
     identity_op.set_input_x_by_name(rms_norm_op, "y");
-    identity_op.update_output_desc_y(desc_out);
+    // identity_op.update_output_desc_y(desc_out);
     graph.AddOp(identity_op);
+    // 使用cast 转换类型
+    // std::string cast_name = "rms_norm_cast_" + std::to_string(op_index);
+    // ge::op::Cast cast_op(cast_name);
+    // cast_op.set_input_x_by_name(rms_norm_op, "y");
+    // cast_op.set_attr_dst_type(get_data_type(node->type));
+    // graph.AddOp(cast_op);
 
     return identity_op;
 }
@@ -2635,8 +2652,21 @@ void handle_split_op(
     // 创建动态输出
     split_op.create_dynamic_output_y(num_split);
 
+    for (int i = 0; i < num_split; i++) {
+        // 设置输出描述符
+        struct ggml_tensor *out_tensor = nullptr;
+        if (i < num_split - 1) {
+            out_tensor = node->src[i + 1];
+        } else {
+            out_tensor = node;
+        }
+        std::vector<int64_t> output_shape = build_output_shape(out_tensor, true, n_dim);
+        ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, get_data_type(out_tensor->type));
+        split_op.update_dynamic_output_desc_y(i, output_desc);
+    }
+    graph.AddOp(split_op);
+
     // 为每个输出设置描述符
-    ge::DataType data_type = get_data_type(src->type);
     for (int i = 0; i < num_split; i++) {
         struct ggml_tensor *out_tensor = nullptr;
         if (i < num_split - 1) {
@@ -2733,6 +2763,25 @@ void handle_moe_init_routing_op(
         1);  // 1表示输出前缀和
     moe_init_op.set_attr_expert_tokens_before_capacity_flag(false);
 
+    // 设置MoeInitRoutingV2算子的输出描述符
+    // expanded_x输出
+    std::vector<int64_t> expanded_x_shape = build_output_shape(output, true, 2);
+    ge::DataType expanded_x_dtype = get_data_type(output->type);
+    ge::TensorDesc expanded_x_desc(ge::Shape(expanded_x_shape), ge::FORMAT_ND, expanded_x_dtype);
+    moe_init_op.update_output_desc_expanded_x(expanded_x_desc);
+
+    // expanded_row_idx输出
+    std::vector<int64_t> row_idx_shape = build_output_shape(row_idx, true, 1);
+    ge::DataType row_idx_dtype = get_data_type(row_idx->type);
+    ge::TensorDesc row_idx_desc(ge::Shape(row_idx_shape), ge::FORMAT_ND, row_idx_dtype);
+    moe_init_op.update_output_desc_expanded_row_idx(row_idx_desc);
+
+    // expert_tokens_count_or_cumsum输出
+    std::vector<int64_t> token_count_shape = build_output_shape(token_count, true, 1);
+    ge::DataType token_count_dtype = get_data_type(token_count->type);
+    ge::TensorDesc token_count_desc(ge::Shape(token_count_shape), ge::FORMAT_ND, token_count_dtype);
+    moe_init_op.update_output_desc_expert_tokens_count_or_cumsum(token_count_desc);
+
     // 为每个输出创建Identity算子并映射
     // output: expanded_x
     std::string output_identity_name = op_name + "_output_identity";
@@ -2809,7 +2858,7 @@ ge::Operator handle_moe_grouped_matmul_op(
 
     // dummy bias
     ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND,
-                               get_data_type(x->type));
+                               ge::DT_FLOAT);
     ge::Tensor scale_tensor = ge::Tensor(tensor_desc, nullptr, 0);
     ge::op::Const scale_const_op = ge::op::Const(
         "moe_grouped_matmul_dummy_const" + std::to_string(op_index));
@@ -2861,6 +2910,13 @@ ge::Operator handle_moe_grouped_matmul_op(
 
     // 设置输出
     grouped_matmul_op.create_dynamic_output_y(1);
+
+    // 设置输出描述符
+    std::vector<int64_t> output_shape = build_output_shape(node, true, 2);
+    ge::DataType output_dtype = get_data_type(node->type);
+    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, output_dtype);
+    grouped_matmul_op.update_dynamic_output_desc_y(0, output_desc);
+
     graph.AddOp(grouped_matmul_op);
 
     std::string output_identity_name = op_name + "_out";
@@ -2944,6 +3000,13 @@ ge::Operator handle_moe_finalize_routing_op(
 
     // 设置属性
     finalize_op.set_attr_drop_pad_mode(2);  // Matching to init v2
+
+    // 设置输出描述符
+    std::vector<int64_t> output_shape = build_output_shape(node, true, 2);
+    ge::DataType output_dtype = get_data_type(node->type);
+    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, output_dtype);
+    finalize_op.update_output_desc_y(output_desc);
+
     graph.AddOp(finalize_op);
 
     return finalize_op;
@@ -3715,15 +3778,8 @@ ge::Operator handle_mla_op(
     struct ggml_tensor *qSeq_length = node->src[7];
     std::string op_suffix = "_" + std::to_string(op_index);
 
-    GGML_ASSERT(query->type == GGML_TYPE_F16);
-    GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
-    GGML_ASSERT(context_kv->type == GGML_TYPE_F16);
-    GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
     GGML_ASSERT(block_tables->type == GGML_TYPE_I32);
     GGML_ASSERT(context_length->type == GGML_TYPE_I64);
-    if (mask != nullptr) {
-        GGML_ASSERT(mask->type == GGML_TYPE_F16);
-    }
     if (qSeq_length != nullptr) {
         GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64);
     }

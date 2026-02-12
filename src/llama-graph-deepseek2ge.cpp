@@ -67,8 +67,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         if (hparams.enable_mla) {
             sin_cache = ggml_reshape_2d(ctx0, kv_self.sin_cache, n_rot, n_ctx);
             cos_cache = ggml_reshape_2d(ctx0, kv_self.cos_cache, n_rot, n_ctx);
-            sin_cache = ggml_get_rows_fp16(ctx0, sin_cache, inp_pos);
-            cos_cache = ggml_get_rows_fp16(ctx0, cos_cache, inp_pos);
+            sin_cache = ggml_get_rows_a_type(ctx0, sin_cache, inp_pos);
+            cos_cache = ggml_get_rows_a_type(ctx0, cos_cache, inp_pos);
             ggml_set_name(sin_cache, "sin_cache");
             ggml_set_name(cos_cache, "cos_cache");
             sin_cache = ggml_reshape_3d(ctx0, sin_cache, n_rot, 1, inp_pos->ne[0]);
@@ -242,7 +242,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         if ((uint32_t) il < hparams.n_layer_dense_lead) {
             cur =
                 llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL, NULL,
-                              model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, false);
+                              model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, true);
             cb(cur, "ffn_out", il);
         } else {
             // MoE branch
@@ -259,7 +259,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             {
                 ggml_tensor * ffn_shexp = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL,
                                                         NULL, NULL, NULL, model.layers[il].ffn_down_shexp, NULL, NULL,
-                                                        NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, false);
+                                                        NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, true);
                 cb(ffn_shexp, "ffn_shexp", il);
                 // cur = ggml_cast(ctx0, moe_out, GGML_TYPE_F32);
                 cur = ggml_add(ctx0, moe_out, ffn_shexp);
@@ -272,10 +272,6 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             cb(cur, "all_reduce_sum_aft_mlp", il);
         }
         ggml_build_forward_expand(gf, cur);
-        // cast cur to fp16
-        if (cur->type != GGML_TYPE_F16) {
-            cur = ggml_cast(ctx0, cur, GGML_TYPE_F16);
-        }
 
         cur = ggml_add(ctx0, cur, ffn_inp);
 
@@ -291,13 +287,14 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
 
     cur = inpL;
 
-    cur = ggml_get_rows(ctx0, cur, build_inp_out_ids());
+    cur = ggml_get_rows_a_type(ctx0, cur, build_inp_out_ids());
 
     cur = llm_build_norm(ctx0, cur, hparams, model.output_norm, NULL, LLM_NORM_RMS, cb, -1, true);
     cb(cur, "result_norm", -1);
 
     // lm_head
-    cur = ggml_mul_mat(ctx0, model.output, cur);
+    cur = ggml_mul_mat_fp16(ctx0, model.output, cur);
+    cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
     cb(cur, "result_output", -1);
 
     ggml_build_forward_expand(gf, cur);
