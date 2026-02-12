@@ -3921,3 +3921,94 @@ ge::Operator handle_mla_prefill_op(
 
     return identity_op;
 }
+
+/**
+ * @brief 处理ROPE_SIN_COS操作，使用预计算的sin/cos值
+ * 
+ * 该函数实现了使用预计算sin/cos值的旋转位置编码(RoPE)操作
+ * 使用RotaryPositionEmbedding算子，mode设置为1
+ * 
+ * @param graph 计算图引用
+ * @param node 当前节点，包含输入张量和参数
+ * @param gmml_tensor_to_ge_op_map 张量到算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的RotaryPositionEmbedding算子
+ */
+ge::Operator handle_rope_sin_cos(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    
+    // 获取源张量
+    struct ggml_tensor *x = node->src[0];    // 输入张量
+    struct ggml_tensor *sin = node->src[1];  // 预计算的sin值
+    struct ggml_tensor *cos = node->src[2];  // 预计算的cos值
+
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(sin != NULL);
+    GGML_ASSERT(cos != NULL);
+    GGML_ASSERT(ggml_are_same_shape(sin, cos));
+
+    // 获取输入算子
+    ge::Operator op_x, op_sin, op_cos;
+    
+    if (gmml_tensor_to_ge_op_map.find(x) != gmml_tensor_to_ge_op_map.end()) {
+        op_x = gmml_tensor_to_ge_op_map[x];
+    } else {
+        printf("x not found in gmml_tensor_to_ge_op_map\n");
+        assert(false);
+    }
+    
+    if (gmml_tensor_to_ge_op_map.find(sin) != gmml_tensor_to_ge_op_map.end()) {
+        op_sin = gmml_tensor_to_ge_op_map[sin];
+    } else {
+        printf("sin not found in gmml_tensor_to_ge_op_map\n");
+        assert(false);
+    }
+    
+    if (gmml_tensor_to_ge_op_map.find(cos) != gmml_tensor_to_ge_op_map.end()) {
+        op_cos = gmml_tensor_to_ge_op_map[cos];
+    } else {
+        printf("cos not found in gmml_tensor_to_ge_op_map\n");
+        assert(false);
+    }
+
+    // 确保维度合法
+    op_x = create_reshape_op(
+        graph, op_x, {x->ne[2], x->ne[1], x->ne[0]},
+        "moe_grouped_matmul_reshape_x" + std::to_string(op_index),
+        get_data_type(x->type));
+    op_sin = create_reshape_op(
+        graph, op_sin, {sin->ne[2], sin->ne[1], sin->ne[0]},
+        "moe_grouped_matmul_reshape_sin" + std::to_string(op_index),
+        get_data_type(sin->type));
+    op_cos = create_reshape_op(
+        graph, op_cos, {cos->ne[2], cos->ne[1], cos->ne[0]},
+        "moe_grouped_matmul_reshape_cos" + std::to_string(op_index),
+        get_data_type(cos->type));
+
+    // 创建RotaryPositionEmbedding算子
+    std::string rope_name = "rope_sin_cos_" + std::to_string(op_index);
+    ge::op::RotaryPositionEmbedding rope_op(rope_name);
+
+    // 设置输入
+    rope_op.set_input_x(op_x);
+    rope_op.set_input_cos(op_cos);
+    rope_op.set_input_sin(op_sin);
+
+    // 设置mode属性为1 (使用预计算的sin/cos)
+    rope_op.set_attr_mode(1);
+
+    // 计算输出形状
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+
+    // 设置输出描述
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    rope_op.update_output_desc_y(desc_out);
+
+    // 添加算子到图中
+    graph.AddOp(rope_op);
+
+    return rope_op;
+}

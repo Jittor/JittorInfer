@@ -14,8 +14,8 @@ enable_mla: true        # use mla for deepseek
 enable_fused_moe: true  # use fused moe for deepseek
 offload_input: true # offload input to GPU
 enable_ge: true # enable ge for deepseek
-display_chat: true # display chat info to console
-presample_count: 128 # presample on npu, -1 for disable
+display_chat: false # display chat info to console
+presample_count: 64 # presample on npu, -1 for disable
 enable_cann_flash_attention: false # enable cann flash attention
 
 # Generation parameters

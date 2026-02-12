@@ -909,7 +909,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "MUL_MAT", "MUL_MAT_ID", "OUT_PROD",
 
     "SCALE", "SET", "CPY", "CONT", "RESHAPE", "VIEW", "PERMUTE", "TRANSPOSE", "GET_ROWS", "GET_ROWS_BACK", "DIAG",
-    "DIAG_MASK_INF", "DIAG_MASK_ZERO", "SOFT_MAX", "SOFT_MAX_BACK", "ROPE", "ROPE_BACK", "CLAMP", "CONV_TRANSPOSE_1D",
+    "DIAG_MASK_INF", "DIAG_MASK_ZERO", "SOFT_MAX", "SOFT_MAX_BACK", "ROPE", "ROPE_BACK", "ROPE_SIN_COS", "ROPE_CACHE", "CLAMP", "CONV_TRANSPOSE_1D",
     "IM2COL", "IM2COL_BACK", "CONV_TRANSPOSE_2D", "POOL_1D", "POOL_2D", "POOL_2D_BACK", "UPSCALE", "PAD",
     "PAD_REFLECT_1D", "ARANGE", "TIMESTEP_EMBEDDING", "ARGSORT", "LEAKY_RELU",
 
@@ -936,7 +936,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_MOE_SWIGLU", "GGML_OP_RMS_NORM_FUSED"
 };
 
-static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
+static_assert(GGML_OP_COUNT == 104, "GGML_OP_COUNT != 104");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
@@ -987,6 +987,8 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "soft_max_back(x)",
                                                       "rope(x)",
                                                       "rope_back(x)",
+                                                      "rope_sin_cos(x,sin,cos)",
+                                                      "rope_cache(n_rot,n_ctx,...)",
                                                       "clamp(x)",
                                                       "conv_transpose_1d(x)",
                                                       "im2col(x)",
@@ -1052,7 +1054,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "moe_swiglu(x, dim)",
                                                       "rms_norm(x, w)" };
 
-static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
+static_assert(GGML_OP_COUNT == 104, "GGML_OP_COUNT != 104");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -3822,6 +3824,64 @@ struct ggml_tensor * ggml_rope_multi_back(struct ggml_context * ctx, struct ggml
     struct ggml_tensor * result = ggml_rope_multi(ctx, a, b, c, n_dims, sections, mode, n_ctx_orig, freq_base,
                                                   freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
     result->op                  = GGML_OP_ROPE_BACK;
+    return result;
+}
+
+// ggml_rope_sin_cos
+
+struct ggml_tensor * ggml_rope_sin_cos(struct ggml_context * ctx, struct ggml_tensor * x,
+                                       struct ggml_tensor * sin, struct ggml_tensor * cos) {
+    GGML_ASSERT(ggml_are_same_shape(sin, cos));
+GGML_ASSERT(ggml_is_contiguous(x));
+    GGML_ASSERT(ggml_is_contiguous(sin));
+    GGML_ASSERT(ggml_is_contiguous(cos));
+
+    struct ggml_tensor * result = ggml_dup_tensor(ctx, x);
+
+    result->op     = GGML_OP_ROPE_SIN_COS;
+    result->src[0] = x;
+    result->src[1] = sin;
+    result->src[2] = cos;
+
+    return result;
+}
+
+// ggml_rope_cache
+
+struct ggml_tensor * ggml_rope_cache(struct ggml_context * ctx,
+                                     struct ggml_tensor * sin, struct ggml_tensor * cos,
+                                     int n_rot, int n_ctx, int n_ctx_orig,
+                                     float freq_base, float freq_scale, float ext_factor,
+                                     float attn_factor, float beta_fast, float beta_slow) {
+    GGML_ASSERT(n_rot % 2 == 0);
+    GGML_ASSERT(sin->type == GGML_TYPE_F32);
+    GGML_ASSERT(cos->type == GGML_TYPE_F32);
+    GGML_ASSERT(ggml_are_same_shape(sin, cos));
+    GGML_ASSERT(ggml_is_contiguous(sin));
+    GGML_ASSERT(ggml_is_contiguous(cos));
+
+    // Expect expanded tensors with shape [n_ctx, n_rot]
+    GGML_ASSERT(sin->ne[1] == n_ctx && sin->ne[0] == n_rot);
+    GGML_ASSERT(cos->ne[1] == n_ctx && cos->ne[0] == n_rot);
+
+    // Return a view of cos tensor
+    struct ggml_tensor * result = ggml_view_tensor(ctx, cos);
+    
+    result->op     = GGML_OP_ROPE_CACHE;
+    result->src[0] = sin;
+    result->src[1] = cos;
+
+    // Store parameters in op_params
+    ggml_set_op_params_i32(result, 0, n_rot);
+    ggml_set_op_params_i32(result, 1, n_ctx);
+    ggml_set_op_params_i32(result, 2, n_ctx_orig);
+    memcpy((int32_t*)result->op_params + 3, &freq_base,    sizeof(float));
+    memcpy((int32_t*)result->op_params + 4, &freq_scale,   sizeof(float));
+    memcpy((int32_t*)result->op_params + 5, &ext_factor,   sizeof(float));
+    memcpy((int32_t*)result->op_params + 6, &attn_factor,  sizeof(float));
+    memcpy((int32_t*)result->op_params + 7, &beta_fast,    sizeof(float));
+    memcpy((int32_t*)result->op_params + 8, &beta_slow,    sizeof(float));
+
     return result;
 }
 

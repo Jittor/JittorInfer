@@ -562,6 +562,17 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 break;
             }
 
+            case GGML_OP_ROPE_SIN_COS: {
+                // 处理使用预计算sin/cos的旋转位置编码(RoPE)操作
+                Operator rope_sin_cos_op = handle_rope_sin_cos(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = rope_sin_cos_op;
+                if (node == last_op_node) {
+                    graph_outputs.push_back(rope_sin_cos_op);
+                }
+                break;
+            }
+
             case GGML_OP_MOE_FUSED: {
                 // 处理MOE Fused操作
                 Operator moe_fused_op = handle_moe_fused_op(

@@ -43,6 +43,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     struct ggml_tensor * length_q;
     struct ggml_tensor * length_kv;
     struct ggml_tensor * page_table;
+    struct ggml_tensor * sin_cache;
+    struct ggml_tensor * cos_cache;
 
     GGML_ASSERT(!run_mlp_only);
     GGML_ASSERT(!hparams.enable_tensor_parallel);
@@ -62,6 +64,16 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     length_kv = build_length_kv();
     if (hparams.enable_mla) {
         page_table = build_inp_page_table();
+        if (hparams.enable_mla) {
+            sin_cache = ggml_reshape_2d(ctx0, kv_self.sin_cache, n_rot, n_ctx);
+            cos_cache = ggml_reshape_2d(ctx0, kv_self.cos_cache, n_rot, n_ctx);
+            sin_cache = ggml_get_rows_fp16(ctx0, sin_cache, inp_pos);
+            cos_cache = ggml_get_rows_fp16(ctx0, cos_cache, inp_pos);
+            ggml_set_name(sin_cache, "sin_cache");
+            ggml_set_name(cos_cache, "cos_cache");
+            sin_cache = ggml_reshape_3d(ctx0, sin_cache, n_rot, 1, inp_pos->ne[0]);
+            cos_cache = ggml_reshape_3d(ctx0, cos_cache, n_rot, 1, inp_pos->ne[0]);
+        }
     } else {
         length_q = build_length_q();
     }
@@ -138,7 +150,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 cb(k_pe, "k_pe", il);
                 k_pe = ggml_reshape_3d(ctx0, k_pe, n_embd_head_qk_rope, 1, n_tokens);
                 kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
-                                            LLM_NORM_RMS, cb, il);
+                                            LLM_NORM_RMS, cb, il, true);
                 cb(kv_compressed, "kv_compressed_norm", il);
 
                 q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head, n_tokens);
@@ -152,15 +164,12 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             }
 
             if (hparams.enable_mla) {
-                q_pe = ggml_rope_ext(ctx0, q_pe, inp_pos, nullptr, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
-                                     ext_factor, attn_factor_scaled, beta_fast, beta_slow);
+                q_pe = ggml_rope_sin_cos(ctx0, q_pe, sin_cache, cos_cache);
                 cb(q_pe, "q_pe", il);
 
-                // shared RoPE key
-                k_pe = ggml_rope_ext(ctx0, k_pe, inp_pos, nullptr, n_rot, rope_type, n_ctx_orig, freq_base, freq_scale,
-                                     ext_factor, attn_factor_scaled, beta_fast, beta_slow);
-                cb(k_pe, "k_pe", il);
+                k_pe = ggml_rope_sin_cos(ctx0, k_pe, sin_cache, cos_cache);
                 k_pe = ggml_reshape_2d(ctx0, k_pe, n_embd_head_qk_rope, n_tokens);
+                cb(k_pe, "k_pe", il);
 
                 cur = llm_attn_mla(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, model.layers[il].wk_b,
                                    model.layers[il].wv_b, kv_compressed, k_pe, q_nope, q_pe, indices, page_table,

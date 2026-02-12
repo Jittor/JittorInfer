@@ -613,6 +613,10 @@ int llama_all_processed_tokens(const struct llama_context * ctx);
 // Clear the KV cache - both cell info is erased and KV data is zeroed
 void llama_kv_cache_clear(struct llama_context * ctx);
 
+// Restore sin/cos cache data for MLA (Multi-head Latent Attention)
+// Should be called after llama_kv_cache_clear to restore RoPE cache
+void llama_kv_cache_restore_rope_cache(struct llama_context * ctx);
+
 // Check if the context supports KV cache shifting
 bool llama_kv_cache_can_shift(struct llama_context * ctx);
 

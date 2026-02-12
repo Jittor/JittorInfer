@@ -41,6 +41,11 @@ void llama_clear_adapter_lora(struct llama_context * ctx) {
 
 void llama_kv_cache_clear(struct llama_context * ctx) {
     llama_kv_cache_clear(ctx->kv_self);
+    llama_kv_cache_restore_rope_cache(ctx->kv_self);
+}
+
+void llama_kv_cache_restore_rope_cache(struct llama_context * ctx) {
+    llama_kv_cache_restore_rope_cache(ctx->kv_self);
 }
 
 void llama_set_k_shift(struct llama_context & lctx) {

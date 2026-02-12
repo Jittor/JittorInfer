@@ -1510,6 +1510,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_ROPE:
             ggml_cann_rope(ctx, dst);
             break;
+        case GGML_OP_ROPE_SIN_COS:
+            ggml_cann_rope_sin_cos(ctx, dst);
+            break;
         case GGML_OP_IM2COL:
             ggml_cann_im2col(ctx, dst);
             break;
@@ -1543,9 +1546,6 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_FLASH_ATTN_JITTOR_V1:
             ggml_cann_flash_attn_jittor_v1(ctx, dst);
             break;
-        case GGML_OP_MLA_JITTOR:
-            ggml_cann_mla_jittor(ctx, dst);
-            break;
         case GGML_OP_MLA_PREFILL_JITTOR:
             ggml_cann_mla_prefill_jittor(ctx, dst);
             break;
@@ -1553,6 +1553,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
             ggml_cann_mla_preprocess(ctx, dst);
             break;
 #endif
+        case GGML_OP_MLA_JITTOR:
+            ggml_cann_mla_jittor(ctx, dst);
+            break;
         case GGML_OP_GET_SLICE:
             ggml_cann_get_slice(ctx, dst);
             break;
@@ -2142,6 +2145,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_CLAMP:
         case GGML_OP_DIAG_MASK_INF:
         case GGML_OP_SOFT_MAX:
+        case GGML_OP_ROPE_SIN_COS:
         case GGML_OP_POOL_2D:
         case GGML_OP_SUM_ROWS:
         case GGML_OP_ARGSORT:
@@ -2155,10 +2159,10 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_FLASH_ATTN_PROMPT:
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
         case GGML_OP_FLASH_ATTN_JITTOR_V1:
-        case GGML_OP_MLA_JITTOR:
         case GGML_OP_MLA_PREFILL_JITTOR:
         case GGML_OP_MLA_PREPROCESS:
 #endif
+        case GGML_OP_MLA_JITTOR:
         case GGML_OP_TO_ZERO:
         case GGML_OP_SCATTER_UPDATE:
         case GGML_OP_SPLIT:

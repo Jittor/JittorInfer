@@ -65,6 +65,13 @@ struct llama_kv_cache {
     std::vector<struct ggml_tensor *> kq_masks;
     std::vector<struct ggml_tensor *> kq_masks_tmp;
 
+    struct ggml_tensor * cos_cache;
+    struct ggml_tensor * sin_cache;
+
+    // Store original sin/cos cache data for restoration
+    std::vector<uint8_t> sin_cache_data;
+    std::vector<uint8_t> cos_cache_data;
+
     std::vector<ggml_context_ptr>        ctxs;
     std::vector<ggml_backend_buffer_ptr> bufs;
 
@@ -130,6 +137,9 @@ uint32_t llama_kv_cache_cell_max(const struct llama_kv_cache & cache);
 
 bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & model, const llama_cparams & cparams,
                          ggml_type type_k, ggml_type type_v, uint32_t kv_size, bool offload);
+
+// Restore sin/cos cache data from stored vectors (for MLA)
+void llama_kv_cache_restore_rope_cache(struct llama_kv_cache & cache);
 
 bool llama_kv_cache_seq_rm(struct llama_kv_cache & cache, llama_seq_id seq_id, llama_pos p0, llama_pos p1);
 

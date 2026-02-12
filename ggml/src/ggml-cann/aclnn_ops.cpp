@@ -69,6 +69,7 @@
 
 #include "aclnnop/aclnn_add.h"
 #include "aclnnop/aclnn_grouped_matmul_v4.h"
+#include "aclnnop/aclnn_rotary_position_embedding.h"
 #include "aclnnop/aclnn_index_copy.h"
 #include "aclnnop/aclnn_index_select.h"
 #include "aclnnop/aclnn_moe_compute_expert_tokens.h"
@@ -5153,14 +5154,6 @@ static void aclnn_cache_init(ggml_backend_cann_context& ctx, ggml_tensor* dst,
 #ifdef __cplusplus
 extern "C" {
 #endif
-aclnnStatus aclnnRotaryPositionEmbeddingGetWorkspaceSize(
-    const aclTensor* x, const aclTensor* cos, const aclTensor* sin,
-    int64_t mode, const aclTensor* yOut, uint64_t* workspaceSize,
-    aclOpExecutor** executor);
-aclnnStatus aclnnRotaryPositionEmbedding(void* workspace,
-                                         uint64_t workspaceSize,
-                                         aclOpExecutor* executor,
-                                         aclrtStream stream);
 #ifdef __cplusplus
 }
 #endif
@@ -5541,6 +5534,67 @@ void ggml_cann_rope(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     //      ACL_CHECK(aclDestroyTensor(acl_dst));
 }
 
+void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+    ggml_tensor* x = dst->src[0];    // input tensor
+    ggml_tensor* sin = dst->src[1];  // precomputed sin values
+    ggml_tensor* cos = dst->src[2];  // precomputed cos values
+
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(sin != NULL);
+    GGML_ASSERT(cos != NULL);
+    GGML_ASSERT(ggml_are_same_shape(sin, cos));
+    GGML_ASSERT(x->type == GGML_TYPE_F16 || x->type == GGML_TYPE_F32);
+    GGML_ASSERT(sin->type == GGML_TYPE_F16 || sin->type == GGML_TYPE_F32);
+    GGML_ASSERT(cos->type == GGML_TYPE_F16 || cos->type == GGML_TYPE_F32);
+
+    // Create ACL tensors
+    aclTensor* acl_x = ggml_cann_create_tensor(x);
+    aclTensor* acl_cos = ggml_cann_create_tensor(cos);
+    aclTensor* acl_sin = ggml_cann_create_tensor(sin);
+    aclTensor* acl_out = ggml_cann_create_tensor(dst);
+
+    // Copy data from device to host for printing
+    size_t print_count = std::min((size_t)10, (size_t)ggml_nelements(cos));
+    size_t cos_bytes = print_count * ggml_type_size(cos->type);
+    size_t sin_bytes = print_count * ggml_type_size(sin->type);
+    
+    std::vector<char> cos_host(cos_bytes);
+    std::vector<char> sin_host(sin_bytes);
+    
+    ACL_CHECK(aclrtMemcpyAsync(cos_host.data(), cos_bytes, cos->data, cos_bytes,
+                               ACL_MEMCPY_DEVICE_TO_HOST, ctx.stream()));
+    ACL_CHECK(aclrtMemcpyAsync(sin_host.data(), sin_bytes, sin->data, sin_bytes,
+                               ACL_MEMCPY_DEVICE_TO_HOST, ctx.stream()));
+    ACL_CHECK(aclrtSynchronizeStream(ctx.stream()));
+
+    // Set mode to 1 (default)
+    int64_t mode = 1;
+
+    // Get workspace size and executor
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor = nullptr;
+
+    ACL_CHECK(aclnnRotaryPositionEmbeddingGetWorkspaceSize(
+        acl_x, acl_cos, acl_sin, mode, acl_out, &workspaceSize, &executor));
+
+    // Allocate workspace if needed
+    void* workspaceAddr = nullptr;
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
+    }
+
+    // Execute the operation
+    ACL_CHECK(aclnnRotaryPositionEmbedding(workspaceAddr, workspaceSize,
+                                           executor, ctx.stream()));
+
+    // Cleanup
+    ACL_CHECK(aclDestroyTensor(acl_x));
+    ACL_CHECK(aclDestroyTensor(acl_cos));
+    ACL_CHECK(aclDestroyTensor(acl_sin));
+    ACL_CHECK(aclDestroyTensor(acl_out));
+}
+
 void ggml_cann_flash_attn_prompt(ggml_backend_cann_context& ctx,
                                  ggml_tensor* dst) {
     ggml_tensor* query = dst->src[0];
@@ -5708,159 +5762,6 @@ void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
     ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
     ACL_CHECK(aclDestroyIntArray(actualSeqLengthsq));
     ACL_CHECK(aclDestroyIntArray(actualSeqLengthskv));
-}
-
-void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
-    ggml_tensor* query = dst->src[0];
-    ggml_tensor* query_rope = dst->src[1];
-    ggml_tensor* context_KV = dst->src[2];
-    ggml_tensor* key_rope = dst->src[3];
-    ggml_tensor* block_table = dst->src[4];
-    ggml_tensor* context_length = dst->src[5];
-    ggml_tensor* mask = dst->src[6];
-    ggml_tensor* qSeq_length = dst->src[7];
-    GGML_ASSERT(query->type == GGML_TYPE_F16);
-    GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
-    GGML_ASSERT(context_KV->type == GGML_TYPE_F16);
-    GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
-    GGML_ASSERT(block_table->type == GGML_TYPE_I32);
-    GGML_ASSERT(context_length->type == GGML_TYPE_I64);
-    if (mask != nullptr) {
-        GGML_ASSERT(mask->type == GGML_TYPE_F16);
-    }
-    if (qSeq_length != nullptr) {
-        GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64);
-    }
-    GGML_ASSERT(dst->type == GGML_TYPE_F16);
-    struct {
-        int batchSize;
-        int tokenNum;
-        int headNum;
-        int kvHeadNum;
-        int kSeqLen;
-        float qkScale;
-        int blockSize;
-    } params;
-
-    memcpy(&params, dst->op_params, sizeof(params));
-    int32_t batchSize = params.batchSize;
-    int32_t tokenNum = params.tokenNum;
-    int32_t headNum = params.headNum;
-    int32_t kvHeadNum = params.kvHeadNum;
-    int32_t kSeqLen = params.kSeqLen;
-    int32_t blockSize = params.blockSize;
-    float qkScale = params.qkScale;
-
-    int maxBlockNumPerSeq = (kSeqLen + blockSize - 1) / blockSize;
-    int blockNum = tokenNum * maxBlockNumPerSeq;
-    bool use_jittor_mla = false;
-
-    std::string sLayerOut = "BNSD";
-    char layerOut[sLayerOut.length()];
-    strcpy(layerOut, sLayerOut.c_str());
-    int64_t sparseMode = 0;
-
-    aclTensor* acl_query_tensor = ggml_cann_create_tensor(
-        query, query->ne, query->nb, use_jittor_mla ? ggml_n_dims(query) : 4);
-    aclTensor* acl_query_rope_tensor =
-        ggml_cann_create_tensor(query_rope, query_rope->ne, query_rope->nb,
-                                use_jittor_mla ? ggml_n_dims(query_rope) : 4);
-    aclTensor* acl_context_KV_tensor =
-        ggml_cann_create_tensor(context_KV, context_KV->ne, context_KV->nb,
-                                use_jittor_mla ? ggml_n_dims(context_KV) : 4);
-
-    // build tensor list
-    const int kvTensorNum = 1;
-    aclTensor* tensorsOfKey[kvTensorNum];
-    tensorsOfKey[0] = acl_context_KV_tensor;
-    auto* acl_context_KV_tensor_list =
-        aclCreateTensorList(tensorsOfKey, kvTensorNum);
-
-    aclTensor* acl_key_rope_tensor =
-        ggml_cann_create_tensor(key_rope, key_rope->ne, key_rope->nb,
-                                use_jittor_mla ? ggml_n_dims(key_rope) : 4);
-    aclTensor* acl_block_table_tensor =
-        ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb,
-                                use_jittor_mla ? ggml_n_dims(block_table) : 2);
-    aclTensor* acl_mask_tensor =
-        mask != nullptr ? ggml_cann_create_tensor(mask, mask->ne, mask->nb,
-                                                  ggml_n_dims(mask))
-                        : nullptr;
-    aclTensor* acl_dst_tensor = ggml_cann_create_tensor(
-        dst, dst->ne, dst->nb, use_jittor_mla ? ggml_n_dims(dst) : 4);
-
-    std::vector<int64_t> context_length_host;
-    const int64_t* context_length_ptr = nullptr;
-    if (ggml_backend_buffer_is_host(context_length->buffer)) {
-        context_length_ptr = (const int64_t*)ggml_get_data(context_length);
-    } else {
-        context_length_host.resize(batchSize);
-        ggml_backend_tensor_get(context_length, context_length_host.data(), 0,
-                                batchSize * sizeof(int64_t));
-        context_length_ptr = context_length_host.data();
-    }
-
-    aclIntArray* acl_context_length_array =
-        aclCreateIntArray(context_length_ptr, batchSize);
-
-    aclIntArray* acl_qseq_length_array = nullptr;
-    if (qSeq_length != nullptr) {
-        std::vector<int64_t> qseq_length_host;
-        const int64_t* qseq_length_ptr = nullptr;
-        if (ggml_backend_buffer_is_host(qSeq_length->buffer)) {
-            qseq_length_ptr = (const int64_t*)ggml_get_data(qSeq_length);
-        } else {
-            qseq_length_host.resize(batchSize);
-            ggml_backend_tensor_get(qSeq_length, qseq_length_host.data(), 0,
-                                    batchSize * sizeof(int64_t));
-            qseq_length_ptr = qseq_length_host.data();
-        }
-        acl_qseq_length_array = aclCreateIntArray(qseq_length_ptr, batchSize);
-    }
-
-    uint64_t workspaceSize = 0;
-    aclOpExecutor* executor;
-    void* workspaceAddr = nullptr;
-    if (use_jittor_mla) {
-        ACL_CHECK(aclnnMLAGetWorkspaceSize(
-            acl_query_tensor, acl_query_rope_tensor, acl_context_KV_tensor,
-            acl_key_rope_tensor, acl_block_table_tensor,
-            acl_context_length_array, acl_mask_tensor, acl_qseq_length_array,
-            nullptr, nullptr, headNum, qkScale, kvHeadNum, 0, 0, 0,
-            acl_dst_tensor, &workspaceSize, &executor));
-    } else {
-        ACL_CHECK(aclnnFusedInferAttentionScoreV3GetWorkspaceSize(
-            acl_query_tensor, acl_context_KV_tensor_list,
-            acl_context_KV_tensor_list, nullptr, nullptr, nullptr,
-            acl_context_length_array, nullptr, nullptr, nullptr, nullptr,
-            nullptr, nullptr, nullptr, acl_block_table_tensor, nullptr, nullptr,
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-            acl_query_rope_tensor, acl_key_rope_tensor, nullptr, headNum,
-            qkScale, 2147483647, 2147483647, layerOut, kvHeadNum, sparseMode, 0,
-            blockSize, 0, false, 0, 0, acl_dst_tensor, nullptr, &workspaceSize,
-            &executor));
-    }
-    if (workspaceSize > 0) {
-        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
-        workspaceAddr = workspace_allocator.get();
-    }
-
-    if (use_jittor_mla) {
-        ACL_CHECK(
-            aclnnMLA(workspaceAddr, workspaceSize, executor, ctx.stream()));
-    } else {
-        ACL_CHECK(aclnnFusedInferAttentionScoreV3(workspaceAddr, workspaceSize,
-                                                  executor, ctx.stream()));
-    }
-
-    ACL_CHECK(aclDestroyTensor(acl_query_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_query_rope_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_context_KV_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_key_rope_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_block_table_tensor));
-    ACL_CHECK(aclDestroyIntArray(acl_context_length_array));
-    ACL_CHECK(aclDestroyTensor(acl_mask_tensor));
-    ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
 }
 
 void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
@@ -6172,6 +6073,142 @@ void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx,
 }
 
 #endif
+
+void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+    ggml_tensor* query = dst->src[0];
+    ggml_tensor* query_rope = dst->src[1];
+    ggml_tensor* context_KV = dst->src[2];
+    ggml_tensor* key_rope = dst->src[3];
+    ggml_tensor* block_table = dst->src[4];
+    ggml_tensor* context_length = dst->src[5];
+    ggml_tensor* mask = dst->src[6];
+    ggml_tensor* qSeq_length = dst->src[7];
+    GGML_ASSERT(query->type == GGML_TYPE_F16);
+    GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
+    GGML_ASSERT(context_KV->type == GGML_TYPE_F16);
+    GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
+    GGML_ASSERT(block_table->type == GGML_TYPE_I32);
+    GGML_ASSERT(context_length->type == GGML_TYPE_I64);
+    if (mask != nullptr) {
+        GGML_ASSERT(mask->type == GGML_TYPE_F16);
+    }
+    if (qSeq_length != nullptr) {
+        GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64);
+    }
+    GGML_ASSERT(dst->type == GGML_TYPE_F16);
+    struct {
+        int batchSize;
+        int tokenNum;
+        int headNum;
+        int kvHeadNum;
+        int kSeqLen;
+        float qkScale;
+        int blockSize;
+    } params;
+
+    memcpy(&params, dst->op_params, sizeof(params));
+    int32_t batchSize = params.batchSize;
+    int32_t tokenNum = params.tokenNum;
+    int32_t headNum = params.headNum;
+    int32_t kvHeadNum = params.kvHeadNum;
+    int32_t kSeqLen = params.kSeqLen;
+    int32_t blockSize = params.blockSize;
+    float qkScale = params.qkScale;
+
+    int maxBlockNumPerSeq = (kSeqLen + blockSize - 1) / blockSize;
+    int blockNum = tokenNum * maxBlockNumPerSeq;
+
+    std::string sLayerOut = "BNSD";
+    char layerOut[sLayerOut.length()];
+    strcpy(layerOut, sLayerOut.c_str());
+    int64_t sparseMode = 0;
+
+    aclTensor* acl_query_tensor = ggml_cann_create_tensor(
+        query, query->ne, query->nb, 4);
+    aclTensor* acl_query_rope_tensor =
+        ggml_cann_create_tensor(query_rope, query_rope->ne, query_rope->nb, 4);
+    aclTensor* acl_context_KV_tensor =
+        ggml_cann_create_tensor(context_KV, context_KV->ne, context_KV->nb, 4);
+
+    // build tensor list
+    const int kvTensorNum = 1;
+    aclTensor* tensorsOfKey[kvTensorNum];
+    tensorsOfKey[0] = acl_context_KV_tensor;
+    auto* acl_context_KV_tensor_list =
+        aclCreateTensorList(tensorsOfKey, kvTensorNum);
+
+    aclTensor* acl_key_rope_tensor =
+        ggml_cann_create_tensor(key_rope, key_rope->ne, key_rope->nb, 4);
+    aclTensor* acl_block_table_tensor =
+        ggml_cann_create_tensor(block_table, block_table->ne, block_table->nb, 2);
+    aclTensor* acl_mask_tensor =
+        mask != nullptr ? ggml_cann_create_tensor(mask, mask->ne, mask->nb,
+                                                  ggml_n_dims(mask))
+                        : nullptr;
+    aclTensor* acl_dst_tensor = ggml_cann_create_tensor(
+        dst, dst->ne, dst->nb, 4);
+
+    std::vector<int64_t> context_length_host;
+    const int64_t* context_length_ptr = nullptr;
+    if (ggml_backend_buffer_is_host(context_length->buffer)) {
+        context_length_ptr = (const int64_t*)ggml_get_data(context_length);
+    } else {
+        context_length_host.resize(batchSize);
+        ggml_backend_tensor_get(context_length, context_length_host.data(), 0,
+                                batchSize * sizeof(int64_t));
+        context_length_ptr = context_length_host.data();
+    }
+
+    aclIntArray* acl_context_length_array =
+        aclCreateIntArray(context_length_ptr, batchSize);
+
+    aclIntArray* acl_qseq_length_array = nullptr;
+    if (qSeq_length != nullptr) {
+        std::vector<int64_t> qseq_length_host;
+        const int64_t* qseq_length_ptr = nullptr;
+        if (ggml_backend_buffer_is_host(qSeq_length->buffer)) {
+            qseq_length_ptr = (const int64_t*)ggml_get_data(qSeq_length);
+        } else {
+            qseq_length_host.resize(batchSize);
+            ggml_backend_tensor_get(qSeq_length, qseq_length_host.data(), 0,
+                                    batchSize * sizeof(int64_t));
+            qseq_length_ptr = qseq_length_host.data();
+        }
+        acl_qseq_length_array = aclCreateIntArray(qseq_length_ptr, batchSize);
+    }
+
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor;
+    void* workspaceAddr = nullptr;
+    ACL_CHECK(aclnnFusedInferAttentionScoreV3GetWorkspaceSize(
+        acl_query_tensor, acl_context_KV_tensor_list,
+        acl_context_KV_tensor_list, nullptr, nullptr, nullptr,
+        acl_context_length_array, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, acl_block_table_tensor, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        acl_query_rope_tensor, acl_key_rope_tensor, nullptr, headNum,
+        qkScale, 2147483647, 2147483647, layerOut, kvHeadNum, sparseMode, 0,
+        blockSize, 0, false, 0, 0, acl_dst_tensor, nullptr, &workspaceSize,
+        &executor));
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
+    }
+
+    ACL_CHECK(aclnnFusedInferAttentionScoreV3(workspaceAddr, workspaceSize,
+                                                executor, ctx.stream()));
+
+    ACL_CHECK(aclDestroyTensor(acl_query_tensor));
+    ACL_CHECK(aclDestroyTensor(acl_query_rope_tensor));
+    ACL_CHECK(aclDestroyTensor(acl_context_KV_tensor));
+    ACL_CHECK(aclDestroyTensor(acl_key_rope_tensor));
+    ACL_CHECK(aclDestroyTensor(acl_block_table_tensor));
+    ACL_CHECK(aclDestroyIntArray(acl_context_length_array));
+    ACL_CHECK(aclDestroyTensor(acl_mask_tensor));
+    ACL_CHECK(aclDestroyTensor(acl_dst_tensor));
+}
+
+
 
 #define CHECK_RET(cond, return_expr) \
     do {                             \

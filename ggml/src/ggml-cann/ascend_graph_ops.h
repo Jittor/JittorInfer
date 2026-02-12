@@ -105,6 +105,10 @@ ge::Operator handle_rope_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index, ggml_backend_cann_context &cann_ctx);
+ge::Operator handle_rope_sin_cos(
+    ge::Graph &graph, ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
 ge::Operator handle_moe_fused_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,

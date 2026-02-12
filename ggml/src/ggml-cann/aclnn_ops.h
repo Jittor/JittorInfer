@@ -261,13 +261,13 @@ void ggml_cann_flash_attn_prompt(ggml_backend_cann_context& ctx,
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
 void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
                                     ggml_tensor* dst);
-void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_mla_prefill_jittor(ggml_backend_cann_context& ctx,
                                   ggml_tensor* dst);
 
 void ggml_cann_mla_preprocess(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 #endif
+void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
  * @brief   Computes the accumulation of tensors using the CANN backend.
@@ -652,6 +652,22 @@ void ggml_cann_mul_mat(ggml_backend_cann_context& ctx, ggml_tensor* dst);
  *       not equal 1.
  */
 void ggml_cann_rope(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
+ * @brief Applies Rotary Positional Embedding (RoPE) using precomputed sin/cos.
+ *
+ * @details This function implements the RoPE mechanism using precomputed sine
+ *          and cosine values. It uses the aclnnRotaryPositionEmbedding operator
+ *          with mode=1 (default).
+ *
+ * @param ctx The backend CANN context for executing operations.
+ * @param dst The destination tensor where the RoPE-transformed data will be
+ *            stored. dst->op is `GGML_OP_ROPE_SIN_COS`.
+ *            dst->src[0] = x (input tensor)
+ *            dst->src[1] = sin (precomputed sine values)
+ *            dst->src[2] = cos (precomputed cosine values)
+ */
+void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 template <aclnnStatus getWorkspaceSize(const aclTensor*, const aclTensor*,
                                        aclTensor*, uint64_t*, aclOpExecutor**),

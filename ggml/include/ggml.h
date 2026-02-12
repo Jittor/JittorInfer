@@ -485,6 +485,8 @@ enum ggml_op {
     GGML_OP_SOFT_MAX_BACK,
     GGML_OP_ROPE,
     GGML_OP_ROPE_BACK,
+    GGML_OP_ROPE_SIN_COS,
+    GGML_OP_ROPE_CACHE,
     GGML_OP_CLAMP,
     GGML_OP_CONV_TRANSPOSE_1D,
     GGML_OP_IM2COL,
@@ -1232,6 +1234,18 @@ GGML_API struct ggml_tensor * ggml_rope_ext(struct ggml_context * ctx, struct gg
                                             struct ggml_tensor * c, int n_dims, int mode, int n_ctx_orig,
                                             float freq_base, float freq_scale, float ext_factor, float attn_factor,
                                             float beta_fast, float beta_slow);
+
+GGML_API struct ggml_tensor * ggml_rope_sin_cos(struct ggml_context * ctx, struct ggml_tensor * x,
+    struct ggml_tensor * sin, struct ggml_tensor * cos);
+
+// compute sin/cos cache for RoPE
+// sin and cos must be float32 tensors of shape [n_ctx, n_rot/2]
+// returns a view of the cos tensor after computation
+GGML_API struct ggml_tensor * ggml_rope_cache(struct ggml_context * ctx,
+                                               struct ggml_tensor * sin, struct ggml_tensor * cos,
+                                               int n_rot, int n_ctx, int n_ctx_orig,
+                                               float freq_base, float freq_scale, float ext_factor,
+                                               float attn_factor, float beta_fast, float beta_slow);
 
 GGML_API struct ggml_tensor * ggml_rope_multi(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b,
                                               struct ggml_tensor * c, int n_dims, int sections[4], int mode,
