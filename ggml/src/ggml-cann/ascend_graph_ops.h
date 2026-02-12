@@ -38,6 +38,11 @@ ge::Operator handle_matmul_op(
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
 
+ge::Operator handle_mul_mat_transpose_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
 ge::Operator handle_softmax_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,

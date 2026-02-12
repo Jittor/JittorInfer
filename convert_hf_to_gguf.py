@@ -1010,7 +1010,7 @@ class DeepseekV2Model(Model):
             data_torch = data_torch.reshape(n_head, qk_nope_head_dim + n_embd_head_v, kv_lora_rank)
             k_b_proj = data_torch[:, :qk_nope_head_dim, :]
             v_b_proj = data_torch[:, qk_nope_head_dim:, :]
-            k_b_proj = k_b_proj.permute(0, 2, 1).contiguous()
+            v_b_proj = v_b_proj.permute(0, 2, 1).contiguous()
             return [
                 ("blk." + str(bid) + ".attn_wk_b.weight", k_b_proj),
                 ("blk." + str(bid) + ".attn_wv_b.weight", v_b_proj),

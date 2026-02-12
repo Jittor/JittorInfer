@@ -669,6 +669,18 @@ void ggml_cann_rope(ggml_backend_cann_context& ctx, ggml_tensor* dst);
  */
 void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
+/**
+ * @brief Performs matrix multiplication with transpose using aclnnTransposeBatchMatMul.
+ *
+ * @param ctx The backend CANN context for executing operations.
+ * @param dst The destination tensor where the result will be stored.
+ *            dst->op is `GGML_OP_MUL_MAT_TRANSPOSE`.
+ *            dst->src[0] = a (first input matrix [M, B, K, 1])
+ *            dst->src[1] = b (second input matrix [B, K, N, 1])
+ *            Result shape: [M, B, N, 1]
+ */
+void ggml_cann_mul_mat_transpose(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
 template <aclnnStatus getWorkspaceSize(const aclTensor*, const aclTensor*,
                                        aclTensor*, uint64_t*, aclOpExecutor**),
           aclnnStatus execute(void*, uint64_t, aclOpExecutor*, aclrtStream)>

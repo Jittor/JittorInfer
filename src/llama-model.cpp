@@ -807,10 +807,10 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                             tn(LLM_TENSOR_ATTN_KV_A_MQA, "weight", i), 0, local_dev);
                         }
                         if (hparams.enable_mla) {
-                            layer.wk_b = create_tensor({ n_embd_head_qk_nope, kv_lora_rank, n_head },
+                            layer.wk_b = create_tensor({ kv_lora_rank, n_embd_head_qk_nope, n_head },
                                                        use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_3d_DIM2,
                                                        tn(LLM_TENSOR_ATTN_K_B, "weight", i), 0, local_dev);
-                            layer.wv_b = create_tensor({ kv_lora_rank, n_embd_head_v, n_head },
+                            layer.wv_b = create_tensor({ n_embd_head_v, kv_lora_rank, n_head },
                                                        use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_3d_DIM2,
                                                        tn(LLM_TENSOR_ATTN_V_B, "weight", i), 0, local_dev);
                         } else {

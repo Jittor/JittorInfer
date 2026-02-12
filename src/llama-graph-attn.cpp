@@ -242,47 +242,31 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
 
     // recover k states and v states
     struct ggml_tensor * q_states;
-    bool                 use_jittor_mla = false;
 
     struct ggml_tensor * cache_kv_nope = ggml_reshape_2d(ctx, kv.k_l[il], n_embd_k_cache, n_ctx);
     cache_kv_nope = ggml_scatter_update(ctx, cache_kv_nope, indices, ggml_cast(ctx, kv_nope, GGML_TYPE_F16));
-    if (use_jittor_mla) {
-        cache_kv_nope = ggml_reshape_4d(ctx, cache_kv_nope, n_embd_k_cache, 1, page_size, page_num);
-    } else {
-        cache_kv_nope = ggml_reshape_4d(ctx, cache_kv_nope, n_embd_k_cache, page_size, 1, page_num);
-    }
+    cache_kv_nope = ggml_reshape_4d(ctx, cache_kv_nope, n_embd_k_cache, page_size, 1, page_num);
     cb(cache_kv_nope, "cache_kv_nope", il);
 
     struct ggml_tensor * cache_kv_pe = ggml_reshape_2d(ctx, kv.v_l[il], n_embd_v_cache, n_ctx);
     cache_kv_pe = ggml_scatter_update(ctx, cache_kv_pe, indices, ggml_cast(ctx, kv_pe, GGML_TYPE_F16));
-    if (use_jittor_mla) {
-        cache_kv_pe = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, 1, page_size, page_num);
-    } else {
-        cache_kv_pe = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, page_size, 1, page_num);
-    }
+    cache_kv_pe = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, page_size, 1, page_num);
     cb(cache_kv_pe, "cache_kv_pe", il);
 
     {
         // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_kv} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_kv}
-        q_nope = ggml_reshape_4d(ctx, q_nope, q_nope->ne[0], 1, q_nope->ne[1], q_nope->ne[2]);
-        q_nope = ggml_mul_mat(ctx, wk_b, q_nope);
-        // JITTORMLA
-        if (use_jittor_mla) {
-            q_nope = ggml_reshape_4d(ctx, q_nope, q_nope->ne[0], q_nope->ne[2], q_nope->ne[3], 1);
-        }
-
+        q_pe   = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
+        q_nope = ggml_cast(ctx, q_nope, GGML_TYPE_F16);
+        q_nope = ggml_mul_mat_transpose(ctx, q_nope, wk_b);
         cb(q_nope, "q_nope_absorb", il);
         // CANNMLA
-        if (!use_jittor_mla) {
-            q_pe = ggml_reshape_4d(ctx, q_pe, q_pe->ne[0], 1, q_pe->ne[1], q_pe->ne[2]);
-        }
+        q_nope = ggml_reshape_4d(ctx, q_nope, q_nope->ne[0], 1, q_nope->ne[1], q_nope->ne[2]);
+        q_pe = ggml_reshape_4d(ctx, q_pe, q_pe->ne[0], 1, q_pe->ne[1], q_pe->ne[2]);
     }
 
     // attention
     struct ggml_tensor * cur;
     {
-        q_nope = ggml_cast(ctx, q_nope, GGML_TYPE_F16);
-        q_pe   = ggml_cast(ctx, q_pe, GGML_TYPE_F16);
 
         struct ggml_tensor * kqv =
             ggml_mla_jittor(ctx, q_nope, q_pe, cache_kv_nope, cache_kv_pe, page_table, length_kv, nullptr, nullptr,
@@ -294,10 +278,9 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
         // ggml_build_forward_expand(graph, debug);
 
         cb(kqv, "kqv", il);
-        if (use_jittor_mla) {
-            kqv = ggml_reshape_4d(ctx, kqv, kv_lora_rank, 1, n_head, n_tokens);
-        }
-        kqv = ggml_mul_mat(ctx, wv_b, kqv);
+        kqv = ggml_reshape_4d(ctx, kqv, kv_lora_rank, n_head, n_tokens, 1);
+        kqv = ggml_cast(ctx, kqv, GGML_TYPE_F16);
+        kqv = ggml_mul_mat_transpose(ctx, kqv, wv_b);
         cb(kqv, "kqv_absorb", il);
         cur = ggml_reshape_2d(ctx, kqv, n_embd_head_v * n_head, n_tokens);
     }

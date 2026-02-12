@@ -386,6 +386,77 @@ ge::Operator handle_matmul_op(
 }
 
 /**
+ * @brief 处理mul_mat_transpose操作的函数
+ *
+ * 使用TransposeBatchMatMul算子实现矩阵转置乘法
+ * 输入: A[M, B, K, 1], B[B, K, N, 1]
+ * 输出: result[M, B, N, 1]
+ * 对应的einsum操作: result[m,b,n] = A[m,b,k] @ B[b,k,n]
+ *
+ * @param graph 计算图引用
+ * @param node 表示mul_mat_transpose操作的张量节点
+ * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的TransposeBatchMatMul算子
+ */
+ge::Operator handle_mul_mat_transpose_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    ggml_tensor *src0 = node->src[0];  // A: [M, B, K, 1] in GGML notation
+    ggml_tensor *src1 = node->src[1];  // B: [B, K, N, 1] in GGML notation
+
+    ge::Operator op_a, op_b;
+    
+    // 获取输入算子A
+    if (gmml_tensor_to_ge_op_map.find(src0) != gmml_tensor_to_ge_op_map.end()) {
+        op_a = gmml_tensor_to_ge_op_map[src0];
+    } else {
+        assert(false && "src0 not found in tensor map");
+    }
+
+    // 获取输入算子B
+    if (gmml_tensor_to_ge_op_map.find(src1) != gmml_tensor_to_ge_op_map.end()) {
+        op_b = gmml_tensor_to_ge_op_map[src1];
+    } else {
+        assert(false && "src1 not found in tensor map");
+    }
+    op_a = create_reshape_op(
+        graph, op_a, {src0->ne[2], src0->ne[1], src0->ne[0]},
+        "mul_mat_transpose_reshape_x0" + std::to_string(op_index),
+        get_data_type(src0->type));
+    op_b = create_reshape_op(
+        graph, op_b, {src1->ne[2], src1->ne[1], src1->ne[0]},
+        "mul_mat_transpose_reshape_x1" + std::to_string(op_index),
+        get_data_type(src1->type));
+    // 创建TransposeBatchMatMul算子
+    std::string name = "mul_mat_transpose_" + std::to_string(op_index);
+    ge::op::TransposeBatchMatMul transpose_matmul_op(name);
+
+    // 设置输入
+    // TransposeBatchMatMul的输入顺序: x1, x2
+    // 根据ACLNN实现，我们需要:
+    // - permX1 = [1, 0, 2] 表示转置x1的前两个维度
+    // - permX2 = [0, 1, 2] 表示不转置x2
+    // - permY = [1, 0, 2] 表示转置输出的前两个维度
+    transpose_matmul_op.set_input_x1(op_a);
+    transpose_matmul_op.set_input_x2(op_b);
+
+    // 设置转置属性
+    // permX1: [1, 0, 2] - 转置第一个输入的前两个维度
+    transpose_matmul_op.set_attr_perm_x1({1, 0, 2});
+    // permX2: [0, 1, 2] - 不转置第二个输入
+    transpose_matmul_op.set_attr_perm_x2({0, 1, 2});
+    // permY: [1, 0, 2] - 转置输出的前两个维度
+    transpose_matmul_op.set_attr_perm_y({1, 0, 2});
+
+    // 添加到图中
+    graph.AddOp(transpose_matmul_op);
+
+    return transpose_matmul_op;
+}
+
+/**
  * @brief 处理Softmax操作的函数
  *
  * 在计算图中创建Softmax操作，支持带掩码(mask)和缩放(scale)的情况

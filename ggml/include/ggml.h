@@ -466,6 +466,7 @@ enum ggml_op {
 
     GGML_OP_MUL_MAT,
     GGML_OP_MUL_MAT_ID,
+    GGML_OP_MUL_MAT_TRANSPOSE,
     GGML_OP_OUT_PROD,
 
     GGML_OP_SCALE,
@@ -974,6 +975,8 @@ GGML_API void                 ggml_mul_mat_set_prec(struct ggml_tensor * a, enum
 // indirect matrix multiplication
 GGML_API struct ggml_tensor * ggml_mul_mat_id(struct ggml_context * ctx, struct ggml_tensor * as,
                                               struct ggml_tensor * b, struct ggml_tensor * ids);
+
+GGML_API struct ggml_tensor * ggml_mul_mat_transpose(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b);
 
 // fused moe for deepseek v2
 GGML_API struct ggml_tensor * ggml_dpskv2_fused_moe(struct ggml_context * ctx, struct ggml_tensor * inp_embd,

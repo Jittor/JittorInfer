@@ -906,7 +906,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "ARGMAX", "COUNT_EQUAL", "REPEAT", "REPEAT_BACK", "CONCAT", "SILU_BACK", "NORM", "RMS_NORM", "RMS_NORM_BACK",
     "GROUP_NORM",
 
-    "MUL_MAT", "MUL_MAT_ID", "OUT_PROD",
+    "MUL_MAT", "MUL_MAT_ID", "MUL_MAT_TRANSPOSE", "OUT_PROD",
 
     "SCALE", "SET", "CPY", "CONT", "RESHAPE", "VIEW", "PERMUTE", "TRANSPOSE", "GET_ROWS", "GET_ROWS_BACK", "DIAG",
     "DIAG_MASK_INF", "DIAG_MASK_ZERO", "SOFT_MAX", "SOFT_MAX_BACK", "ROPE", "ROPE_BACK", "ROPE_SIN_COS", "ROPE_CACHE", "CLAMP", "CONV_TRANSPOSE_1D",
@@ -936,7 +936,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_MOE_SWIGLU", "GGML_OP_RMS_NORM_FUSED"
 };
 
-static_assert(GGML_OP_COUNT == 104, "GGML_OP_COUNT != 104");
+static_assert(GGML_OP_COUNT == 105, "GGML_OP_COUNT != 105");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
@@ -968,6 +968,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
                                                       "X*Y",
                                                       "X[i]*Y",
+                                                      "X^T*Y",
                                                       "X*Y",
 
                                                       "x*v",
@@ -1054,7 +1055,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "moe_swiglu(x, dim)",
                                                       "rms_norm(x, w)" };
 
-static_assert(GGML_OP_COUNT == 104, "GGML_OP_COUNT != 104");
+static_assert(GGML_OP_COUNT == 105, "GGML_OP_COUNT != 105");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -2515,6 +2516,43 @@ struct ggml_tensor * ggml_mul_mat_id(struct ggml_context * ctx, struct ggml_tens
     result->src[1] = b;
     result->src[2] = ids;
 
+    return result;
+}
+
+// ggml_mul_mat_transpose
+// Matrix multiplication with transpose: A[M, B, K] @ B[B, K, N] -> result[M, B, N]
+// where ne[3] must be 1 for both inputs
+struct ggml_tensor * ggml_mul_mat_transpose(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b) {
+    GGML_ASSERT(a != NULL);
+    GGML_ASSERT(b != NULL);
+    
+    // Both inputs must have ne[3] == 1
+    GGML_ASSERT(a->ne[3] == 1);
+    GGML_ASSERT(b->ne[3] == 1);
+    
+    // Data types must be equal
+    GGML_ASSERT(a->type == b->type);
+    
+    // a: [K, B, M, 1] in GGML notation (K, B, M in torch notation)
+    // b: [N, K, B, 1] in GGML notation (N, K, B in torch notation)
+    // result: [N, B, M, 1] in GGML notation (N, B, M in torch notation)
+    
+    const int64_t M = a->ne[2];
+    const int64_t B = a->ne[1];
+    const int64_t K = a->ne[0];
+    
+    GGML_ASSERT(b->ne[2] == B);  // Batch dimension must match
+    GGML_ASSERT(b->ne[1] == K);  // K dimension must match
+
+    const int64_t N = b->ne[0];
+    
+    const int64_t ne[4] = { N, B, M, 1 };
+    struct ggml_tensor * result = ggml_new_tensor(ctx, a->type, 4, ne);
+    
+    result->op     = GGML_OP_MUL_MAT_TRANSPOSE;
+    result->src[0] = a;
+    result->src[1] = b;
+    
     return result;
 }
 

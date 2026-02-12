@@ -69,6 +69,7 @@
 
 #include "aclnnop/aclnn_add.h"
 #include "aclnnop/aclnn_grouped_matmul_v4.h"
+#include "aclnnop/aclnn_transpose_batch_mat_mul.h"
 #include "aclnnop/aclnn_rotary_position_embedding.h"
 #include "aclnnop/aclnn_index_copy.h"
 #include "aclnnop/aclnn_index_select.h"
@@ -5592,6 +5593,72 @@ void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyTensor(acl_x));
     ACL_CHECK(aclDestroyTensor(acl_cos));
     ACL_CHECK(aclDestroyTensor(acl_sin));
+    ACL_CHECK(aclDestroyTensor(acl_out));
+}
+
+void ggml_cann_mul_mat_transpose(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
+    ggml_tensor* a = dst->src[0];
+    ggml_tensor* b = dst->src[1];
+
+    GGML_ASSERT(a != NULL);
+    GGML_ASSERT(b != NULL);
+    GGML_ASSERT(a->ne[3] == 1);
+    GGML_ASSERT(b->ne[3] == 1);
+    GGML_ASSERT(a->type == b->type);
+
+    // a: [M, B, K, 1] in GGML notation
+    // b: [B, K, N, 1] in GGML notation
+    // result: [M, B, N, 1] in GGML notation
+
+    // Create ACL tensors for inputs and output
+    aclTensor* acl_a = ggml_cann_create_tensor(a, nullptr, nullptr, 3);
+    aclTensor* acl_b = ggml_cann_create_tensor(b, nullptr, nullptr, 3);
+    aclTensor* acl_out = ggml_cann_create_tensor(dst, nullptr, nullptr, 3);
+
+    // Set up permutation arrays
+    // permX1 = [1, 0, 2] - transpose first two dimensions of x1
+    // permX2 = [0, 1, 2] - no transpose for x2
+    // permY = [1, 0, 2] - transpose first two dimensions of output
+    int64_t perm_x1_data[3] = {1, 0, 2};
+    int64_t perm_x2_data[3] = {0, 1, 2};
+    int64_t perm_y_data[3] = {1, 0, 2};
+
+    aclIntArray* perm_x1 = aclCreateIntArray(perm_x1_data, 3);
+    aclIntArray* perm_x2 = aclCreateIntArray(perm_x2_data, 3);
+    aclIntArray* perm_y = aclCreateIntArray(perm_y_data, 3);
+
+    // cubeMathType: 0 for default computation
+    int8_t cube_math_type = 0;
+    
+    // batchSplitFactor: 0 for no split
+    int32_t batch_split_factor = 1;
+
+    // Get workspace size and executor
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor = nullptr;
+
+    ACL_CHECK(aclnnTransposeBatchMatMulGetWorkspaceSize(
+        acl_a, acl_b, nullptr, nullptr,  // bias and scale are not supported
+        perm_x1, perm_x2, perm_y,
+        cube_math_type, batch_split_factor,
+        acl_out, &workspaceSize, &executor));
+
+    // Allocate workspace if needed
+    void* workspaceAddr = nullptr;
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
+    }
+
+    // Execute the operation
+    ACL_CHECK(aclnnTransposeBatchMatMul(workspaceAddr, workspaceSize, executor, ctx.stream()));
+
+    // Cleanup
+    ACL_CHECK(aclDestroyIntArray(perm_x1));
+    ACL_CHECK(aclDestroyIntArray(perm_x2));
+    ACL_CHECK(aclDestroyIntArray(perm_y));
+    ACL_CHECK(aclDestroyTensor(acl_a));
+    ACL_CHECK(aclDestroyTensor(acl_b));
     ACL_CHECK(aclDestroyTensor(acl_out));
 }
 

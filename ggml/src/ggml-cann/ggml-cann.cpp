@@ -1479,6 +1479,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_MUL_MAT_ID:
             ggml_cann_mul_mat_id(ctx, dst);
             break;
+        case GGML_OP_MUL_MAT_TRANSPOSE:
+            ggml_cann_mul_mat_transpose(ctx, dst);
+            break;
         //     return false;
         case GGML_OP_SCALE:
             ggml_cann_scale(ctx, dst);
@@ -2051,6 +2054,8 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
             }
         }
         case GGML_OP_MUL_MAT_ID:
+            return true;
+        case GGML_OP_MUL_MAT_TRANSPOSE:
             return true;
             //  return false;
         // embedding
