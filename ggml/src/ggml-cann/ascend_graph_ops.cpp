@@ -2683,6 +2683,95 @@ void handle_split_op(
     }
 }
 
+void handle_moe_gating_topk_softmax_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &ggml_tensor_to_ge_op_map,
+    int op_index) {
+    // 获取参数
+    int32_t k = node->op_params[0];
+    int32_t output_id = node->op_params[1];
+    
+    // 只在最后一个输出时执行
+    if (output_id != 2) {
+        return;
+    }
+
+    // 获取输入张量
+    struct ggml_tensor *x = node->src[0];
+    assert(x && "MOE_GATING_TOPK_SOFTMAX: missing input tensor");
+
+    // 获取输入张量对应的操作符
+    ge::Operator input_op;
+    if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
+        input_op = ggml_tensor_to_ge_op_map[x];
+    } else {
+        assert(false && "MOE_GATING_TOPK_SOFTMAX: input tensor not found in map");
+    }
+    // 确保维度合法
+    input_op =
+        create_reshape_op(graph, input_op, {x->ne[1], x->ne[0]},
+                          "moe_gating_topk_softmax_reshape_x_" + std::to_string(op_index),
+                          get_data_type(x->type));
+
+    // 获取输出张量
+    struct ggml_tensor *out = node->src[1];
+    struct ggml_tensor *exp_idx = node->src[2];
+    struct ggml_tensor *row_idx = node;
+
+    // 创建MoeGatingTopKSoftmax算子
+    std::string op_name = "moe_gating_topk_softmax_" + std::to_string(op_index);
+    ge::op::MoeGatingTopKSoftmax moe_gating_op(op_name.c_str());
+    
+    // 设置输入
+    moe_gating_op.set_input_x(input_op);
+    // finished是可选输入，不设置
+    
+    // 设置属性
+    moe_gating_op.set_attr_k(static_cast<int64_t>(k));
+    
+    // 设置MoeGatingTopKSoftmax算子的输出描述符
+    // y输出 (softmax values)
+    std::vector<int64_t> y_shape = build_output_shape(out, true, 2);
+    ge::DataType y_dtype = get_data_type(out->type);
+    ge::TensorDesc y_desc(ge::Shape(y_shape), ge::FORMAT_ND, y_dtype);
+    moe_gating_op.update_output_desc_y(y_desc);
+
+    // expert_idx输出
+    std::vector<int64_t> expert_idx_shape = build_output_shape(exp_idx, true, 2);
+    ge::DataType expert_idx_dtype = get_data_type(exp_idx->type);
+    ge::TensorDesc expert_idx_desc(ge::Shape(expert_idx_shape), ge::FORMAT_ND, expert_idx_dtype);
+    moe_gating_op.update_output_desc_expert_idx(expert_idx_desc);
+
+    // row_idx输出
+    std::vector<int64_t> row_idx_shape = build_output_shape(row_idx, true, 2);
+    ge::DataType row_idx_dtype = get_data_type(row_idx->type);
+    ge::TensorDesc row_idx_desc(ge::Shape(row_idx_shape), ge::FORMAT_ND, row_idx_dtype);
+    moe_gating_op.update_output_desc_row_idx(row_idx_desc);
+    
+    graph.AddOp(moe_gating_op);
+
+    // 创建Identity算子用于out输出 (y)
+    std::string out_identity_name = op_name + "_out_identity";
+    ge::op::Identity out_identity(out_identity_name.c_str());
+    out_identity.set_input_x(moe_gating_op, "y");
+    graph.AddOp(out_identity);
+    ggml_tensor_to_ge_op_map[out] = out_identity;
+
+    // 创建Identity算子用于exp_idx输出 (expert_idx)
+    std::string exp_idx_identity_name = op_name + "_expert_idx_identity";
+    ge::op::Identity exp_idx_identity(exp_idx_identity_name.c_str());
+    exp_idx_identity.set_input_x(moe_gating_op, "expert_idx");
+    graph.AddOp(exp_idx_identity);
+    ggml_tensor_to_ge_op_map[exp_idx] = exp_idx_identity;
+
+    // 创建Identity算子用于row_idx输出 (row_idx)
+    std::string row_idx_identity_name = op_name + "_row_idx_identity";
+    ge::op::Identity row_idx_identity(row_idx_identity_name.c_str());
+    row_idx_identity.set_input_x(moe_gating_op, "row_idx");
+    graph.AddOp(row_idx_identity);
+    ggml_tensor_to_ge_op_map[row_idx] = row_idx_identity;
+}
+
 /**
  * @brief 处理MOE初始化路由算子
  *

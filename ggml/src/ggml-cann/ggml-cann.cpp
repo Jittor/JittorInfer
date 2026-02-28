@@ -1580,6 +1580,9 @@ static bool ggml_cann_compute_forward(ggml_backend_cann_context& ctx,
         case GGML_OP_MOE_SWIGLU:
             ggml_cann_moe_swiglu(ctx, dst);
             break;
+        case GGML_OP_MOE_GATING_TOPK_SOFTMAX:
+            ggml_cann_moe_gating_topk_softmax(ctx, dst);
+            break;
         default:
             return false;
     }
@@ -2181,6 +2184,7 @@ static bool ggml_backend_cann_supports_op(ggml_backend_dev_t dev,
         case GGML_OP_MOE_SWIGLU:
         case GGML_OP_GET_SLICE:
         case GGML_OP_RMS_NORM_FUSED:
+        case GGML_OP_MOE_GATING_TOPK_SOFTMAX:
             return true;
         default:
             return false;

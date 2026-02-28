@@ -554,6 +554,7 @@ enum ggml_op {
     GGML_OP_MOE_FINALIZE_ROUTING,
     GGML_OP_MOE_SWIGLU,
     GGML_OP_RMS_NORM_FUSED,
+    GGML_OP_MOE_GATING_TOPK_SOFTMAX,
 
     GGML_OP_COUNT,
 };
@@ -990,6 +991,12 @@ GGML_API struct ggml_tensor * ggml_moe_fused(struct ggml_context * ctx, struct g
                                              struct ggml_tensor * expert_down_weights,
                                              struct ggml_tensor * expert_gate_weights,
                                              struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx);
+
+GGML_API struct ggml_tensor * ggml_moe_gating_topk_softmax(struct ggml_context * ctx, struct ggml_tensor * x,
+                                                            int k, struct ggml_tensor ** out,
+                                                            struct ggml_tensor ** exp_idx,
+                                                            struct ggml_tensor ** row_idx);
+
 
 GGML_API struct ggml_tensor * ggml_moe_init_routing(struct ggml_context * ctx, struct ggml_tensor * x,
                                                     struct ggml_tensor * expert_idx, int32_t n_expert,

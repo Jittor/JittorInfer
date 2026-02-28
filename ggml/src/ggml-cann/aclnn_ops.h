@@ -534,6 +534,23 @@ void ggml_cann_rms_norm(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
+ * @brief   Performs MOE gating top-k softmax operation.
+ *
+ * @param ctx CANN backend context
+ * @param dst The last output tensor with GGML_OP_MOE_GATING_TOPK_SOFTMAX operation type.
+ *            Input tensor:
+ *            - src[0]: x (input tensor, shape: [B, H])
+ *            Parameters:
+ *            - op_params[0]: k (number of top elements to select)
+ *            - op_params[1]: output_id (0=out, 1=exp_idx, 2=row_idx)
+ *            Output tensors (all shape [k, H]):
+ *            - src[1]: out (softmax values) or exp_idx or row_idx (depending on output_id)
+ *            - src[2]: exp_idx or row_idx or out (depending on output_id)
+ *            - dst: row_idx or out or exp_idx (depending on output_id)
+ */
+void ggml_cann_moe_gating_topk_softmax(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+
+/**
  * @brief   Applies a diagonal mask to the tensor with a specified value.
  *
  * @details This function creates a mask tensor filled with ones, then applies

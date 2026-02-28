@@ -142,10 +142,7 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
     
     // sin/cos cache for MLA
     if (hparams.enable_mla) {
-        ggml_type type_sc = GGML_TYPE_F32;
-        if (cparams.enable_ge) {
-            type_sc = type_k;
-        }
+        ggml_type type_sc = type_k;
         // Map to share sin/cos cache across layers with the same backend
         std::map<ggml_backend_buffer_type_t, std::pair<ggml_tensor *, ggml_tensor *>> rope_cache_per_buffer;
         

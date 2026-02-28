@@ -296,40 +296,15 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
 
     ggml_tensor * logits = llm_build_lora_mm(lctx, ctx, gate_inp, cur_f32);  // [n_expert, n_tokens]
     cb(logits, "ffn_moe_logits", il);
+    
+    GGML_ASSERT(gating_op == LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX);
+    GGML_ASSERT(exp_probs_b == nullptr);
 
-    ggml_tensor * probs = nullptr;
-    switch (gating_op) {
-        case LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX:
-            {
-                probs = ggml_soft_max(ctx, logits);  // [n_expert, n_tokens]
-            }
-            break;
-        case LLAMA_EXPERT_GATING_FUNC_TYPE_SIGMOID:
-            {
-                probs = ggml_sigmoid(ctx, logits);  // [n_expert, n_tokens]
-            }
-            break;
-        default:
-            GGML_ABORT("fatal error");
-    }
-    cb(probs, "ffn_moe_probs", il);
-
-    // add experts selection bias - introduced in DeepSeek V3
-    // leave probs unbiased as it's later used to get expert weights
-    ggml_tensor * selection_probs = probs;
-    if (exp_probs_b != nullptr) {
-        selection_probs = ggml_add(ctx, probs, exp_probs_b);
-        cb(selection_probs, "ffn_moe_probs_biased", il);
-    }
-
-    // select experts
-    ggml_tensor * ffn_moe_argsort  = ggml_argsort(ctx, selection_probs, GGML_SORT_ORDER_DESC);
-    ggml_tensor * selected_experts = ggml_get_slice(ctx, ffn_moe_argsort, 0, n_expert_used, 0);
-    cb(ffn_moe_argsort, "ffn_moe_argsort", il);
+    ggml_tensor * weights;
+    ggml_tensor * selected_experts;
+    ggml_tensor * row_index;
+    ggml_build_forward_expand(graph, ggml_moe_gating_topk_softmax(ctx, logits, n_expert_used, &weights, &selected_experts, &row_index));
     cb(selected_experts, "ffn_moe_topk", il);
-
-    ggml_tensor * weights = ggml_get_rows(ctx, ggml_reshape_3d(ctx, probs, 1, n_expert, n_tokens),
-                                          selected_experts);  // [1, n_expert_used, n_tokens]
     cb(weights, "ffn_moe_weights", il);
 
     if (norm_w) {

@@ -68,7 +68,9 @@
 #include <vector>
 
 #include "aclnnop/aclnn_add.h"
+#include "aclnnop/aclnn_rms_norm.h"
 #include "aclnnop/aclnn_grouped_matmul_v4.h"
+#include "aclnnop/aclnn_gather_v2.h"
 #include "aclnnop/aclnn_transpose_batch_mat_mul.h"
 #include "aclnnop/aclnn_rotary_position_embedding.h"
 #include "aclnnop/aclnn_index_copy.h"
@@ -77,8 +79,10 @@
 #include "aclnnop/aclnn_moe_finalize_routing_v2.h"
 #include "aclnnop/aclnn_moe_init_routing.h"
 #include "aclnnop/aclnn_moe_init_routing_v2.h"
+#include "aclnnop/aclnn_moe_gating_top_k_softmax.h"
 #include "aclnnop/aclnn_swi_glu.h"
 #include "ggml-impl.h"
+#include "ggml.h"
 #include "kernels/ascendc_kernels.h"
 
 #ifdef LLAMA_JITTOR_OPS_SUPPORT
@@ -2892,7 +2896,7 @@ void ggml_cann_dup(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
                                sizeof(ggml_tensor), ACL_MEMCPY_HOST_TO_DEVICE,
                                ctx.stream()));
 
-    if ((dst->type == GGML_TYPE_F16 || dst->type == GGML_TYPE_F32 ||
+    if ((dst->type == GGML_TYPE_F16 || dst->type == GGML_TYPE_F32 || dst->type == GGML_TYPE_BF16 ||
          dst->type == GGML_TYPE_I32) &&
         ggml_are_same_shape(src, dst)) {
         cann_copy(ctx, acl_src, acl_dst);
@@ -3056,21 +3060,6 @@ void ggml_cann_dup(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     }
 }
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-aclnnStatus aclnnRmsNormGetWorkspaceSize(const aclTensor* x,
-                                         const aclTensor* gamma, double epsilon,
-                                         const aclTensor* yOut,
-                                         const aclTensor* rstdOout,
-                                         uint64_t* workspaceSize,
-                                         aclOpExecutor** executor);
-aclnnStatus aclnnRmsNorm(void* workspace, uint64_t workspaceSize,
-                         aclOpExecutor* executor, aclrtStream stream);
-#ifdef __cplusplus
-}
-#endif
-
 /**
  * @brief Creates an ACL tensor initialized with zeros using a provided buffer.
  *
@@ -3214,11 +3203,11 @@ void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx,
     void* workspaceAddr = nullptr;
 
     size_t zero_tensor_n_bytes =
-        src->ne[1] * src->ne[2] * src->ne[3] * ggml_element_size(src);
+        ggml_nelements(src) * ggml_type_size(GGML_TYPE_F32);
     ggml_cann_pool_alloc zero_tensor_allocator(ctx.pool(), zero_tensor_n_bytes);
     aclTensor* acl_rstd =
         aclnn_zero(ctx, zero_tensor_allocator.get(), zero_tensor_n_bytes,
-                   src->ne, GGML_MAX_DIMS, ggml_cann_type_mapping(src->type),
+                   src->ne, GGML_MAX_DIMS, ggml_cann_type_mapping(GGML_TYPE_F32),
                    ggml_element_size(src));
 
     ACL_CHECK(aclnnRmsNormGetWorkspaceSize(
@@ -4415,85 +4404,43 @@ void ggml_cann_get_rows(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* src0 = dst->src[0];
     ggml_tensor* src1 = dst->src[1];
 
-    ggml_cann_pool_alloc src0_extra_allocator(ctx.pool(), sizeof(ggml_tensor));
-    ggml_cann_pool_alloc src1_extra_allocator(ctx.pool(), sizeof(ggml_tensor));
-    ggml_cann_pool_alloc dst_extra_allocator(ctx.pool(), sizeof(ggml_tensor));
-    src0->extra = src0_extra_allocator.get();
-    src1->extra = src1_extra_allocator.get();
-    dst->extra = dst_extra_allocator.get();
-    ACL_CHECK(aclrtMemcpyAsync(src0->extra, sizeof(ggml_tensor), src0,
-                               sizeof(ggml_tensor), ACL_MEMCPY_HOST_TO_DEVICE,
-                               ctx.stream()));
-    ACL_CHECK(aclrtMemcpyAsync(src1->extra, sizeof(ggml_tensor), src1,
-                               sizeof(ggml_tensor), ACL_MEMCPY_HOST_TO_DEVICE,
-                               ctx.stream()));
-    ACL_CHECK(aclrtMemcpyAsync(dst->extra, sizeof(ggml_tensor), dst,
-                               sizeof(ggml_tensor), ACL_MEMCPY_HOST_TO_DEVICE,
-                               ctx.stream()));
+    GGML_ASSERT(src0->ne[3] == src0->ne[2] == 1);
+    GGML_ASSERT(src1->ne[3] == src1->ne[2] == src1->ne[1] == 1);
 
-    switch (src0->type) {
-        case GGML_TYPE_F32: {
-#ifdef ASCEND_310P
-            // Special operation for get_row_f32 kernel of 310P: clear the
-            // content of dest data buffer when row is not aligned to 32 bytes
-            if ((src0->ne[0] % 8) != 0) {
-                size_t dst_len = src1->ne[0] * src1->ne[1] * src1->ne[2] *
-                                 src0->ne[0] * ggml_type_size(GGML_TYPE_F32);
-                ACL_CHECK(aclrtMemset((char*)dst->data, dst_len, 0, dst_len));
-            }
-#endif
-            aclrtlaunch_ascendc_get_row_f32(
-                24, ctx.stream(), src0->data, src1->data, dst->data,
-                ((ggml_tensor*)src0->extra)->ne,
-                ((ggml_tensor*)src0->extra)->nb,
-                ((ggml_tensor*)src1->extra)->ne,
-                ((ggml_tensor*)src1->extra)->nb, ((ggml_tensor*)dst->extra)->ne,
-                ((ggml_tensor*)dst->extra)->nb);
-            break;
-        }
-        case GGML_TYPE_F16:
-        case GGML_TYPE_BF16: {
-#ifdef ASCEND_310P
-            // Special operation for get_row_f16 kernel of 310P: clear the
-            // content of dest data buffer when row is not aligned to 32 bytes
-            if ((src0->ne[0] % 16) != 0) {
-                size_t dst_len =
-                    src1->ne[0] * src1->ne[1] * src1->ne[2] * src0->ne[0] *
-                    ggml_type_size(
-                        GGML_TYPE_F32);  // out is also f32, even input is f16/bf16
-                ACL_CHECK(aclrtMemset((char*)dst->data, dst_len, 0, dst_len));
-            }
-#endif
-            // BF16 and F16 have same memory layout (16-bit), can use same kernel
-            aclrtlaunch_ascendc_get_row_f16(
-                24, ctx.stream(), src0->data, src1->data, dst->data,
-                ((ggml_tensor*)src0->extra)->ne,
-                ((ggml_tensor*)src0->extra)->nb,
-                ((ggml_tensor*)src1->extra)->ne,
-                ((ggml_tensor*)src1->extra)->nb, ((ggml_tensor*)dst->extra)->ne,
-                ((ggml_tensor*)dst->extra)->nb);
-            break;
-        }
-        case GGML_TYPE_Q4_0:
-            aclrtlaunch_ascendc_get_row_q4_0(
-                24, ctx.stream(), src0->data, src1->data, dst->data,
-                ((ggml_tensor*)src0->extra)->ne,
-                ((ggml_tensor*)src1->extra)->ne,
-                ((ggml_tensor*)src1->extra)->nb, ((ggml_tensor*)dst->extra)->ne,
-                ((ggml_tensor*)dst->extra)->nb);
-            break;
-        case GGML_TYPE_Q8_0:
-            aclrtlaunch_ascendc_get_row_q8_0(
-                24, ctx.stream(), src0->data, src1->data, dst->data,
-                ((ggml_tensor*)src0->extra)->ne,
-                ((ggml_tensor*)src1->extra)->ne,
-                ((ggml_tensor*)src1->extra)->nb, ((ggml_tensor*)dst->extra)->ne,
-                ((ggml_tensor*)dst->extra)->nb);
-            break;
-        default:
-            GGML_ABORT("fatal error");
-            break;
+    // Create ACL tensor for input
+    aclTensor* src =
+        ggml_cann_create_tensor(src0, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
+    // Create ACL tensor for indices
+    aclTensor* indices =
+        ggml_cann_create_tensor(src1, nullptr, nullptr, 1, ACL_FORMAT_ND, 0);
+
+    // Create ACL tensor for output
+    aclTensor* acl_dst =
+        ggml_cann_create_tensor(dst, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
+    // Get workspace size
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor = nullptr;
+
+    ACL_CHECK(aclnnGatherV2GetWorkspaceSize(
+        src, 0, indices, acl_dst, &workspaceSize, &executor));
+
+    // Allocate workspace
+    void* workspaceAddr = nullptr;
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
     }
+
+    // Execute
+    ACL_CHECK(
+        aclnnGatherV2(workspaceAddr, workspaceSize, executor, ctx.stream()));
+
+    // Cleanup
+    ACL_CHECK(aclDestroyTensor(src));
+    ACL_CHECK(aclDestroyTensor(indices));
+    ACL_CHECK(aclDestroyTensor(acl_dst));
 }
 
 /**
@@ -4913,6 +4860,7 @@ void ggml_cann_mul_mat(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     switch (type) {
         case GGML_TYPE_F32:
         case GGML_TYPE_F16:
+        case GGML_TYPE_BF16:
             ggml_cann_mat_mul_fp(ctx, dst);
             break;
         case GGML_TYPE_Q4_0:
@@ -5546,9 +5494,6 @@ void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     GGML_ASSERT(sin != NULL);
     GGML_ASSERT(cos != NULL);
     GGML_ASSERT(ggml_are_same_shape(sin, cos));
-    GGML_ASSERT(x->type == GGML_TYPE_F16 || x->type == GGML_TYPE_F32);
-    GGML_ASSERT(sin->type == GGML_TYPE_F16 || sin->type == GGML_TYPE_F32);
-    GGML_ASSERT(cos->type == GGML_TYPE_F16 || cos->type == GGML_TYPE_F32);
 
     // Create ACL tensors
     aclTensor* acl_x = ggml_cann_create_tensor(x);
@@ -6152,19 +6097,6 @@ void ggml_cann_mla_jittor(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* context_length = dst->src[5];
     ggml_tensor* mask = dst->src[6];
     ggml_tensor* qSeq_length = dst->src[7];
-    GGML_ASSERT(query->type == GGML_TYPE_F16);
-    GGML_ASSERT(query_rope->type == GGML_TYPE_F16);
-    GGML_ASSERT(context_KV->type == GGML_TYPE_F16);
-    GGML_ASSERT(key_rope->type == GGML_TYPE_F16);
-    GGML_ASSERT(block_table->type == GGML_TYPE_I32);
-    GGML_ASSERT(context_length->type == GGML_TYPE_I64);
-    if (mask != nullptr) {
-        GGML_ASSERT(mask->type == GGML_TYPE_F16);
-    }
-    if (qSeq_length != nullptr) {
-        GGML_ASSERT(qSeq_length->type == GGML_TYPE_I64);
-    }
-    GGML_ASSERT(dst->type == GGML_TYPE_F16);
     struct {
         int batchSize;
         int tokenNum;
@@ -6776,6 +6708,68 @@ void ggml_cann_split(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ACL_CHECK(aclDestroyTensor(acl_src_tensor));
     ACL_CHECK(aclDestroyIntArray(split_size_array));
     ACL_CHECK(aclDestroyTensorList(acl_output_list));
+}
+
+void ggml_cann_moe_gating_topk_softmax(ggml_backend_cann_context& ctx,
+                                       ggml_tensor* dst) {
+    int32_t k = ggml_get_op_params_i32(dst, 0);
+    int32_t output_id = ggml_get_op_params_i32(dst, 1);
+    
+    // Only execute on the last output (output_id == 2)
+    if (output_id != 2) {
+        return;
+    }
+
+    // Get input tensor
+    ggml_tensor* x = dst->src[0];
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);  // x should be 2D: [B, H]
+
+    // Get output tensors based on the src arrangement
+    // src[0] = x (input)
+    // src[1] = out (first output created)
+    // src[2] = exp_idx (second output created)
+    // dst = row_idx (third output, the last one)
+    ggml_tensor* out = dst->src[1];
+    ggml_tensor* exp_idx = dst->src[2];
+    ggml_tensor* row_idx = dst;
+
+    GGML_ASSERT(out != NULL);
+    GGML_ASSERT(exp_idx != NULL);
+
+    // Create ACL tensor for input
+    aclTensor* acl_x = ggml_cann_create_tensor(x, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
+    // Create ACL tensors for outputs
+    aclTensor* acl_out = ggml_cann_create_tensor(out, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_exp_idx = ggml_cann_create_tensor(exp_idx, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+    aclTensor* acl_row_idx = ggml_cann_create_tensor(row_idx, nullptr, nullptr, 2, ACL_FORMAT_ND, 0);
+
+    // Get workspace size and executor
+    uint64_t workspaceSize = 0;
+    aclOpExecutor* executor = nullptr;
+    void* workspaceAddr = nullptr;
+
+    // Use the native aclnnMoeGatingTopKSoftmax operator
+    // finishedOptional is nullptr (not used)
+    ACL_CHECK(aclnnMoeGatingTopKSoftmaxGetWorkspaceSize(
+        acl_x, nullptr, k, acl_out, acl_exp_idx, acl_row_idx,
+        &workspaceSize, &executor));
+
+    // Allocate workspace if needed
+    if (workspaceSize > 0) {
+        ggml_cann_pool_alloc workspace_allocator(ctx.pool(), workspaceSize);
+        workspaceAddr = workspace_allocator.get();
+    }
+
+    // Execute the MoeGatingTopKSoftmax operation
+    ACL_CHECK(aclnnMoeGatingTopKSoftmax(workspaceAddr, workspaceSize, executor, ctx.stream()));
+
+    // Cleanup
+    ACL_CHECK(aclDestroyTensor(acl_x));
+    ACL_CHECK(aclDestroyTensor(acl_out));
+    ACL_CHECK(aclDestroyTensor(acl_exp_idx));
+    ACL_CHECK(aclDestroyTensor(acl_row_idx));
 }
 
 void ggml_cann_moe_init_routing(ggml_backend_cann_context& ctx,

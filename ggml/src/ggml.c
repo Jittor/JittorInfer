@@ -936,7 +936,7 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "GGML_OP_MOE_INIT_ROUTING", "GGML_OP_MOE_GROUPED_MATMUL", "GGML_OP_MOE_FINALIZE_ROUTING", "GGML_OP_MOE_SWIGLU", "GGML_OP_RMS_NORM_FUSED"
 };
 
-static_assert(GGML_OP_COUNT == 105, "GGML_OP_COUNT != 105");
+static_assert(GGML_OP_COUNT == 106, "GGML_OP_COUNT != 106");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
 
@@ -1055,7 +1055,7 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = { "none",
                                                       "moe_swiglu(x, dim)",
                                                       "rms_norm(x, w)" };
 
-static_assert(GGML_OP_COUNT == 105, "GGML_OP_COUNT != 105");
+static_assert(GGML_OP_COUNT == 106, "GGML_OP_COUNT != 106");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -3523,6 +3523,53 @@ struct ggml_tensor * ggml_split(struct ggml_context * ctx, struct ggml_tensor * 
         outputs[i] = output;
     }
     return outputs[num_split - 1];
+}
+
+// ggml_moe_gating_topk_softmax
+
+struct ggml_tensor * ggml_moe_gating_topk_softmax(struct ggml_context * ctx, struct ggml_tensor * x,
+                                                  int k, struct ggml_tensor ** out,
+                                                  struct ggml_tensor ** exp_idx,
+                                                  struct ggml_tensor ** row_idx) {
+    GGML_ASSERT(x != NULL);
+    GGML_ASSERT(out != NULL);
+    GGML_ASSERT(exp_idx != NULL);
+    GGML_ASSERT(row_idx != NULL);
+    GGML_ASSERT(k > 0);
+    GGML_ASSERT(x->ne[2] == 1 && x->ne[3] == 1);  // x should be 2D: [B, H]
+
+    int64_t B = x->ne[1];  // Hidden dimension
+
+    // Create three output tensors, all with shape [k, H]
+    // Output 0: out (softmax values)
+    *out = ggml_new_tensor_2d(ctx, x->type, k, B);
+    
+    // Output 1: exp_idx (expert indices)
+    *exp_idx = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, k, B);
+    
+    // Output 2: row_idx (row indices)
+    *row_idx = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, k, B);
+
+    // Set up the operation parameters
+    (*out)->op = GGML_OP_MOE_GATING_TOPK_SOFTMAX;
+    (*out)->src[0] = x;
+    (*out)->op_params[0] = k;
+    (*out)->op_params[1] = 0;  // output_id = 0 (out)
+
+    (*exp_idx)->op = GGML_OP_MOE_GATING_TOPK_SOFTMAX;
+    (*exp_idx)->src[0] = x;
+    (*exp_idx)->src[1] = *out;
+    (*exp_idx)->op_params[0] = k;
+    (*exp_idx)->op_params[1] = 1;  // output_id = 1 (exp_idx)
+
+    (*row_idx)->op = GGML_OP_MOE_GATING_TOPK_SOFTMAX;
+    (*row_idx)->src[0] = x;
+    (*row_idx)->src[1] = *out;
+    (*row_idx)->src[2] = *exp_idx;
+    (*row_idx)->op_params[0] = k;
+    (*row_idx)->op_params[1] = 2;  // output_id = 2 (row_idx)
+
+    return *row_idx;  // Return the last output tensor
 }
 
 // ggml_get_rows

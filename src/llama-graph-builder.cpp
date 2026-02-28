@@ -101,7 +101,7 @@ struct ggml_cgraph * llama_graph_builder::llama_build_graph(llama_context &     
 
     switch (model.arch) {
         case LLM_ARCH_DEEPSEEK2:
-            return llm_build_deepseek2(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
+            return llm_build_deepseek2_ge(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
         default:
             GGML_ABORT("Unsupported model architecture");
     }
