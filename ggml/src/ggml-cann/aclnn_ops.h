@@ -537,18 +537,20 @@ void ggml_cann_rms_norm_fused(ggml_backend_cann_context& ctx, ggml_tensor* dst);
  * @brief   Performs MOE gating top-k softmax operation.
  *
  * @param ctx CANN backend context
- * @param dst The last output tensor with GGML_OP_MOE_GATING_TOPK_SOFTMAX operation type.
- *            Input tensor:
+ * @param dst The last output tensor with GGML_OP_MOE_GATING_TOPK_SOFTMAX
+ * operation type. Input tensor:
  *            - src[0]: x (input tensor, shape: [B, H])
  *            Parameters:
  *            - op_params[0]: k (number of top elements to select)
  *            - op_params[1]: output_id (0=out, 1=exp_idx, 2=row_idx)
  *            Output tensors (all shape [k, H]):
- *            - src[1]: out (softmax values) or exp_idx or row_idx (depending on output_id)
+ *            - src[1]: out (softmax values) or exp_idx or row_idx (depending on
+ * output_id)
  *            - src[2]: exp_idx or row_idx or out (depending on output_id)
  *            - dst: row_idx or out or exp_idx (depending on output_id)
  */
-void ggml_cann_moe_gating_topk_softmax(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+void ggml_cann_moe_gating_topk_softmax(ggml_backend_cann_context& ctx,
+                                       ggml_tensor* dst);
 
 /**
  * @brief   Applies a diagonal mask to the tensor with a specified value.
@@ -687,7 +689,8 @@ void ggml_cann_rope(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst);
 
 /**
- * @brief Performs matrix multiplication with transpose using aclnnTransposeBatchMatMul.
+ * @brief Performs matrix multiplication with transpose using
+ * aclnnTransposeBatchMatMul.
  *
  * @param ctx The backend CANN context for executing operations.
  * @param dst The destination tensor where the result will be stored.
@@ -696,7 +699,8 @@ void ggml_cann_rope_sin_cos(ggml_backend_cann_context& ctx, ggml_tensor* dst);
  *            dst->src[1] = b (second input matrix [B, K, N, 1])
  *            Result shape: [M, B, N, 1]
  */
-void ggml_cann_mul_mat_transpose(ggml_backend_cann_context& ctx, ggml_tensor* dst);
+void ggml_cann_mul_mat_transpose(ggml_backend_cann_context& ctx,
+                                 ggml_tensor* dst);
 
 template <aclnnStatus getWorkspaceSize(const aclTensor*, const aclTensor*,
                                        aclTensor*, uint64_t*, aclOpExecutor**),

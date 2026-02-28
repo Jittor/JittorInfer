@@ -139,65 +139,62 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
         cache.v_l.push_back(v);
     }
 
-    
     // sin/cos cache for MLA
     if (hparams.enable_mla) {
-        ggml_type type_sc = type_k;
+        ggml_type                                                                     type_sc = type_k;
         // Map to share sin/cos cache across layers with the same backend
         std::map<ggml_backend_buffer_type_t, std::pair<ggml_tensor *, ggml_tensor *>> rope_cache_per_buffer;
-        
+
         // Create a temporary CPU context for computing sin/cos cache
         struct ggml_init_params temp_params = {
-            /*.mem_size   =*/ 16 * 1024 * 1024,
-            /*.mem_buffer =*/ NULL,
-            /*.no_alloc   =*/ true,
+            /*.mem_size   =*/16 * 1024 * 1024,
+            /*.mem_buffer =*/NULL,
+            /*.no_alloc   =*/true,
         };
         ggml_context * temp_ctx = ggml_init(temp_params);
         if (!temp_ctx) {
             LLAMA_LOG_ERROR("%s: failed to create temporary context for rope cache\n", __func__);
             return false;
         }
-        
+
         ggml_backend_t cpu_backend = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, NULL);
         if (!cpu_backend) {
             LLAMA_LOG_ERROR("%s: failed to initialize CPU backend for rope cache\n", __func__);
             ggml_free(temp_ctx);
             return false;
         }
-        
+
         const int32_t n_rot = hparams.n_rot;
         const int32_t n_ctx = cparams.n_ctx;
-        
+
         ggml_tensor * sin_cache_f32 = ggml_new_tensor_2d(temp_ctx, GGML_TYPE_F32, n_rot, n_ctx);
         ggml_tensor * cos_cache_f32 = ggml_new_tensor_2d(temp_ctx, GGML_TYPE_F32, n_rot, n_ctx);
-        
+
         // Compute sin/cos cache using ggml_rope_cache operator
-        const float freq_base = hparams.rope_freq_base_train;
-        const float freq_scale = hparams.rope_freq_scale_train;
-        const float ext_factor = cparams.yarn_ext_factor;
+        const float freq_base    = hparams.rope_freq_base_train;
+        const float freq_scale   = hparams.rope_freq_scale_train;
+        const float ext_factor   = cparams.yarn_ext_factor;
         // For Deepseek-V2, attn_factor needs special calculation
-        const float attn_factor = (model.arch == LLM_ARCH_DEEPSEEK2) 
-                                    ? 1.0f / (1.0f + 0.1f * logf(1.0f / freq_scale))
-                                    : cparams.yarn_attn_factor;
-        const float beta_fast = cparams.yarn_beta_fast;
-        const float beta_slow = cparams.yarn_beta_slow;
+        const float attn_factor  = (model.arch == LLM_ARCH_DEEPSEEK2) ? 1.0f / (1.0f + 0.1f * logf(1.0f / freq_scale)) :
+                                                                        cparams.yarn_attn_factor;
+        const float beta_fast    = cparams.yarn_beta_fast;
+        const float beta_slow    = cparams.yarn_beta_slow;
         const int32_t n_ctx_orig = cparams.n_ctx_orig_yarn;
-        
-        ggml_tensor * rope_result = ggml_rope_cache(temp_ctx, sin_cache_f32, cos_cache_f32,
-                                                     n_rot, n_ctx, n_ctx_orig,
-                                                     freq_base, freq_scale, ext_factor,
-                                                     attn_factor, beta_fast, beta_slow);
+
+        ggml_tensor * rope_result =
+            ggml_rope_cache(temp_ctx, sin_cache_f32, cos_cache_f32, n_rot, n_ctx, n_ctx_orig, freq_base, freq_scale,
+                            ext_factor, attn_factor, beta_fast, beta_slow);
         ggml_tensor * sin_cache_cpu = ggml_cast(temp_ctx, sin_cache_f32, type_sc);
         sin_cache_cpu->flags |= GGML_TENSOR_FLAG_OUTPUT;
         ggml_tensor * cos_cache_cpu = ggml_cast(temp_ctx, cos_cache_f32, type_sc);
         cos_cache_cpu->flags |= GGML_TENSOR_FLAG_OUTPUT;
-        
+
         // Build and compute the graph
         ggml_cgraph * rope_gf = ggml_new_graph(temp_ctx);
         ggml_build_forward_expand(rope_gf, rope_result);
         ggml_build_forward_expand(rope_gf, sin_cache_cpu);
         ggml_build_forward_expand(rope_gf, cos_cache_cpu);
-        
+
         ggml_backend_buffer_t temp_buf = ggml_backend_alloc_ctx_tensors(temp_ctx, cpu_backend);
         if (!temp_buf) {
             LLAMA_LOG_ERROR("%s: failed to allocate temporary buffer for rope cache\n", __func__);
@@ -205,25 +202,25 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
             ggml_free(temp_ctx);
             return false;
         }
-        
+
         ggml_backend_graph_compute(cpu_backend, rope_gf);
-        
+
         // Copy computed sin/cos cache data to vectors for later use
         const size_t cache_size = n_ctx * n_rot * ggml_type_size(type_sc);
         cache.sin_cache_data.resize(cache_size);
         cache.cos_cache_data.resize(cache_size);
-        
+
         ggml_backend_tensor_get(sin_cache_cpu, cache.sin_cache_data.data(), 0, cache_size);
         ggml_backend_tensor_get(cos_cache_cpu, cache.cos_cache_data.data(), 0, cache_size);
-        
+
         // Free temporary resources immediately after copying data
         ggml_backend_buffer_free(temp_buf);
         ggml_backend_free(cpu_backend);
         ggml_free(temp_ctx);
-        
-        LLAMA_LOG_INFO("%s: computed sin/cos cache for MLA: n_rot=%d, n_ctx=%d, type=%s\n",
-                       __func__, n_rot, n_ctx, ggml_type_name(type_sc));
-        
+
+        LLAMA_LOG_INFO("%s: computed sin/cos cache for MLA: n_rot=%d, n_ctx=%d, type=%s\n", __func__, n_rot, n_ctx,
+                       ggml_type_name(type_sc));
+
         ggml_backend_buffer_type_t buft;
         if (offload) {
             auto * dev = model.dev_layer(0);
@@ -231,7 +228,7 @@ bool llama_kv_cache_init(struct llama_kv_cache & cache, const llama_model & mode
         } else {
             buft = ggml_backend_cpu_buffer_type();
         }
-        
+
         ggml_context * ctx = ctx_for_buft(buft);
         if (!ctx) {
             LLAMA_LOG_ERROR("%s: failed to create ggml context for rope cache\n", __func__);
@@ -312,10 +309,11 @@ void llama_kv_cache_restore_rope_cache(struct llama_kv_cache & cache) {
         const size_t cache_size = cache.sin_cache_data.size();
         ggml_backend_tensor_set(cache.sin_cache, cache.sin_cache_data.data(), 0, cache_size);
         ggml_backend_tensor_set(cache.cos_cache, cache.cos_cache_data.data(), 0, cache_size);
-        
+
         LLAMA_LOG_DEBUG("%s: restored sin/cos cache for MLA: %zu bytes\n", __func__, cache_size);
     }
 }
+
 void llama_kv_cache_clear(struct llama_kv_cache & cache) {
     for (int32_t i = 0; i < (int32_t) cache.size; ++i) {
         cache.cells[i].pos = -1;

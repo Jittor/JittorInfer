@@ -174,7 +174,8 @@ ge::Operator create_moe_grouped_matmul_op(
             graph, prefix + "bias", suffix,
             std::forward<std::vector<int64_t>>(bias_shape), weight_type, 0.0f);
     } else {
-        GGML_ABORT("Unsupported weight_type for MOE grouped matmul: %d", weight_type);
+        GGML_ABORT("Unsupported weight_type for MOE grouped matmul: %d",
+                   weight_type);
     }
     // ge::Operator scale_const_op = create_const_float_op(graph, prefix +
     // "_scale_", suffix, {0}, ge::DT_FLOAT, 0.0f);

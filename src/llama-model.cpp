@@ -791,20 +791,20 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         } else {
                             if (merge_matrix) {
                                 // Not Splitable
-                                layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head + kv_lora_rank + n_embd_head_qk_rope},
-                                                        LLM_SPLIT_REPEAT,
-                                                        tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
+                                layer.wq = create_tensor(
+                                    { n_embd, n_embd_head_k * n_head + kv_lora_rank + n_embd_head_qk_rope },
+                                    LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
                             } else {
                                 layer.wq = create_tensor({ n_embd, n_embd_head_k * n_head },
-                                                        use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_2d_DIM1,
-                                                        tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
+                                                         use_dp ? LLM_SPLIT_REPEAT : LLM_SPLIT_2d_DIM1,
+                                                         tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
                             }
                         }
 
                         if (!merge_matrix) {
                             layer.wkv_a_mqa =
                                 create_tensor({ n_embd, kv_lora_rank + (n_embd_head_qk_rope) }, LLM_SPLIT_REPEAT,
-                                            tn(LLM_TENSOR_ATTN_KV_A_MQA, "weight", i), 0, local_dev);
+                                              tn(LLM_TENSOR_ATTN_KV_A_MQA, "weight", i), 0, local_dev);
                         }
                         if (hparams.enable_mla) {
                             layer.wk_b = create_tensor({ kv_lora_rank, n_embd_head_qk_nope, n_head },

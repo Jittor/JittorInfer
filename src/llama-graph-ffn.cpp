@@ -296,14 +296,15 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
 
     ggml_tensor * logits = llm_build_lora_mm(lctx, ctx, gate_inp, cur_f32);  // [n_expert, n_tokens]
     cb(logits, "ffn_moe_logits", il);
-    
+
     GGML_ASSERT(gating_op == LLAMA_EXPERT_GATING_FUNC_TYPE_SOFTMAX);
     GGML_ASSERT(exp_probs_b == nullptr);
 
     ggml_tensor * weights;
     ggml_tensor * selected_experts;
     ggml_tensor * row_index;
-    ggml_build_forward_expand(graph, ggml_moe_gating_topk_softmax(ctx, logits, n_expert_used, &weights, &selected_experts, &row_index));
+    ggml_build_forward_expand(
+        graph, ggml_moe_gating_topk_softmax(ctx, logits, n_expert_used, &weights, &selected_experts, &row_index));
     cb(selected_experts, "ffn_moe_topk", il);
     cb(weights, "ffn_moe_weights", il);
 
@@ -347,8 +348,8 @@ struct ggml_tensor * llm_build_moe_ffn_merge(struct ggml_context * ctx, struct l
     cb(ffn_moe_par, "ffn_moe_par", il);
     ggml_tensor * ffn_moe_down = ggml_moe_grouped_matmul(ctx, ffn_moe_par, down_exps, token_count, true);
     cb(ffn_moe_down, "ffn_moe_down", il);
-    weights      = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
-    moe_out      = ggml_moe_finalize_routing(ctx, ffn_moe_down, premute_row_idx, weights);
+    weights = ggml_reshape_2d(ctx, weights, n_expert_used, n_tokens);
+    moe_out = ggml_moe_finalize_routing(ctx, ffn_moe_down, premute_row_idx, weights);
 
     cb(moe_out, "moe_out_after_cast", il);
 

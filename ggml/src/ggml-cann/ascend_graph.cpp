@@ -384,8 +384,8 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
 
             case GGML_OP_MUL_MAT_TRANSPOSE: {
                 // 处理矩阵转置乘法操作
-                ge::Operator mul_mat_transpose_op =
-                    handle_mul_mat_transpose_op(graph, node, ggml_tensor_to_ge_op_map, i);
+                ge::Operator mul_mat_transpose_op = handle_mul_mat_transpose_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
                 ggml_tensor_to_ge_op_map[node] = mul_mat_transpose_op;
 
                 if (node == last_op_node) {

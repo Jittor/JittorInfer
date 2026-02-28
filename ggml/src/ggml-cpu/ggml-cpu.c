@@ -10787,7 +10787,6 @@ static void ggml_compute_forward_rope_back(const struct ggml_compute_params * pa
     }
 }
 
-
 // ggml_compute_forward_rope_cache
 
 static void ggml_compute_forward_rope_cache(const struct ggml_compute_params * params, struct ggml_tensor * dst) {
@@ -10802,45 +10801,45 @@ static void ggml_compute_forward_rope_cache(const struct ggml_compute_params * p
     GGML_ASSERT(cos_cache->type == GGML_TYPE_F32);
 
     // Extract parameters
-    const int n_rot = ((int32_t*)dst->op_params)[0];
-    const int n_ctx = ((int32_t*)dst->op_params)[1];
-    const int n_ctx_orig = ((int32_t*)dst->op_params)[2];
-    
+    const int n_rot      = ((int32_t *) dst->op_params)[0];
+    const int n_ctx      = ((int32_t *) dst->op_params)[1];
+    const int n_ctx_orig = ((int32_t *) dst->op_params)[2];
+
     float freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow;
-    memcpy(&freq_base,    (int32_t*)dst->op_params + 3, sizeof(float));
-    memcpy(&freq_scale,   (int32_t*)dst->op_params + 4, sizeof(float));
-    memcpy(&ext_factor,   (int32_t*)dst->op_params + 5, sizeof(float));
-    memcpy(&attn_factor,  (int32_t*)dst->op_params + 6, sizeof(float));
-    memcpy(&beta_fast,    (int32_t*)dst->op_params + 7, sizeof(float));
-    memcpy(&beta_slow,    (int32_t*)dst->op_params + 8, sizeof(float));
+    memcpy(&freq_base, (int32_t *) dst->op_params + 3, sizeof(float));
+    memcpy(&freq_scale, (int32_t *) dst->op_params + 4, sizeof(float));
+    memcpy(&ext_factor, (int32_t *) dst->op_params + 5, sizeof(float));
+    memcpy(&attn_factor, (int32_t *) dst->op_params + 6, sizeof(float));
+    memcpy(&beta_fast, (int32_t *) dst->op_params + 7, sizeof(float));
+    memcpy(&beta_slow, (int32_t *) dst->op_params + 8, sizeof(float));
 
     const int64_t blockLength = n_rot / 2;
-    const float theta_scale = powf(freq_base, -2.0f / n_rot);
-    
+    const float   theta_scale = powf(freq_base, -2.0f / n_rot);
+
     float corr_dims[2];
     ggml_rope_yarn_corr_dims(n_rot, n_ctx_orig, freq_base, beta_fast, beta_slow, corr_dims);
-    
+
     const float logf_1_freq_scale = logf(1.0f / freq_scale);
 
-    float* dst_cos = (float*)cos_cache->data;
-    float* dst_sin = (float*)sin_cache->data;
+    float * dst_cos = (float *) cos_cache->data;
+    float * dst_sin = (float *) sin_cache->data;
 
     // Temporary buffers for computation (allocate on heap for large blockLength)
-    float* i0 = (float*)malloc(blockLength * sizeof(float));
-    float* theta_base = (float*)malloc(blockLength * sizeof(float));
-    float* theta_extrap = (float*)malloc(blockLength * sizeof(float));
-    float* theta_interp = (float*)malloc(blockLength * sizeof(float));
-    float* y = (float*)malloc(blockLength * sizeof(float));
-    float* tmp0 = (float*)malloc(blockLength * sizeof(float));
-    float* cos_theta = (float*)malloc(blockLength * sizeof(float));
-    float* sin_theta = (float*)malloc(blockLength * sizeof(float));
+    float * i0           = (float *) malloc(blockLength * sizeof(float));
+    float * theta_base   = (float *) malloc(blockLength * sizeof(float));
+    float * theta_extrap = (float *) malloc(blockLength * sizeof(float));
+    float * theta_interp = (float *) malloc(blockLength * sizeof(float));
+    float * y            = (float *) malloc(blockLength * sizeof(float));
+    float * tmp0         = (float *) malloc(blockLength * sizeof(float));
+    float * cos_theta    = (float *) malloc(blockLength * sizeof(float));
+    float * sin_theta    = (float *) malloc(blockLength * sizeof(float));
 
     for (int64_t row = 0; row < n_ctx; ++row) {
-        const float pos_val = (float)row;
-        
+        const float pos_val = (float) row;
+
         for (int64_t i = 0; i < blockLength; ++i) {
-            i0[i] = (float)i;
-            theta_base[i] = powf(theta_scale, i0[i]) * pos_val;
+            i0[i]           = (float) i;
+            theta_base[i]   = powf(theta_scale, i0[i]) * pos_val;
             theta_extrap[i] = theta_base[i];
             theta_interp[i] = theta_extrap[i] * freq_scale;
         }
@@ -10851,13 +10850,13 @@ static void ggml_compute_forward_rope_cache(const struct ggml_compute_params * p
             const float yy = fmaxf(0.001f, corr_dims[1] - corr_dims[0]);
 
             for (int64_t i = 0; i < blockLength; ++i) {
-                y[i] = (i0[i] - corr_dims[0]) / yy;
-                y[i] = fmaxf(y[i], 0.0f);
-                tmp0[i] = fminf(y[i], 1.0f);
-                y[i] = ext_factor * (1.0f - tmp0[i]);
-                tmp0[i] = ext_factor * tmp0[i];
-                const float a = tmp0[i] * theta_interp[i];
-                const float b = theta_extrap[i] * y[i];
+                y[i]            = (i0[i] - corr_dims[0]) / yy;
+                y[i]            = fmaxf(y[i], 0.0f);
+                tmp0[i]         = fminf(y[i], 1.0f);
+                y[i]            = ext_factor * (1.0f - tmp0[i]);
+                tmp0[i]         = ext_factor * tmp0[i];
+                const float a   = tmp0[i] * theta_interp[i];
+                const float b   = theta_extrap[i] * y[i];
                 theta_interp[i] = a + b;
             }
             attn *= (1.0f + 0.1f * logf_1_freq_scale);
@@ -10870,12 +10869,12 @@ static void ggml_compute_forward_rope_cache(const struct ggml_compute_params * p
 
         // Expand by repeating each value twice to get [n_ctx, n_rot] shape
         // Output layout: [n_ctx, n_rot] where each row has expanded values
-        float* outCos = dst_cos + row * n_rot;
-        float* outSin = dst_sin + row * n_rot;
+        float * outCos = dst_cos + row * n_rot;
+        float * outSin = dst_sin + row * n_rot;
         for (int64_t i = 0; i < blockLength; ++i) {
-            outCos[i * 2] = cos_theta[i];
+            outCos[i * 2]     = cos_theta[i];
             outCos[i * 2 + 1] = cos_theta[i];
-            outSin[i * 2] = sin_theta[i];
+            outSin[i * 2]     = sin_theta[i];
             outSin[i * 2 + 1] = sin_theta[i];
         }
     }

@@ -176,17 +176,17 @@ struct common_params {
     enum ggml_type type_k = GGML_TYPE_F16;  // data type for K cache
     enum ggml_type type_v = GGML_TYPE_F16;  // data type for V cache
 
-    uint32_t n_threads       = 64;        // number of threads to use for computation
-    uint32_t n_threads_batch = 64;        // number of threads to use for batch processing
+    uint32_t n_threads       = 64;          // number of threads to use for computation
+    uint32_t n_threads_batch = 64;          // number of threads to use for batch processing
 
-    int32_t n_predict  = -1;              // new tokens to predict
-    int32_t n_ctx      = 1024 * 16 * 16;  // context size
-    int32_t n_batch    = 16;              // logical batch size for prompt processing (must be >=32 to use BLAS)
-    int32_t n_keep     = 0;               // number of tokens to keep from initial prompt
-    int32_t n_parallel = 16;              // number of parallel sequences to decode
+    int32_t n_predict  = -1;                // new tokens to predict
+    int32_t n_ctx      = 1024 * 16 * 16;    // context size
+    int32_t n_batch    = 16;                // logical batch size for prompt processing (must be >=32 to use BLAS)
+    int32_t n_keep     = 0;                 // number of tokens to keep from initial prompt
+    int32_t n_parallel = 16;                // number of parallel sequences to decode
 
-    float defrag_thold = 0.1f;            // defragmentation threshold
-    bool  no_perf      = false;           // disable performance metrics
+    float defrag_thold = 0.1f;              // defragmentation threshold
+    bool  no_perf      = false;             // disable performance metrics
 
     struct common_params_sampling sampling;
 

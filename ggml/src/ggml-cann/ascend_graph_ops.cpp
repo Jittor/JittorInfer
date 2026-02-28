@@ -27,7 +27,8 @@
  * @return std::vector<int64_t> 输出形状向量
  */
 std::vector<int64_t> build_output_shape(const struct ggml_tensor *tensor,
-                                        bool reverse = true, int ndims = GGML_MAX_DIMS) {
+                                        bool reverse = true,
+                                        int ndims = GGML_MAX_DIMS) {
     std::vector<int64_t> output_shape;
     if (reverse) {
         // 反转维度顺序(从高维到低维)
@@ -180,8 +181,8 @@ ge::DataType get_data_type(enum ggml_type type) {
         case GGML_TYPE_I64:
             return ge::DT_INT64;
         default:
-            GGML_ABORT("Unsupported GGML type for GE conversion: %d (%s)", 
-                       type, ggml_type_name(type));
+            GGML_ABORT("Unsupported GGML type for GE conversion: %d (%s)", type,
+                       ggml_type_name(type));
             return ge::DT_FLOAT;  // unreachable, but keeps compiler happy
     }
 }
@@ -411,7 +412,7 @@ ge::Operator handle_mul_mat_transpose_op(
     ggml_tensor *src1 = node->src[1];  // B: [B, K, N, 1] in GGML notation
 
     ge::Operator op_a, op_b;
-    
+
     // 获取输入算子A
     if (gmml_tensor_to_ge_op_map.find(src0) != gmml_tensor_to_ge_op_map.end()) {
         op_a = gmml_tensor_to_ge_op_map[src0];
@@ -458,7 +459,8 @@ ge::Operator handle_mul_mat_transpose_op(
     // expanded_x输出
     std::vector<int64_t> output_shape = build_output_shape(node, true, 3);
     ge::DataType output_dtype = get_data_type(node->type);
-    ge::TensorDesc expanded_x_desc(ge::Shape(output_shape), ge::FORMAT_ND, output_dtype);
+    ge::TensorDesc expanded_x_desc(ge::Shape(output_shape), ge::FORMAT_ND,
+                                   output_dtype);
     transpose_matmul_op.update_output_desc_y(expanded_x_desc);
 
     // 添加到图中
@@ -2660,8 +2662,10 @@ void handle_split_op(
         } else {
             out_tensor = node;
         }
-        std::vector<int64_t> output_shape = build_output_shape(out_tensor, true, n_dim);
-        ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, get_data_type(out_tensor->type));
+        std::vector<int64_t> output_shape =
+            build_output_shape(out_tensor, true, n_dim);
+        ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND,
+                                   get_data_type(out_tensor->type));
         split_op.update_dynamic_output_desc_y(i, output_desc);
     }
     graph.AddOp(split_op);
@@ -2690,7 +2694,7 @@ void handle_moe_gating_topk_softmax_op(
     // 获取参数
     int32_t k = node->op_params[0];
     int32_t output_id = node->op_params[1];
-    
+
     // 只在最后一个输出时执行
     if (output_id != 2) {
         return;
@@ -2705,13 +2709,14 @@ void handle_moe_gating_topk_softmax_op(
     if (ggml_tensor_to_ge_op_map.find(x) != ggml_tensor_to_ge_op_map.end()) {
         input_op = ggml_tensor_to_ge_op_map[x];
     } else {
-        assert(false && "MOE_GATING_TOPK_SOFTMAX: input tensor not found in map");
+        assert(false &&
+               "MOE_GATING_TOPK_SOFTMAX: input tensor not found in map");
     }
     // 确保维度合法
-    input_op =
-        create_reshape_op(graph, input_op, {x->ne[1], x->ne[0]},
-                          "moe_gating_topk_softmax_reshape_x_" + std::to_string(op_index),
-                          get_data_type(x->type));
+    input_op = create_reshape_op(
+        graph, input_op, {x->ne[1], x->ne[0]},
+        "moe_gating_topk_softmax_reshape_x_" + std::to_string(op_index),
+        get_data_type(x->type));
 
     // 获取输出张量
     struct ggml_tensor *out = node->src[1];
@@ -2721,14 +2726,14 @@ void handle_moe_gating_topk_softmax_op(
     // 创建MoeGatingTopKSoftmax算子
     std::string op_name = "moe_gating_topk_softmax_" + std::to_string(op_index);
     ge::op::MoeGatingTopKSoftmax moe_gating_op(op_name.c_str());
-    
+
     // 设置输入
     moe_gating_op.set_input_x(input_op);
     // finished是可选输入，不设置
-    
+
     // 设置属性
     moe_gating_op.set_attr_k(static_cast<int64_t>(k));
-    
+
     // 设置MoeGatingTopKSoftmax算子的输出描述符
     // y输出 (softmax values)
     std::vector<int64_t> y_shape = build_output_shape(out, true, 2);
@@ -2737,17 +2742,20 @@ void handle_moe_gating_topk_softmax_op(
     moe_gating_op.update_output_desc_y(y_desc);
 
     // expert_idx输出
-    std::vector<int64_t> expert_idx_shape = build_output_shape(exp_idx, true, 2);
+    std::vector<int64_t> expert_idx_shape =
+        build_output_shape(exp_idx, true, 2);
     ge::DataType expert_idx_dtype = get_data_type(exp_idx->type);
-    ge::TensorDesc expert_idx_desc(ge::Shape(expert_idx_shape), ge::FORMAT_ND, expert_idx_dtype);
+    ge::TensorDesc expert_idx_desc(ge::Shape(expert_idx_shape), ge::FORMAT_ND,
+                                   expert_idx_dtype);
     moe_gating_op.update_output_desc_expert_idx(expert_idx_desc);
 
     // row_idx输出
     std::vector<int64_t> row_idx_shape = build_output_shape(row_idx, true, 2);
     ge::DataType row_idx_dtype = get_data_type(row_idx->type);
-    ge::TensorDesc row_idx_desc(ge::Shape(row_idx_shape), ge::FORMAT_ND, row_idx_dtype);
+    ge::TensorDesc row_idx_desc(ge::Shape(row_idx_shape), ge::FORMAT_ND,
+                                row_idx_dtype);
     moe_gating_op.update_output_desc_row_idx(row_idx_desc);
-    
+
     graph.AddOp(moe_gating_op);
 
     // 创建Identity算子用于out输出 (y)
@@ -2856,20 +2864,25 @@ void handle_moe_init_routing_op(
     // expanded_x输出
     std::vector<int64_t> expanded_x_shape = build_output_shape(output, true, 2);
     ge::DataType expanded_x_dtype = get_data_type(output->type);
-    ge::TensorDesc expanded_x_desc(ge::Shape(expanded_x_shape), ge::FORMAT_ND, expanded_x_dtype);
+    ge::TensorDesc expanded_x_desc(ge::Shape(expanded_x_shape), ge::FORMAT_ND,
+                                   expanded_x_dtype);
     moe_init_op.update_output_desc_expanded_x(expanded_x_desc);
 
     // expanded_row_idx输出
     std::vector<int64_t> row_idx_shape = build_output_shape(row_idx, true, 1);
     ge::DataType row_idx_dtype = get_data_type(row_idx->type);
-    ge::TensorDesc row_idx_desc(ge::Shape(row_idx_shape), ge::FORMAT_ND, row_idx_dtype);
+    ge::TensorDesc row_idx_desc(ge::Shape(row_idx_shape), ge::FORMAT_ND,
+                                row_idx_dtype);
     moe_init_op.update_output_desc_expanded_row_idx(row_idx_desc);
 
     // expert_tokens_count_or_cumsum输出
-    std::vector<int64_t> token_count_shape = build_output_shape(token_count, true, 1);
+    std::vector<int64_t> token_count_shape =
+        build_output_shape(token_count, true, 1);
     ge::DataType token_count_dtype = get_data_type(token_count->type);
-    ge::TensorDesc token_count_desc(ge::Shape(token_count_shape), ge::FORMAT_ND, token_count_dtype);
-    moe_init_op.update_output_desc_expert_tokens_count_or_cumsum(token_count_desc);
+    ge::TensorDesc token_count_desc(ge::Shape(token_count_shape), ge::FORMAT_ND,
+                                    token_count_dtype);
+    moe_init_op.update_output_desc_expert_tokens_count_or_cumsum(
+        token_count_desc);
 
     // 为每个输出创建Identity算子并映射
     // output: expanded_x
@@ -2946,8 +2959,7 @@ ge::Operator handle_moe_grouped_matmul_op(
     }
 
     // dummy bias
-    ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND,
-                               ge::DT_FLOAT);
+    ge::TensorDesc tensor_desc(ge::Shape({0}), ge::FORMAT_ND, ge::DT_FLOAT);
     ge::Tensor scale_tensor = ge::Tensor(tensor_desc, nullptr, 0);
     ge::op::Const scale_const_op = ge::op::Const(
         "moe_grouped_matmul_dummy_const" + std::to_string(op_index));
@@ -3003,7 +3015,8 @@ ge::Operator handle_moe_grouped_matmul_op(
     // 设置输出描述符
     std::vector<int64_t> output_shape = build_output_shape(node, true, 2);
     ge::DataType output_dtype = get_data_type(node->type);
-    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, output_dtype);
+    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND,
+                               output_dtype);
     grouped_matmul_op.update_dynamic_output_desc_y(0, output_desc);
 
     graph.AddOp(grouped_matmul_op);
@@ -3093,7 +3106,8 @@ ge::Operator handle_moe_finalize_routing_op(
     // 设置输出描述符
     std::vector<int64_t> output_shape = build_output_shape(node, true, 2);
     ge::DataType output_dtype = get_data_type(node->type);
-    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, output_dtype);
+    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND,
+                               output_dtype);
     finalize_op.update_output_desc_y(output_desc);
 
     graph.AddOp(finalize_op);
@@ -4140,10 +4154,10 @@ ge::Operator handle_mla_prefill_op(
 
 /**
  * @brief 处理ROPE_SIN_COS操作，使用预计算的sin/cos值
- * 
+ *
  * 该函数实现了使用预计算sin/cos值的旋转位置编码(RoPE)操作
  * 使用RotaryPositionEmbedding算子，mode设置为1
- * 
+ *
  * @param graph 计算图引用
  * @param node 当前节点，包含输入张量和参数
  * @param gmml_tensor_to_ge_op_map 张量到算子的映射
@@ -4154,7 +4168,6 @@ ge::Operator handle_rope_sin_cos(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index) {
-    
     // 获取源张量
     struct ggml_tensor *x = node->src[0];    // 输入张量
     struct ggml_tensor *sin = node->src[1];  // 预计算的sin值
@@ -4167,21 +4180,21 @@ ge::Operator handle_rope_sin_cos(
 
     // 获取输入算子
     ge::Operator op_x, op_sin, op_cos;
-    
+
     if (gmml_tensor_to_ge_op_map.find(x) != gmml_tensor_to_ge_op_map.end()) {
         op_x = gmml_tensor_to_ge_op_map[x];
     } else {
         printf("x not found in gmml_tensor_to_ge_op_map\n");
         assert(false);
     }
-    
+
     if (gmml_tensor_to_ge_op_map.find(sin) != gmml_tensor_to_ge_op_map.end()) {
         op_sin = gmml_tensor_to_ge_op_map[sin];
     } else {
         printf("sin not found in gmml_tensor_to_ge_op_map\n");
         assert(false);
     }
-    
+
     if (gmml_tensor_to_ge_op_map.find(cos) != gmml_tensor_to_ge_op_map.end()) {
         op_cos = gmml_tensor_to_ge_op_map[cos];
     } else {

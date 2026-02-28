@@ -90,11 +90,11 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
 
         // self_attention
         {
-            struct ggml_tensor * q = NULL;
-            struct ggml_tensor * q_nope = NULL;
-            struct ggml_tensor * q_pe = NULL;
+            struct ggml_tensor * q             = NULL;
+            struct ggml_tensor * q_nope        = NULL;
+            struct ggml_tensor * q_pe          = NULL;
             struct ggml_tensor * kv_compressed = NULL;
-            struct ggml_tensor * k_pe = NULL;
+            struct ggml_tensor * k_pe          = NULL;
             if (!is_lite) {
                 // {n_embd, q_lora_rank} * {n_embd, n_tokens} -> {q_lora_rank, n_tokens}
                 q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq_a, cur);
@@ -133,14 +133,14 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 ggml_set_name(k_pe, "k_pe");
 
                 kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
-                                            LLM_NORM_RMS, cb, il, true);
+                                               LLM_NORM_RMS, cb, il, true);
                 cb(kv_compressed, "kv_compressed", il);
             } else {
                 struct ggml_tensor * qkv_compress = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
                 cb(qkv_compress, "qkv_compress", il);
                 struct ggml_tensor * qkv_split[3];
                 int32_t              q_dim0 = (n_embd_head_qk_nope + n_embd_head_qk_rope) * n_head;
-                int32_t              qkv_size[3] = { (int32_t) q_dim0, (int32_t) kv_lora_rank, (int32_t) n_embd_head_qk_rope };
+                int32_t qkv_size[3] = { (int32_t) q_dim0, (int32_t) kv_lora_rank, (int32_t) n_embd_head_qk_rope };
                 ggml_build_forward_expand(gf, ggml_split(ctx0, qkv_compress, qkv_split, 2, 0, 3, qkv_size));
                 struct ggml_tensor * q = qkv_split[0];
                 cb(q, "q", il);
@@ -148,9 +148,9 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 cb(kv_compressed, "kv_compressed", il);
                 k_pe = qkv_split[2];
                 cb(k_pe, "k_pe", il);
-                k_pe = ggml_reshape_3d(ctx0, k_pe, n_embd_head_qk_rope, 1, n_tokens);
+                k_pe          = ggml_reshape_3d(ctx0, k_pe, n_embd_head_qk_rope, 1, n_tokens);
                 kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
-                                            LLM_NORM_RMS, cb, il, true);
+                                               LLM_NORM_RMS, cb, il, true);
                 cb(kv_compressed, "kv_compressed_norm", il);
 
                 q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head, n_tokens);
@@ -240,9 +240,8 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         // cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
 
         if ((uint32_t) il < hparams.n_layer_dense_lead) {
-            cur =
-                llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL, NULL,
-                              model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, true);
+            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL, NULL,
+                                model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il, true);
             cb(cur, "ffn_out", il);
         } else {
             // MoE branch

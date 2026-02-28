@@ -25,8 +25,8 @@
 #include "ge/ge_api_types.h"
 #include "ge/ge_error_codes.h"
 #include "graph/graph.h"
-#include "tensor.h"
 #include "graph/types.h"
+#include "tensor.h"
 
 //  #include "ggml-common.h"
 //  #include "ggml-cann.h"

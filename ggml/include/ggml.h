@@ -977,7 +977,8 @@ GGML_API void                 ggml_mul_mat_set_prec(struct ggml_tensor * a, enum
 GGML_API struct ggml_tensor * ggml_mul_mat_id(struct ggml_context * ctx, struct ggml_tensor * as,
                                               struct ggml_tensor * b, struct ggml_tensor * ids);
 
-GGML_API struct ggml_tensor * ggml_mul_mat_transpose(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b);
+GGML_API struct ggml_tensor * ggml_mul_mat_transpose(struct ggml_context * ctx, struct ggml_tensor * a,
+                                                     struct ggml_tensor * b);
 
 // fused moe for deepseek v2
 GGML_API struct ggml_tensor * ggml_dpskv2_fused_moe(struct ggml_context * ctx, struct ggml_tensor * inp_embd,
@@ -992,11 +993,9 @@ GGML_API struct ggml_tensor * ggml_moe_fused(struct ggml_context * ctx, struct g
                                              struct ggml_tensor * expert_gate_weights,
                                              struct ggml_tensor * row_idx_permute, int32_t start_idx, int32_t end_idx);
 
-GGML_API struct ggml_tensor * ggml_moe_gating_topk_softmax(struct ggml_context * ctx, struct ggml_tensor * x,
-                                                            int k, struct ggml_tensor ** out,
-                                                            struct ggml_tensor ** exp_idx,
-                                                            struct ggml_tensor ** row_idx);
-
+GGML_API struct ggml_tensor * ggml_moe_gating_topk_softmax(struct ggml_context * ctx, struct ggml_tensor * x, int k,
+                                                           struct ggml_tensor ** out, struct ggml_tensor ** exp_idx,
+                                                           struct ggml_tensor ** row_idx);
 
 GGML_API struct ggml_tensor * ggml_moe_init_routing(struct ggml_context * ctx, struct ggml_tensor * x,
                                                     struct ggml_tensor * expert_idx, int32_t n_expert,
@@ -1188,8 +1187,8 @@ GGML_API struct ggml_tensor * ggml_get_rows_fp16(struct ggml_context * ctx,
                                                  struct ggml_tensor *  b);  // row indices
 
 GGML_API struct ggml_tensor * ggml_get_rows_a_type(struct ggml_context * ctx,
-                                                 struct ggml_tensor *  a,  // data
-                                                 struct ggml_tensor *  b);  // row indices
+                                                   struct ggml_tensor *  a,  // data
+                                                   struct ggml_tensor *  b);  // row indices
 
 GGML_API struct ggml_tensor * ggml_get_rows_back(
     struct ggml_context * ctx,
@@ -1250,16 +1249,15 @@ GGML_API struct ggml_tensor * ggml_rope_ext(struct ggml_context * ctx, struct gg
                                             float beta_fast, float beta_slow);
 
 GGML_API struct ggml_tensor * ggml_rope_sin_cos(struct ggml_context * ctx, struct ggml_tensor * x,
-    struct ggml_tensor * sin, struct ggml_tensor * cos);
+                                                struct ggml_tensor * sin, struct ggml_tensor * cos);
 
 // compute sin/cos cache for RoPE
 // sin and cos must be float32 tensors of shape [n_ctx, n_rot/2]
 // returns a view of the cos tensor after computation
-GGML_API struct ggml_tensor * ggml_rope_cache(struct ggml_context * ctx,
-                                               struct ggml_tensor * sin, struct ggml_tensor * cos,
-                                               int n_rot, int n_ctx, int n_ctx_orig,
-                                               float freq_base, float freq_scale, float ext_factor,
-                                               float attn_factor, float beta_fast, float beta_slow);
+GGML_API struct ggml_tensor * ggml_rope_cache(struct ggml_context * ctx, struct ggml_tensor * sin,
+                                              struct ggml_tensor * cos, int n_rot, int n_ctx, int n_ctx_orig,
+                                              float freq_base, float freq_scale, float ext_factor, float attn_factor,
+                                              float beta_fast, float beta_slow);
 
 GGML_API struct ggml_tensor * ggml_rope_multi(struct ggml_context * ctx, struct ggml_tensor * a, struct ggml_tensor * b,
                                               struct ggml_tensor * c, int n_dims, int sections[4], int mode,

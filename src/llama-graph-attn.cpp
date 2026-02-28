@@ -244,13 +244,13 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
     struct ggml_tensor * q_states;
 
     struct ggml_tensor * cache_kv_nope = ggml_reshape_2d(ctx, kv.k_l[il], n_embd_k_cache, n_ctx);
-    cache_kv_nope = ggml_scatter_update(ctx, cache_kv_nope, indices, kv_nope);
-    cache_kv_nope = ggml_reshape_4d(ctx, cache_kv_nope, n_embd_k_cache, page_size, 1, page_num);
+    cache_kv_nope                      = ggml_scatter_update(ctx, cache_kv_nope, indices, kv_nope);
+    cache_kv_nope                      = ggml_reshape_4d(ctx, cache_kv_nope, n_embd_k_cache, page_size, 1, page_num);
     cb(cache_kv_nope, "cache_kv_nope", il);
 
     struct ggml_tensor * cache_kv_pe = ggml_reshape_2d(ctx, kv.v_l[il], n_embd_v_cache, n_ctx);
-    cache_kv_pe = ggml_scatter_update(ctx, cache_kv_pe, indices, kv_pe);
-    cache_kv_pe = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, page_size, 1, page_num);
+    cache_kv_pe                      = ggml_scatter_update(ctx, cache_kv_pe, indices, kv_pe);
+    cache_kv_pe                      = ggml_reshape_4d(ctx, cache_kv_pe, n_embd_v_cache, page_size, 1, page_num);
     cb(cache_kv_pe, "cache_kv_pe", il);
 
     {
@@ -259,13 +259,12 @@ struct ggml_tensor * llm_attn_mla(struct ggml_context * ctx, struct llama_contex
         cb(q_nope, "q_nope_absorb", il);
         // CANNMLA
         q_nope = ggml_reshape_4d(ctx, q_nope, q_nope->ne[0], 1, q_nope->ne[1], q_nope->ne[2]);
-        q_pe = ggml_reshape_4d(ctx, q_pe, q_pe->ne[0], 1, q_pe->ne[1], q_pe->ne[2]);
+        q_pe   = ggml_reshape_4d(ctx, q_pe, q_pe->ne[0], 1, q_pe->ne[1], q_pe->ne[2]);
     }
 
     // attention
     struct ggml_tensor * cur;
     {
-
         struct ggml_tensor * kqv =
             ggml_mla_jittor(ctx, q_nope, q_pe, cache_kv_nope, cache_kv_pe, page_table, length_kv, nullptr, nullptr,
                             n_tokens, n_tokens, n_head, 1, n_ctx, kq_scale, lctx.kv_self.page_size);
