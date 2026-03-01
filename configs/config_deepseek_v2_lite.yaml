@@ -31,7 +31,8 @@ n_batch: 8 # logical batch size for prompt processing
 n_parallel: 8  # number of parallel sequences to decode (must < 32 now)
 
 # Model parameters
-model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-mergeALL.gguf"  # model path
+model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-noMergeL-QK.gguf"  # model path
+# model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-mergeALL.gguf"  # model path
 model_alias: ""  # model alias
 
 # Server parameters

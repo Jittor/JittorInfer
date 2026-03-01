@@ -261,31 +261,68 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
                                                LLM_NORM_RMS, cb, il);
                 cb(kv_compressed, "kv_compressed", il);
             } else {
-                struct ggml_tensor * qkv_compress = ggml_mul_mat(ctx0, model.layers[il].wq, cur);
-                cb(qkv_compress, "qkv_compress", il);
-                struct ggml_tensor * qkv_split[3];
-                int32_t              q_dim0 = (n_embd_head_qk_nope + n_embd_head_qk_rope) * n_head_act;
-                int32_t qkv_size[3] = { (int32_t) q_dim0, (int32_t) kv_lora_rank, (int32_t) n_embd_head_qk_rope };
-                ggml_build_forward_expand(gf, ggml_split(ctx0, qkv_compress, qkv_split, 2, 0, 3, qkv_size));
-                struct ggml_tensor * q = qkv_split[0];
-                cb(q, "q", il);
-                kv_compressed = qkv_split[1];
-                cb(kv_compressed, "kv_compressed", il);
-                k_pe = qkv_split[2];
-                k_pe = ggml_reshape_3d(ctx0, k_pe, n_embd_head_qk_rope, 1, n_tokens);
-                cb(k_pe, "k_pe", il);
-                kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
-                                               LLM_NORM_RMS, cb, il);
-                cb(kv_compressed, "kv_compressed_norm", il);
+                if (hparams.merge_qk) {
+                    // merged path: wq contains [q | kv_a_mqa] concatenated
+                    struct ggml_tensor * qkv_compress = ggml_mul_mat(ctx0, model.layers[il].wq, cur);
+                    cb(qkv_compress, "qkv_compress", il);
+                    struct ggml_tensor * qkv_split[3];
+                    int32_t              q_dim0     = (n_embd_head_qk_nope + n_embd_head_qk_rope) * n_head_act;
+                    int32_t              qkv_size[3] = { (int32_t) q_dim0, (int32_t) kv_lora_rank,
+                                                        (int32_t) n_embd_head_qk_rope };
+                    ggml_build_forward_expand(gf, ggml_split(ctx0, qkv_compress, qkv_split, 2, 0, 3, qkv_size));
+                    struct ggml_tensor * q = qkv_split[0];
+                    cb(q, "q", il);
+                    kv_compressed = qkv_split[1];
+                    cb(kv_compressed, "kv_compressed", il);
+                    k_pe = qkv_split[2];
+                    k_pe = ggml_reshape_3d(ctx0, k_pe, n_embd_head_qk_rope, 1, n_tokens);
+                    cb(k_pe, "k_pe", il);
+                    kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
+                                                   LLM_NORM_RMS, cb, il);
+                    cb(kv_compressed, "kv_compressed_norm", il);
 
-                q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
-                struct ggml_tensor * q_split[2];
-                int32_t              q_size[2] = { (int32_t) n_embd_head_qk_nope, (int32_t) n_embd_head_qk_rope };
-                ggml_build_forward_expand(gf, ggml_split(ctx0, q, q_split, 3, 0, 2, q_size));
-                q_nope = q_split[0];
-                cb(q_nope, "q_nope", il);
-                q_pe = q_split[1];
-                cb(q_pe, "q_pe", il);
+                    q = ggml_reshape_3d(ctx0, q, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act, n_tokens);
+                    struct ggml_tensor * q_split[2];
+                    int32_t              q_size[2] = { (int32_t) n_embd_head_qk_nope, (int32_t) n_embd_head_qk_rope };
+                    ggml_build_forward_expand(gf, ggml_split(ctx0, q, q_split, 3, 0, 2, q_size));
+                    q_nope = q_split[0];
+                    cb(q_nope, "q_nope", il);
+                    q_pe = q_split[1];
+                    cb(q_pe, "q_pe", il);
+                } else {
+                    // non-merged path: wq for q only, wkv_a_mqa for kv
+                    struct ggml_tensor * q_raw = ggml_mul_mat(ctx0, model.layers[il].wq, cur);
+                    cb(q_raw, "q", il);
+
+                    q_raw = ggml_reshape_3d(ctx0, q_raw, n_embd_head_qk_nope + n_embd_head_qk_rope, n_head_act,
+                                            n_tokens);
+                    struct ggml_tensor * qsplit[2];
+                    int32_t              split_size[2] = { (int32_t) n_embd_head_qk_nope,
+                                                           (int32_t) n_embd_head_qk_rope };
+                    ggml_build_forward_expand(gf, ggml_split(ctx0, q_raw, qsplit, 3, 0, 2, split_size));
+                    q_nope = qsplit[0];
+                    cb(q_nope, "q_nope", il);
+                    q_pe = qsplit[1];
+                    cb(q_pe, "q_pe", il);
+
+                    // {n_embd, kv_lora_rank + n_embd_head_qk_rope} * {n_embd, n_tokens}
+                    struct ggml_tensor * kv_pe_compresseed = ggml_mul_mat(ctx0, model.layers[il].wkv_a_mqa, cur);
+                    cb(kv_pe_compresseed, "kv_pe_compresseed", il);
+
+                    kv_compressed = ggml_view_2d(ctx0, kv_pe_compresseed, kv_lora_rank, n_tokens,
+                                                 kv_pe_compresseed->nb[1], 0);
+                    cb(kv_compressed, "kv_compressed", il);
+
+                    k_pe = ggml_view_3d(ctx0, kv_pe_compresseed, n_embd_head_qk_rope, 1, n_tokens,
+                                        kv_pe_compresseed->nb[1], kv_pe_compresseed->nb[1],
+                                        ggml_row_size(kv_pe_compresseed->type, kv_lora_rank));
+                    cb(k_pe, "k_pe", il);
+
+                    kv_compressed = ggml_cont(ctx0, kv_compressed);
+                    kv_compressed = llm_build_norm(ctx0, kv_compressed, hparams, model.layers[il].attn_kv_a_norm, NULL,
+                                                   LLM_NORM_RMS, cb, il);
+                    cb(kv_compressed, "kv_compressed", il);
+                }
             }
 
             if (hparams.enable_mla) {

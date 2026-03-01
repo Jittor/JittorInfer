@@ -43,6 +43,8 @@ struct llama_hparams {
     bool enable_data_parallel;
     // mla settings
     bool enable_mla;
+    // weight merge settings
+    bool merge_qk;
     // cann flash attention;
     bool enable_cann_flash_attention;
 
