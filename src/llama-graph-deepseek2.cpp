@@ -445,8 +445,14 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
         cb(cur, "ffn_norm", il);
 
         if ((uint32_t) il < hparams.n_layer_dense_lead) {
-            cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL, NULL,
-                                model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il);
+            if (hparams.merge_ffn) {
+                cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL, NULL, NULL, NULL,
+                                    model.layers[il].ffn_down, NULL, NULL, NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il);
+            } else {
+                cur = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up, NULL, NULL,
+                                    model.layers[il].ffn_gate, NULL, NULL, model.layers[il].ffn_down, NULL, NULL, NULL,
+                                    LLM_FFN_SILU, LLM_FFN_PAR, cb, il);
+            }
             cb(cur, "ffn_out", il);
         } else {
             // MoE branch
@@ -459,9 +465,17 @@ struct ggml_cgraph * llm_deepseek2_context::build_deepseek2() {
 
             // FFN shared expert
             {
-                ggml_tensor * ffn_shexp = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL,
-                                                        NULL, NULL, NULL, model.layers[il].ffn_down_shexp, NULL, NULL,
-                                                        NULL, LLM_FFN_SWIGLU, LLM_FFN_SEQ, cb, il);
+                ggml_tensor * ffn_shexp;
+                if (hparams.merge_ffn) {
+                    ffn_shexp = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL, NULL, NULL,
+                                              NULL, model.layers[il].ffn_down_shexp, NULL, NULL, NULL, LLM_FFN_SWIGLU,
+                                              LLM_FFN_SEQ, cb, il);
+                } else {
+                    ffn_shexp = llm_build_ffn(ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL,
+                                              model.layers[il].ffn_gate_shexp, NULL, NULL,
+                                              model.layers[il].ffn_down_shexp, NULL, NULL, NULL, LLM_FFN_SILU,
+                                              LLM_FFN_PAR, cb, il);
+                }
                 cb(ffn_shexp, "ffn_shexp", il);
 
                 cur = ggml_add(ctx0, moe_out, ffn_shexp);

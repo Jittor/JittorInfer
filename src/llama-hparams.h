@@ -45,6 +45,7 @@ struct llama_hparams {
     bool enable_mla;
     // weight merge settings
     bool merge_qk;
+    bool merge_ffn;
     // cann flash attention;
     bool enable_cann_flash_attention;
 

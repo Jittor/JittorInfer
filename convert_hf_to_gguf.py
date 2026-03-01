@@ -1072,7 +1072,7 @@ class DeepseekV2Model(Model):
                     data_torch = self._shared_experts[bid][merged_name]
                     new_name = self.map_tensor_name(merged_name)
                     tensors.append((new_name, data_torch))
-                if self.merge_moe:
+                if self.merge_ffn:
                     # fuse gate_proj and up_proj along dim=0 → [n_ff*2, n_embd]
                     up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
                     tensors = [tensors[0], (tensors[2][0], up_proj)]
@@ -1384,7 +1384,7 @@ if __name__ == '__main__':
     main()
 
 
-# python3 convert_hf_to_gguf.py /root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-V2-Lite-Chat --outfile ./DeepSeek-V2-Lite-Chat-bf16-noMergeL-QK.gguf --outtype bf16 --no-merge-qk
+# python3 convert_hf_to_gguf.py /root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-V2-Lite-Chat --outfile ./DeepSeek-V2-Lite-Chat-bf16-noMergeL-FFN.gguf --outtype bf16 --no-merge-ffn
 # ASCEND_RT_VISIBLE_DEVICES=7 ./build/bin/llama-server --config  /root/dyx/JittorInfer/configs/config_deepseek_v2_lite.yaml
 # cmake -B build -DGGML_CUDA=OFF -DGGML_CANN=on -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O2" -DCMAKE_C_FLAGS="-O2"
 # cmake --build build -j

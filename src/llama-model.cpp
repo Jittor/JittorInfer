@@ -887,7 +887,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 }
                             }
 
-                            if (merge_moe) {
+                            if (merge_ffn) {
                                 layer.ffn_down_shexp =
                                     create_tensor({ n_ff_exp, n_expert_shared, n_embd }, LLM_SPLIT_3d_DIM0_MERGE01,
                                                   tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), 0, local_dev);
@@ -895,7 +895,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                     { n_embd, n_ff_exp + n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
                                     tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), 0, local_dev);
                             } else {
-                                // Shared expert branch
+                                // Shared expert branch: gate and up are separate
                                 layer.ffn_gate_shexp =
                                     create_tensor({ n_embd, n_ff_exp, n_expert_shared }, LLM_SPLIT_3d_DIM1_MERGE12,
                                                   tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), 0, local_dev);
@@ -1348,6 +1348,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
     hparams.enable_fused_moe            = params.enable_fused_moe;
     hparams.enable_mla                  = params.enable_mla;
     hparams.merge_qk                    = params.merge_qk;
+    hparams.merge_ffn                   = params.merge_ffn;
     hparams.enable_cann_flash_attention = params.enable_cann_flash_attention;
 }
 
