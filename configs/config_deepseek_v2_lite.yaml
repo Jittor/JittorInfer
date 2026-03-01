@@ -13,8 +13,8 @@ no_perf: false      # disable performance metrics
 enable_mla: true        # use mla for deepseek
 enable_fused_moe: true  # use fused moe for deepseek
 merge_qk: true          # merge q and kv_a_mqa weights into one tensor (DeepSeek-V2-Lite)
-merge_ffn: false         # merge gate+up weights for dense FFN layers
-merge_moe: true         # merge gate+up weights for MoE expert and shared expert layers
+merge_ffn: true         # merge gate+up weights for dense FFN layers
+merge_moe: false         # merge gate+up weights for MoE expert and shared expert layers
 offload_input: true # offload input to GPU
 enable_ge: true # enable ge for deepseek
 display_chat: true # display chat info to console
@@ -31,7 +31,8 @@ n_batch: 8 # logical batch size for prompt processing
 n_parallel: 8  # number of parallel sequences to decode (must < 32 now)
 
 # Model parameters
-model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-noMergeL-FFN.gguf"  # model path
+model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-noMergeL-MOE.gguf"  # model path
+# model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-noMergeL-FFN.gguf"  # model path
 # model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-noMergeL-QK.gguf"  # model path
 # model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-mergeALL.gguf"  # model path
 model_alias: ""  # model alias

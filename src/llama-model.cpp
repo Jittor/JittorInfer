@@ -1349,6 +1349,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
     hparams.enable_mla                  = params.enable_mla;
     hparams.merge_qk                    = params.merge_qk;
     hparams.merge_ffn                   = params.merge_ffn;
+    hparams.merge_moe                   = params.merge_moe;
     hparams.enable_cann_flash_attention = params.enable_cann_flash_attention;
 }
 

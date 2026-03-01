@@ -1384,7 +1384,9 @@ if __name__ == '__main__':
     main()
 
 
+# python3 convert_hf_to_gguf.py /root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-V2-Lite-Chat --outfile ./DeepSeek-V2-Lite-Chat-bf16-noMergeL-QK-MOE.gguf --outtype bf16 --no-merge-qk --no-merge-moe
 # python3 convert_hf_to_gguf.py /root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-V2-Lite-Chat --outfile ./DeepSeek-V2-Lite-Chat-bf16-noMergeL-FFN.gguf --outtype bf16 --no-merge-ffn
+# python3 convert_hf_to_gguf.py /root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-V2-Lite-Chat --outfile ./DeepSeek-V2-Lite-Chat-bf16-noMergeL-MOE.gguf --outtype bf16 --no-merge-moe
 # ASCEND_RT_VISIBLE_DEVICES=7 ./build/bin/llama-server --config  /root/dyx/JittorInfer/configs/config_deepseek_v2_lite.yaml
 # cmake -B build -DGGML_CUDA=OFF -DGGML_CANN=on -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O2" -DCMAKE_C_FLAGS="-O2"
 # cmake --build build -j
