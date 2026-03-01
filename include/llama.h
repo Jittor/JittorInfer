@@ -492,6 +492,9 @@ struct llama_model_params {
     bool use_mlock;         // force system to keep model in RAM
     bool check_tensors;     // validate model tensor data
     bool enable_fused_moe;  // enable fused moe
+    bool merge_qk;          // merge q and kv_a_mqa weights (DeepSeek-V2-Lite)
+    bool merge_ffn;         // merge gate+up weights for dense FFN layers
+    bool merge_moe;         // merge gate+up weights for MoE expert layers
 };
 
 // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations

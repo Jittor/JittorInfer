@@ -6,7 +6,7 @@
 # 设置默认参数
 #TOKENIZER_NAME="deepseek-ai/DeepSeek-V2-Lite"  # 默认使用 deepseek 分词器
 TOKENIZER_NAME="deepseek-ai/DeepSeek-V2-Lite"
-URL="http://localhost:8080"  # 目标服务器地址
+URL="http://localhost:8096"  # 目标服务器地址
 BENCHMARK_KIND="throughput"  # 默认使用 throughput 模式
 DURATION="90s"  # 每个测试步骤持续时间
 WARMUP="15s"  # 预热时间
@@ -69,7 +69,7 @@ echo "最大并发用户数: $MAX_VUS"
 echo ""
 
 # 运行测试
-/root/zjp/inference-benchmarker/target/release/inference-benchmarker \
+/root/zhangyang/inference-benchmarker/target/release/inference-benchmarker \
   --tokenizer-name "$TOKENIZER_NAME" \
   --url "$URL" \
   --benchmark-kind "$BENCHMARK_KIND" \

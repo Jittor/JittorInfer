@@ -172,6 +172,9 @@ struct common_params {
     bool enable_mla                  = false;
     bool enable_fused_moe            = true;
     bool enable_cann_flash_attention = true;
+    bool merge_qk                    = true;   // merge q and kv_a_mqa weights (DeepSeek-V2-Lite)
+    bool merge_ffn                   = true;   // merge gate+up weights for dense FFN layers
+    bool merge_moe                   = true;   // merge gate+up weights for MoE expert layers
 
     enum ggml_type type_k = GGML_TYPE_F16;  // data type for K cache
     enum ggml_type type_v = GGML_TYPE_F16;  // data type for V cache
@@ -251,6 +254,15 @@ struct common_params {
             }
             if (config["enable_ge"]) {
                 enable_ge = config["enable_ge"].as<bool>();
+            }
+            if (config["merge_qk"]) {
+                merge_qk = config["merge_qk"].as<bool>();
+            }
+            if (config["merge_ffn"]) {
+                merge_ffn = config["merge_ffn"].as<bool>();
+            }
+            if (config["merge_moe"]) {
+                merge_moe = config["merge_moe"].as<bool>();
             }
             if (config["presample_count"]) {
                 presample_count = config["presample_count"].as<int>();

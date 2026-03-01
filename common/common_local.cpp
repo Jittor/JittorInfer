@@ -114,6 +114,9 @@ static llama_model_params common_model_params_to_llama_local(common_params & par
     mparams.enable_fused_moe            = params.enable_fused_moe;
     mparams.enable_cann_flash_attention = params.enable_cann_flash_attention;
     mparams.offload_input               = params.offload_input;
+    mparams.merge_qk                    = params.merge_qk;
+    mparams.merge_ffn                   = params.merge_ffn;
+    mparams.merge_moe                   = params.merge_moe;
 
     return mparams;
 }

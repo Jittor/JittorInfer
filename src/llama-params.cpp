@@ -24,6 +24,9 @@ struct llama_model_params llama_model_default_params() {
         /*.use_mlock                   =*/false,
         /*.check_tensors               =*/false,
         /*.enable_fused_moe            =*/false,
+        /*.merge_qk                    =*/true,
+        /*.merge_ffn                   =*/true,
+        /*.merge_moe                   =*/true,
     };
 
 #ifdef GGML_USE_METAL

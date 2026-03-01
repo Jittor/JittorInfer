@@ -12,6 +12,9 @@ defrag_thold: -1   # defragmentation threshold
 no_perf: false      # disable performance metrics
 enable_mla: true        # use mla for deepseek
 enable_fused_moe: true  # use fused moe for deepseek
+merge_qk: true          # merge q and kv_a_mqa weights into one tensor (DeepSeek-V2-Lite)
+merge_ffn: true         # merge gate+up weights for dense FFN layers
+merge_moe: true         # merge gate+up weights for MoE expert and shared expert layers
 offload_input: true # offload input to GPU
 enable_ge: true # enable ge for deepseek
 display_chat: true # display chat info to console
@@ -24,18 +27,18 @@ type_v: bf16  # data type for V cache (default: f16)
 
 # Generation parameters
 n_ctx: 65536  # context size (1024 * 16 * 16)
-n_batch: 16 # logical batch size for prompt processing
-n_parallel: 16  # number of parallel sequences to decode (must < 32 now)
+n_batch: 8 # logical batch size for prompt processing
+n_parallel: 8  # number of parallel sequences to decode (must < 32 now)
 
 # Model parameters
-model: "/root/flowey/gguf/DeepSeek-V2-Lite-MLA-Chat-bf16.gguf"  # model path
+model: "/root/dyx/JittorInfer/DeepSeek-V2-Lite-Chat-bf16-mergeALL.gguf"  # model path
 model_alias: ""  # model alias
 
 # Server parameters
 special: false       # enable special token output
 cont_batching: true  # insert new sequences for decoding on-the-fly
 reranking: false     # enable reranking support on server
-port: 8084           # server listens on this network port
+port: 8096           # server listens on this network port
 n_threads_http: 16   # number of threads to process HTTP requests
 hostname: "127.0.0.1"  # server hostname
 chat_template: ""    # chat template

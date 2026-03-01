@@ -611,7 +611,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         const int64_t n_expert      = hparams.n_expert;
         const int64_t n_expert_used = hparams.n_expert_used;
         // const int64_t n_ctx_train   = hparams.n_ctx_train;
-        bool          merge_matrix  = true;
+        bool          merge_qk  = params.merge_qk;
+        bool          merge_ffn = params.merge_ffn;
+        bool          merge_moe = params.merge_moe;
 
         if (n_expert > 0 && hparams.n_expert_used == 0) {
             throw std::runtime_error("model has expert layers but no expert layers are used");
@@ -789,7 +791,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                                        use_dp ? LLM_SPLIT_3d_MERGE12 : LLM_SPLIT_3d_DIM2_MERGE12,
                                                        tn(LLM_TENSOR_ATTN_Q_B, "weight", i), 0, local_dev);
                         } else {
-                            if (merge_matrix) {
+                            if (merge_qk) {
                                 // Not Splitable
                                 layer.wq = create_tensor(
                                     { n_embd, n_embd_head_k * n_head + kv_lora_rank + n_embd_head_qk_rope },
@@ -801,7 +803,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             }
                         }
 
-                        if (!merge_matrix) {
+                        if (!merge_qk) {
                             layer.wkv_a_mqa =
                                 create_tensor({ n_embd, kv_lora_rank + (n_embd_head_qk_rope) }, LLM_SPLIT_REPEAT,
                                               tn(LLM_TENSOR_ATTN_KV_A_MQA, "weight", i), 0, local_dev);
@@ -826,7 +828,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                                        tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
 
                         if (i < (int) hparams.n_layer_dense_lead) {
-                            if (merge_matrix) {
+                            if (merge_ffn) {
                                 layer.ffn_up   = create_tensor({ n_embd, n_ff, 2 }, LLM_SPLIT_3d_DIM1_MERGE12,
                                                                tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
                                 layer.ffn_down = create_tensor({ n_ff, n_embd }, LLM_SPLIT_2d_DIM0,
@@ -852,7 +854,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             if (n_expert_used == 0) {
                                 throw std::runtime_error("n_expert_used must be > 0");
                             }
-                            if (merge_matrix) {
+                            if (merge_moe) {
                                 // merge gate
                                 layer.ffn_up_exps =
                                     create_tensor({ n_embd, n_ff_exp + n_ff_exp, n_expert }, LLM_SPLIT_3d_DIM1,
@@ -885,7 +887,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                                 }
                             }
 
-                            if (merge_matrix) {
+                            if (merge_moe) {
                                 layer.ffn_down_shexp =
                                     create_tensor({ n_ff_exp, n_expert_shared, n_embd }, LLM_SPLIT_3d_DIM0_MERGE01,
                                                   tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), 0, local_dev);

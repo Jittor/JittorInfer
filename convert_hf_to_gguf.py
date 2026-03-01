@@ -992,6 +992,11 @@ class DeepseekV2Model(Model):
     _shared_experts: list[dict[str, Tensor]] | None = None
     _q_mqa: list[dict[str, Tensor]] | None = None
 
+    # merge control flags (can be overridden before instantiation via class attributes)
+    merge_qk:  bool = True   # merge q_proj + kv_a_proj_with_mqa (DeepSeek-V2-Lite only)
+    merge_ffn: bool = True   # merge gate_proj + up_proj for dense FFN layers
+    merge_moe: bool = True   # merge gate_proj + up_proj for MoE expert/shared-expert layers
+
     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
         # rename e_score_correction_bias tensors
         if name.endswith("e_score_correction_bias"):
@@ -1029,7 +1034,7 @@ class DeepseekV2Model(Model):
             if len(self._experts[bid]) >= n_experts * 3:
                 tensors: list[tuple[str, Tensor]] = []
 
-                # merge the experts into a single 3d tensor
+                # stack each weight type into a single 3d tensor
                 for w_name in ["down_proj", "gate_proj", "up_proj"]:
                     datas: list[Tensor] = []
 
@@ -1045,8 +1050,10 @@ class DeepseekV2Model(Model):
                     new_name = self.map_tensor_name(merged_name)
 
                     tensors.append((new_name, data_torch))
-                up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=1)
-                tensors = [tensors[0], (tensors[2][0], up_proj)]
+                if self.merge_moe:
+                    # fuse gate_proj and up_proj along dim=1 → [n_expert, n_ff*2, n_embd]
+                    up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=1)
+                    tensors = [tensors[0], (tensors[2][0], up_proj)]
                 return tensors
             else:
                 return []
@@ -1065,8 +1072,10 @@ class DeepseekV2Model(Model):
                     data_torch = self._shared_experts[bid][merged_name]
                     new_name = self.map_tensor_name(merged_name)
                     tensors.append((new_name, data_torch))
-                up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
-                tensors = [tensors[0], (tensors[2][0], up_proj)]
+                if self.merge_moe:
+                    # fuse gate_proj and up_proj along dim=0 → [n_ff*2, n_embd]
+                    up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
+                    tensors = [tensors[0], (tensors[2][0], up_proj)]
                 return tensors
             return []
 
@@ -1084,17 +1093,23 @@ class DeepseekV2Model(Model):
                     data_torch = self._shared_experts[bid][merged_name]
                     new_name = self.map_tensor_name(merged_name)
                     tensors.append((new_name, data_torch))
-                up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
-                tensors = [tensors[0], (tensors[2][0], up_proj)]
+                if self.merge_ffn:
+                    # fuse gate_proj and up_proj along dim=0 → [n_ff*2, n_embd]
+                    up_proj = torch.concat([tensors[1][1], tensors[2][1]], dim=0)
+                    tensors = [tensors[0], (tensors[2][0], up_proj)]
                 return tensors
             return []
 
         if name.find("self_attn.kv_a_proj_with_mqa.weight") != -1 or name.find("self_attn.q_proj.weight") != -1:
+            if not self.merge_qk:
+                # keep q_proj and kv_a_proj_with_mqa as separate tensors
+                return [(self.map_tensor_name(name), data_torch)]
+
             if self._q_mqa is None:
                 self._q_mqa = [{} for _ in range(self.block_count)]
-            
+
             self._q_mqa[bid][name] = data_torch
-            
+
             if len(self._q_mqa[bid]) >= 2:
                 name_q = f"model.layers.{bid}.self_attn.q_proj.weight"
                 name_kv = f"model.layers.{bid}.self_attn.kv_a_proj_with_mqa.weight"
@@ -1251,6 +1266,18 @@ def parse_args() -> argparse.Namespace:
         "--print-supported-models", action="store_true",
         help="Print the supported models"
     )
+    parser.add_argument(
+        "--no-merge-qk", action="store_true",
+        help="(DeepSeek-V2-Lite) do NOT merge q_proj and kv_a_proj_with_mqa into a single tensor",
+    )
+    parser.add_argument(
+        "--no-merge-ffn", action="store_true",
+        help="(DeepSeek) do NOT merge gate_proj and up_proj for dense FFN layers",
+    )
+    parser.add_argument(
+        "--no-merge-moe", action="store_true",
+        help="(DeepSeek) do NOT merge gate_proj and up_proj for MoE expert and shared-expert layers",
+    )
 
     args = parser.parse_args()
     if not args.print_supported_models and args.model is None:
@@ -1329,6 +1356,11 @@ def main() -> None:
             logger.error(f"Model {model_architecture} is not supported")
             sys.exit(1)
 
+        if issubclass(model_class, DeepseekV2Model):
+            model_class.merge_qk  = not args.no_merge_qk
+            model_class.merge_ffn = not args.no_merge_ffn
+            model_class.merge_moe = not args.no_merge_moe
+
         model_instance = model_class(dir_model=dir_model, ftype=output_type, fname_out=fname_out,
                                      is_big_endian=args.bigendian, use_temp_file=args.use_temp_file,
                                      eager=args.no_lazy,
@@ -1350,3 +1382,10 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
+
+# python3 convert_hf_to_gguf.py /root/.cache/modelscope/hub/models/deepseek-ai/DeepSeek-V2-Lite-Chat --outfile ./DeepSeek-V2-Lite-Chat-bf16-mergeALL.gguf --outtype bf16
+# ASCEND_RT_VISIBLE_DEVICES=7 ./build/bin/llama-server --config  /root/dyx/JittorInfer/configs/config_deepseek_v2_lite.yaml
+# cmake -B build -DGGML_CUDA=OFF -DGGML_CANN=on -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O2" -DCMAKE_C_FLAGS="-O2"
+# cmake --build build -j
+# --no-merge-qk --no-merge-ffn --no-merge-moe
