@@ -424,11 +424,11 @@ struct ggml_tensor * llm_build_moe_ffn_unmerge_ge(struct ggml_context * ctx, str
     cb(token_count, "ffn_moe_token_count", il);
 
     // separate gate and up projections (unmerged weights)
-    ggml_tensor * ffn_moe_up   = ggml_moe_grouped_matmul(ctx, cur_new, up_exps, token_count, true);
+    ggml_tensor * ffn_moe_up = ggml_moe_grouped_matmul(ctx, cur_new, up_exps, token_count, true);
     cb(ffn_moe_up, "ffn_moe_up", il);
     ggml_tensor * ffn_moe_gate = ggml_moe_grouped_matmul(ctx, cur_new, gate_exps, token_count, true);
     cb(ffn_moe_gate, "ffn_moe_gate", il);
-    ffn_moe_gate               = ggml_silu(ctx, ffn_moe_gate);
+    ffn_moe_gate = ggml_silu(ctx, ffn_moe_gate);
     cb(ffn_moe_gate, "ffn_moe_silu", il);
     ggml_tensor * ffn_moe_par = ggml_mul(ctx, ffn_moe_up, ffn_moe_gate);
     cb(ffn_moe_par, "ffn_moe_par", il);
