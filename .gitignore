@@ -159,3 +159,5 @@ perf.data.old
 kernel_meta/
 results/*
 ge_check_op.json
+
+script/results
