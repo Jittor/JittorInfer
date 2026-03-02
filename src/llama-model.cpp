@@ -611,9 +611,9 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         const int64_t n_expert      = hparams.n_expert;
         const int64_t n_expert_used = hparams.n_expert_used;
         // const int64_t n_ctx_train   = hparams.n_ctx_train;
-        bool          merge_qk  = params.merge_qk;
-        bool          merge_ffn = params.merge_ffn;
-        bool          merge_moe = params.merge_moe;
+        bool          merge_qk      = params.merge_qk;
+        bool          merge_ffn     = params.merge_ffn;
+        bool          merge_moe     = params.merge_moe;
 
         if (n_expert > 0 && hparams.n_expert_used == 0) {
             throw std::runtime_error("model has expert layers but no expert layers are used");
