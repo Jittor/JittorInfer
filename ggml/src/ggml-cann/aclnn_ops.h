@@ -753,7 +753,8 @@ template <aclnnStatus getWorkspaceSize(const aclTensor*, aclTensor*, uint64_t*,
 void ggml_cann_activation(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* src = dst->src[0];
 
-    GGML_ASSERT(src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16 || src->type == GGML_TYPE_BF16);
+    GGML_ASSERT(src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16 ||
+                src->type == GGML_TYPE_BF16);
     GGML_ASSERT(dst->type == src->type);
 
     aclTensor* acl_src = ggml_cann_create_tensor(src);
@@ -784,7 +785,8 @@ template <aclnnStatus getWorkspaceSize(const aclTensor*, const aclTensor*,
 void ggml_cann_activation(ggml_backend_cann_context& ctx, ggml_tensor* dst) {
     ggml_tensor* src = dst->src[0];
 
-    GGML_ASSERT(src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16 || src->type == GGML_TYPE_BF16);
+    GGML_ASSERT(src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16 ||
+                src->type == GGML_TYPE_BF16);
     GGML_ASSERT(dst->type == src->type);
 
     aclTensor* acl_src = ggml_cann_create_tensor(src);
