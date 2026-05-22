@@ -994,7 +994,7 @@ class Qwen2MoeModel(TextModel):
 
     def set_gguf_parameters(self):
         super().set_gguf_parameters()
-        if (n_experts := self.hparams.get("num_experts")) is not None:
+        if (n_experts := self.hparams.get("num_experts", self.hparams.get("num_local_experts"))) is not None:
             self.gguf_writer.add_expert_count(n_experts)
         if (n_experts_used := self.hparams.get("num_experts_per_tok")) is not None:
             self.gguf_writer.add_expert_used_count(n_experts_used)
@@ -1081,8 +1081,10 @@ class Qwen2MoeModel(TextModel):
         if name.startswith("mlp") or name.startswith("vision_model") or name.startswith("model.vision_tower") or name.startswith("model.multi_modal_projector") or name.startswith("model.visual"):
             # skip visual tensors
             return []
-        if name.find("experts") != -1:
-            n_experts = self.hparams["num_experts"]
+        if name.find("experts") != -1 and name.find("shared_expert") == -1:
+            n_experts = self.hparams.get("num_experts", self.hparams.get("num_local_experts"))
+            if n_experts is None:
+                raise KeyError(f"num_experts not found in hparams, tensor: {name}")
             assert bid is not None
 
             if self._experts is None:
