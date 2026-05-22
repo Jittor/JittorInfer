@@ -43,10 +43,10 @@
 #include "../include/ggml-cann.h"
 #include "../include/ggml.h"
 // #include "ascend_graph.h"
-#include "ge_api.h"
-#include "ge_api_types.h"
-#include "ge_error_codes.h"
-#include "graph.h"
+#include "ge/ge_api.h"
+#include "ge/ge_api_types.h"
+#include "ge/ge_error_codes.h"
+#include "graph/graph.h"
 
 #define MATRIX_ROW_PADDING 512
 #define GGML_CANN_MAX_STREAMS 8
