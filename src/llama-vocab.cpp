@@ -325,13 +325,13 @@ struct llm_tokenizer_spm_session {
 
     void tokenize(const std::string & text, std::vector<llama_token> & output) {
         // split string into utf8 chars
-        int index = 0;
-        size_t offs = 0;
+        int    index = 0;
+        size_t offs  = 0;
         while (offs < text.size()) {
             llm_symbol sym;
-            size_t len = unicode_len_utf8(text[offs]);
-            sym.text   = text.c_str() + offs;
-            sym.n      = std::min(len, text.size() - offs);
+            size_t     len = unicode_len_utf8(text[offs]);
+            sym.text       = text.c_str() + offs;
+            sym.n          = std::min(len, text.size() - offs);
             offs += sym.n;
             sym.prev = index - 1;
             sym.next = offs == text.size() ? -1 : index + 1;
@@ -380,8 +380,8 @@ struct llm_tokenizer_spm_session {
 
   private:
     void resegment(llm_symbol & symbol, std::vector<llama_token> & output) {
-        auto        text  = std::string(symbol.text, symbol.n);
-        auto        token = vocab.text_to_token(text);
+        auto text  = std::string(symbol.text, symbol.n);
+        auto token = vocab.text_to_token(text);
 
         // Do we need to support is_unused?
         if (token != LLAMA_TOKEN_NULL) {
@@ -443,8 +443,8 @@ struct llm_tokenizer_spm_session {
             return tok;
         }
         // fall back to the single-byte token if present
-        std::string  single(1, (char) ch);
-        llama_token  tok2 = vocab.text_to_token(single);
+        std::string single(1, (char) ch);
+        llama_token tok2 = vocab.text_to_token(single);
         if (tok2 != LLAMA_TOKEN_NULL) {
             return tok2;
         }
@@ -631,11 +631,11 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
             special_pad_id  = LLAMA_TOKEN_NULL;
             special_mask_id = LLAMA_TOKEN_NULL;
 
-            add_space_prefix         = true;
-            clean_spaces             = false;
-            escape_whitespaces       = true;
+            add_space_prefix           = true;
+            clean_spaces               = false;
+            escape_whitespaces         = true;
             treat_whitespace_as_suffix = false;
-            remove_extra_whitespaces = false;
+            remove_extra_whitespaces   = false;
 
             ml.get_key(LLM_KV_TOKENIZER_ADD_PREFIX, add_space_prefix, false);
             ml.get_key(LLM_KV_TOKENIZER_REMOVE_EXTRA_WS, remove_extra_whitespaces, false);
@@ -762,7 +762,7 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
 
     GGML_ASSERT(type == LLAMA_VOCAB_TYPE_BPE || type == LLAMA_VOCAB_TYPE_SPM);
     if (type == LLAMA_VOCAB_TYPE_SPM) {
-        char        buf[8];
+        char buf[8];
         snprintf(buf, sizeof(buf), "<0x%02X>", (uint8_t) '\n');
         llama_token nl = vocab.text_to_token(buf);
         if (nl == LLAMA_TOKEN_NULL) {
