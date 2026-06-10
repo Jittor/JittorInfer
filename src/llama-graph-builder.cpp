@@ -14,6 +14,7 @@
 #include "llama-graph-deepseek2.h"
 #include "llama-graph-deepseek2ge.h"
 #include "llama-graph-defrag.h"
+#include "llama-graph-llamage.h"
 #include "llama-graph-qwen2.h"
 #include "llama-graph-qwen2ge.h"
 #include "llama-graph-qwen3ge.h"
@@ -96,6 +97,8 @@ struct ggml_cgraph * llama_graph_builder::llama_build_graph(llama_context &     
 
     if (lctx.cparams.enable_ge) {
         switch (model.arch) {
+            case LLM_ARCH_LLAMA:
+                return llm_build_llama_ge(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
             case LLM_ARCH_DEEPSEEK2:
                 return llm_build_deepseek2_ge(lctx, buf_compute_meta, ubatch, cb, worst_case, print_layer);
             case LLM_ARCH_QWEN2:
@@ -154,6 +157,9 @@ void llama_graph_builder::llama_update_graph(llama_context & lctx, const llama_u
     const auto & model = lctx.model;
     {
         switch (model.arch) {
+            case LLM_ARCH_LLAMA:
+                llm_update_llama_ge(lctx);
+                break;
             case LLM_ARCH_DEEPSEEK2:
                 llm_update_deepseek2_ge(lctx);
                 break;

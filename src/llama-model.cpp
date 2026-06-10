@@ -967,6 +967,57 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     }
                 }
                 break;
+            case LLM_ARCH_LLAMA:
+                {
+                    tok_embd =
+                        create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_TOKEN_EMBD, "weight"), 0);
+
+                    // output
+                    output_norm = create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_OUTPUT_NORM, "weight"), 0);
+                    output      = create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_OUTPUT, "weight"),
+                                                TENSOR_NOT_REQUIRED);
+                    // if output is NULL, init from the input tok embed (LLaMA-2 ties embeddings)
+                    if (output == NULL) {
+                        output = create_tensor({ n_embd, n_vocab }, LLM_SPLIT_REPEAT,
+                                               tn(LLM_TENSOR_TOKEN_EMBD, "weight"), TENSOR_DUPLICATED);
+                    }
+
+                    for (int i = 0; i < n_layer; ++i) {
+                        const int          p         = hparams.tp_id;
+                        auto &             layer     = layers[i];
+                        ggml_backend_dev_t local_dev = enable_tensor_parallel ? devices[p] : nullptr;
+
+                        layer.attn_norm = create_tensor({ n_embd }, LLM_SPLIT_REPEAT,
+                                                        tn(LLM_TENSOR_ATTN_NORM, "weight", i), 0, local_dev);
+                        layer.wq        = create_tensor({ n_embd, n_embd }, LLM_SPLIT_REPEAT,
+                                                        tn(LLM_TENSOR_ATTN_Q, "weight", i), 0, local_dev);
+                        layer.wk        = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                                                        tn(LLM_TENSOR_ATTN_K, "weight", i), 0, local_dev);
+                        layer.wv        = create_tensor({ n_embd, n_embd_gqa }, LLM_SPLIT_REPEAT,
+                                                        tn(LLM_TENSOR_ATTN_V, "weight", i), 0, local_dev);
+                        layer.wo        = create_tensor({ n_embd, n_embd }, LLM_SPLIT_REPEAT,
+                                                        tn(LLM_TENSOR_ATTN_OUT, "weight", i), 0, local_dev);
+
+                        // LLaMA has no QKV bias; mark them optional
+                        layer.bq = create_tensor({ n_embd }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_Q, "bias", i),
+                                                 TENSOR_NOT_REQUIRED, local_dev);
+                        layer.bk = create_tensor({ n_embd_gqa }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_K, "bias", i),
+                                                 TENSOR_NOT_REQUIRED, local_dev);
+                        layer.bv = create_tensor({ n_embd_gqa }, LLM_SPLIT_REPEAT, tn(LLM_TENSOR_ATTN_V, "bias", i),
+                                                 TENSOR_NOT_REQUIRED, local_dev);
+
+                        layer.ffn_norm = create_tensor({ n_embd }, LLM_SPLIT_REPEAT,
+                                                       tn(LLM_TENSOR_FFN_NORM, "weight", i), 0, local_dev);
+
+                        layer.ffn_gate = create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT,
+                                                       tn(LLM_TENSOR_FFN_GATE, "weight", i), 0, local_dev);
+                        layer.ffn_down = create_tensor({ n_ff, n_embd }, LLM_SPLIT_REPEAT,
+                                                       tn(LLM_TENSOR_FFN_DOWN, "weight", i), 0, local_dev);
+                        layer.ffn_up   = create_tensor({ n_embd, n_ff }, LLM_SPLIT_REPEAT,
+                                                       tn(LLM_TENSOR_FFN_UP, "weight", i), 0, local_dev);
+                    }
+                }
+                break;
             case LLM_ARCH_QWEN2:
             case LLM_ARCH_QWEN2VL:
                 {
@@ -1477,6 +1528,19 @@ void llama_model::load_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_VOCAB_SIZE, n_vocab, false) || ml.get_arr_n(LLM_KV_TOKENIZER_LIST, n_vocab, false);
 
     switch (arch) {
+        case LLM_ARCH_LLAMA:
+            {
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+
+                switch (hparams.n_layer) {
+                    case 32:
+                        type = LLM_TYPE_7B;
+                        break;
+                    default:
+                        type = LLM_TYPE_UNKNOWN;
+                }
+            }
+            break;
         case LLM_ARCH_DEEPSEEK:
             {
                 ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);

@@ -1729,12 +1729,42 @@ ge::Operator handle_rope_op(
         sin_tile_op.update_output_desc_y(out_desc);
     }
     graph.AddOp(sin_tile_op);
+    // 判断RoPE类型：NEOX(half布局) vs NORM(interleaved布局)
+    // 现有Ascend rope mode=0(half) + cos/sin concat-tile [c,c]
+    // 仅适配NEOX。 对于NORM(LLaMA-2等interleaved)，需要在rope前后包夹一个
+    // "去交错/排回"的reshape+permute，使其数据布局与half模式匹配，
+    // 数学等价且对attention/KV cache透明。
+    const bool is_neox = (mode_param & GGML_ROPE_TYPE_NEOX) != 0;
+
+    // x为4D: [B,S,N,D] = [ne3, ne2, ne1, ne0]，D在最后一维(轴3)
+    const int64_t rope_B = src0->ne[3];
+    const int64_t rope_S = src0->ne[2];
+    const int64_t rope_N = src0->ne[1];
+    const int64_t rope_D = src0->ne[0];
+    const int64_t rope_Dh = rope_D / 2;
+
+    ge::Operator rope_input = op_x0;
+    if (!is_neox) {
+        // 去交错: [B,S,N,D] -> [B,S,N,D/2,2] -> permute{0,1,2,4,3} ->
+        // [B,S,N,2,D/2] -> [B,S,N,D]
+        // 效果: [x0,x1,x2,x3,...] -> [x0,x2,x4,...,x1,x3,x5,...]
+        ge::Operator deint_reshape0 =
+            create_reshape_op(graph, "rope_deint_r0_", curr_suffix, op_x0,
+                              {rope_B, rope_S, rope_N, rope_Dh, 2});
+        ge::Operator deint_permute =
+            create_permute_op(graph, "rope_deint_p_", curr_suffix,
+                              deint_reshape0, {0, 1, 2, 4, 3});
+        rope_input =
+            create_reshape_op(graph, "rope_deint_r1_", curr_suffix,
+                              deint_permute, {rope_B, rope_S, rope_N, rope_D});
+    }
+
     std::string name_rope = "rope_rope" + curr_suffix;
     // ge::op::RopeExtCustomV2 rope_op(name_rope.c_str());
     ge::op::RotaryPositionEmbedding rope_op(name_rope.c_str());
 
     // // 设置RoPE操作的输入（全部为4D：B,S,N,D）
-    rope_op.set_input_x(op_x0);
+    rope_op.set_input_x(rope_input);
     rope_op.set_input_cos(cos_tile_op);
     rope_op.set_input_sin(sin_tile_op);
 
@@ -1780,8 +1810,25 @@ ge::Operator handle_rope_op(
     // rope_op.set_attr_logf_1_freq_scale(logf_1_freq_scale);
     // rope_op.set_attr_pos_len(pos_len);
 
-    // 添加RoPE操作到图中并返回
+    // 添加RoPE操作到图中
     graph.AddOp(rope_op);
+
+    if (!is_neox) {
+        // 排回(去交错的逆操作): [B,S,N,D] -> [B,S,N,2,D/2] ->
+        // permute{0,1,2,4,3} -> [B,S,N,D/2,2] -> [B,S,N,D]
+        // 恢复交错布局，使rope输出的Q/K维度顺序与输入一致
+        ge::Operator reint_reshape0 =
+            create_reshape_op(graph, "rope_reint_r0_", curr_suffix, rope_op,
+                              {rope_B, rope_S, rope_N, 2, rope_Dh});
+        ge::Operator reint_permute =
+            create_permute_op(graph, "rope_reint_p_", curr_suffix,
+                              reint_reshape0, {0, 1, 2, 4, 3});
+        ge::Operator reint_reshape1 =
+            create_reshape_op(graph, "rope_reint_r1_", curr_suffix,
+                              reint_permute, {rope_B, rope_S, rope_N, rope_D});
+        return reint_reshape1;
+    }
+
     return rope_op;
 }
 
