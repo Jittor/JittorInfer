@@ -20,6 +20,7 @@ add_library(llama
             llama-graph-defrag.cpp
             llama-graph-deepseek2.cpp
             llama-graph-deepseek2ge.cpp
+            llama-graph-llamage.cpp
             llama-graph-qwen2.cpp
             llama-graph-qwen2ge.cpp
             llama-graph-qwen3.cpp
