@@ -51,7 +51,24 @@ static struct ggml_tensor * llm_build_kqv(struct ggml_context * ctx, struct llam
     const int head_split = (hparams.enable_tensor_parallel && !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
     const int64_t n_ctx  = cparams.n_ctx;
     const int64_t n_head = hparams.n_head(il) / head_split;
-    const int64_t n_head_kv     = hparams.n_head_kv(il) / head_split;
+    const int64_t n_head_kv_full = hparams.n_head_kv(il);
+    const int64_t n_head_q_full  = hparams.n_head(il);
+
+    // Calculate actual KV heads for this device (handles GQA with few KV heads)
+    int64_t n_head_kv;
+    if (n_head_kv_full >= (int64_t) head_split) {
+        n_head_kv = n_head_kv_full / head_split;
+    } else if (n_head_kv_full > 0) {
+        const int64_t tp_id          = hparams.tp_id;
+        const int64_t n_rep          = n_head_q_full / n_head_kv_full;
+        const int64_t n_q_per_device = n_head_q_full / head_split;
+        const int64_t kv_start       = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_end         = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
+        n_head_kv                    = kv_end - kv_start;
+    } else {
+        n_head_kv = n_head_kv_full;
+    }
+
     const int64_t n_embd_head_k = hparams.n_embd_head_k;
     const int64_t n_embd_k_gqa  = hparams.n_embd_k_gqa(il);
     const int64_t n_embd_head_v = hparams.n_embd_head_v;
@@ -350,13 +367,36 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
     const llama_hparams & hparams = lctx.model.hparams;
     const llama_cparams & cparams = lctx.cparams;
 
-    const int64_t n_embd_head_k = hparams.n_embd_head_k;
-    const int64_t n_embd_head_v = hparams.n_embd_head_v;
-    const int64_t n_embd_k_gqa  = hparams.n_embd_k_gqa(il);
-    const int64_t n_embd_v_gqa  = hparams.n_embd_v_gqa(il);
-    const int64_t n_head_kv     = hparams.n_head_kv(il);
-    const int64_t n_head        = hparams.n_head(il);
-    const int64_t n_ctx         = cparams.n_ctx;
+    const int64_t n_embd_head_k  = hparams.n_embd_head_k;
+    const int64_t n_embd_head_v  = hparams.n_embd_head_v;
+    const int64_t n_head_kv_full = hparams.n_head_kv(il);
+    const int64_t n_head         = hparams.n_head(il);
+    const int64_t n_ctx          = cparams.n_ctx;
+    const int64_t head_split =
+        (hparams.enable_tensor_parallel && !hparams.enable_data_parallel) ? hparams.num_parallel : 1;
+
+    // For GQA models: Q heads must be divisible by head_split
+    GGML_ASSERT(n_head % head_split == 0);
+    const int64_t n_head_local = n_head / head_split;
+
+    // Calculate actual KV heads for this device (handles GQA with few KV heads)
+    int64_t n_head_kv_local;
+    if (n_head_kv_full >= head_split) {
+        n_head_kv_local = n_head_kv_full / head_split;
+    } else if (n_head_kv_full > 0) {
+        const int64_t tp_id          = hparams.tp_id;
+        const int64_t n_rep          = n_head / n_head_kv_full;
+        const int64_t n_q_per_device = n_head / head_split;
+        const int64_t kv_start       = (tp_id * n_q_per_device) / n_rep;
+        const int64_t kv_end         = ((tp_id + 1) * n_q_per_device + n_rep - 1) / n_rep;
+        n_head_kv_local              = kv_end - kv_start;
+    } else {
+        n_head_kv_local = n_head_kv_full;
+    }
+
+    // Use hparams functions to get consistent n_embd values
+    const int64_t n_embd_k_gqa = hparams.n_embd_k_gqa(il);
+    const int64_t n_embd_v_gqa = hparams.n_embd_v_gqa(il);
 
     // TODO(hsh): remove pad op here, need to modify kv cache initialization
     // pad qkv
@@ -364,7 +404,7 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
     struct ggml_tensor * q          = ggml_pad(ctx, q_cur, pad_n_embd - q_cur->ne[0], 0, 0, 0);
     k_cur                           = ggml_pad(ctx, k_cur, pad_n_embd - k_cur->ne[0], 0, 0, 0);
     k_cur                           = ggml_reshape_2d(ctx, k_cur, n_embd_k_gqa, k_cur->ne[2]);
-    v_cur                           = ggml_reshape_3d(ctx, v_cur, n_embd_head_v, n_head_kv, v_cur->ne[1]);
+    v_cur                           = ggml_reshape_3d(ctx, v_cur, n_embd_head_v, n_head_kv_local, v_cur->ne[1]);
     v_cur                           = ggml_pad(ctx, v_cur, pad_n_embd - v_cur->ne[0], 0, 0, 0);
     v_cur                           = ggml_reshape_2d(ctx, v_cur, n_embd_v_gqa, v_cur->ne[2]);
 
@@ -385,9 +425,9 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
 
     // computing attention
     {
-        k = ggml_reshape_3d(ctx, k, pad_n_embd, n_head_kv, n_ctx);
+        k = ggml_reshape_3d(ctx, k, pad_n_embd, n_head_kv_local, n_ctx);
         cb(k, "k_updated", il);
-        v = ggml_reshape_3d(ctx, v, pad_n_embd, n_head_kv, n_ctx);
+        v = ggml_reshape_3d(ctx, v, pad_n_embd, n_head_kv_local, n_ctx);
         cb(v, "v_updated", il);
 
         struct ggml_tensor * cur;
@@ -396,11 +436,11 @@ struct ggml_tensor * llm_build_kv_ge(struct ggml_context * ctx, struct llama_con
         if (q->type != GGML_TYPE_F16) {
             q = ggml_cast(ctx, q, GGML_TYPE_F16);
         }
-        cur = ggml_flash_attn_prompt(ctx, q, k, v, kq_full, 1, n_head, pad_n_embd, pad_n_embd, n_head, n_tokens, n_kv,
-                                     length_q, length_kv, kq_scale);
-        cur = ggml_reshape_3d(ctx, cur, pad_n_embd, n_head, n_tokens);
+        cur = ggml_flash_attn_prompt(ctx, q, k, v, kq_full, 1, n_head_local, pad_n_embd, pad_n_embd, n_head_kv_local,
+                                     n_tokens, n_kv, length_q, length_kv, kq_scale);
+        cur = ggml_reshape_3d(ctx, cur, pad_n_embd, n_head_local, n_tokens);
         cur = ggml_get_slice(ctx, cur, 0, n_embd_head_v, 0);
-        cur = ggml_reshape_2d(ctx, cur, n_embd_head_v * n_head, n_tokens);
+        cur = ggml_reshape_2d(ctx, cur, n_embd_head_v * n_head_local, n_tokens);
 
         ggml_build_forward_expand(graph, cur);
 

@@ -33,6 +33,11 @@ ge::Operator handle_mul_op(
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
 
+ge::Operator handle_div_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
 ge::Operator handle_matmul_op(
     ge::Graph &graph, struct ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -105,6 +110,10 @@ ge::Operator handle_rope_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index, ggml_backend_cann_context &cann_ctx);
+ge::Operator handle_rope_op_for_deepseek(
+    ge::Graph &graph, ggml_tensor *node,
+    std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index, ggml_backend_cann_context &cann_ctx);
 ge::Operator handle_moe_fused_op(
     ge::Graph &graph, ggml_tensor *node,
     std::map<ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
@@ -137,6 +146,11 @@ ge::Operator handle_pad_op(
     std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
     int op_index);
 
+ge::Operator handle_allreduce_sum_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
+
 ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
                                 const std::vector<int64_t> &values,
                                 ge::DataType type);
@@ -158,5 +172,10 @@ ge::Operator create_reshape_op(ge::Graph &graph, ge::Operator &input_op,
                                const std::vector<int64_t> &target_shape,
                                const std::string &op_name,
                                ge::DataType data_type);
+
+ge::Operator handle_sum_rows_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index);
 
 #endif  // _ASCEND_GRAPH_OPS_H_

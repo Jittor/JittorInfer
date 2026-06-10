@@ -5,13 +5,7 @@ CURRENT_DIR=$(
 )
 cd $CURRENT_DIR
 
-# 导出环境变量
-if [ ! $ASCEND_HOME_DIR ]; then
-    ASCEND_HOME_DIR=/usr/local/Ascend/latest
-    source $ASCEND_HOME_DIR/bin/setenv.bash
-fi
-
-export ASCEND_TENSOR_COMPILER_INCLUDE=$ASCEND_HOME_DIR/compiler/include
+export ASCEND_TENSOR_COMPILER_INCLUDE=$ASCEND_HOME_PATH/compiler/include
 
 function main {
     # 1. 构建自定义算子包

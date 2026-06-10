@@ -529,6 +529,9 @@ llama_model_loader::llama_model_loader(const std::string & fname, std::vector<st
     uint16_t n_split = 0;
     get_key(llm_kv(LLM_KV_SPLIT_COUNT), n_split, false);
 
+    // !!! hack !!!
+    // n_split = 1;
+
     // Load additional GGML contexts
     GGML_ASSERT(n_split <= 1);
 
@@ -802,6 +805,9 @@ const struct ggml_tensor * llama_model_loader::check_tensor_dims(const std::stri
                            name.c_str(), llama_format_tensor_shape(ne).c_str(), llama_format_tensor_shape(ne2).c_str(),
                            llama_format_tensor_shape(cur).c_str()));
             }
+        } else if (spliter.mode == LLAMA_QKV_SPLIT) {
+            // todo: check dim
+            // hack!
         } else {
             for (size_t i = 0; i < GGML_MAX_DIMS; ++i) {
                 if ((i < ne.size() && ne[i] != cur->ne[i]) || (i >= ne.size() && cur->ne[i] != 1)) {
@@ -834,6 +840,9 @@ struct ggml_tensor * llama_model_loader::create_tensor(struct ggml_context * ctx
     struct ggml_tensor * tensor;
     if (spliter.mode == LLAMA_REPEAT) {
         tensor = ggml_dup_tensor(ctx, cur);
+    } else if (spliter.mode == LLAMA_QKV_SPLIT) {
+        int64_t tar_ne[4] = { ne[0], ne[1], 1, 1 };
+        tensor            = ggml_new_tensor(ctx, cur->type, GGML_MAX_DIMS, tar_ne);
     } else if (spliter.mode == LLAMA_AVG_SPLIT) {
         int     cur_split_dim = 0;
         int64_t cur_dim_size  = 1;
@@ -937,8 +946,11 @@ bool llama_model_loader::load_all_data(struct ggml_context * ctx, const struct l
     std::vector<ggml_backend_buffer_t> host_buffers;
     std::vector<ggml_backend_event_t>  events;
     std::vector<void *>                host_ptrs;
-    size_t                             buffer_idx     = 0;  // buffer to use for async loads
-    ggml_backend_t                     upload_backend = [&](const char * func) -> ggml_backend_t {
+    size_t                             buffer_idx = 0;  // buffer to use for async loads
+
+    bool use_async_upload = false;
+
+    ggml_backend_t upload_backend = [&](const char * func) -> ggml_backend_t {
         if (use_mmap || check_tensors) {
             return nullptr;
         }
@@ -954,22 +966,25 @@ bool llama_model_loader::load_all_data(struct ggml_context * ctx, const struct l
         auto * dev  = ggml_backend_buft_get_device(buft);
         if (!dev) {
             LLAMA_LOG_DEBUG("%s: no device found for buffer type %s for async uploads\n", func,
-                                                ggml_backend_buft_name(buft));
+                            ggml_backend_buft_name(buft));
             return nullptr;
         }
 
         if (buft != ggml_backend_dev_buffer_type(dev)) {
             LLAMA_LOG_DEBUG("%s: buffer type %s is not the default buffer type for device %s for async uploads\n", func,
-                                                ggml_backend_buft_name(buft), ggml_backend_dev_name(dev));
+                            ggml_backend_buft_name(buft), ggml_backend_dev_name(dev));
             return nullptr;
         }
 
         ggml_backend_dev_props props;
         ggml_backend_dev_get_props(dev, &props);
-        if (!props.caps.async || !props.caps.host_buffer || !props.caps.events) {
-            LLAMA_LOG_DEBUG("%s: device %s does not support async, host buffers or events\n", func,
-                                                ggml_backend_dev_name(dev));
+        if (!props.caps.host_buffer) {
+            LLAMA_LOG_DEBUG("%s: device %s does not support host buffers\n", func, ggml_backend_dev_name(dev));
             return nullptr;
+        }
+
+        if (props.caps.async && props.caps.events) {
+            use_async_upload = true;
         }
 
         auto * host_buft = ggml_backend_dev_host_buffer_type(dev);
@@ -983,27 +998,29 @@ bool llama_model_loader::load_all_data(struct ggml_context * ctx, const struct l
             auto * buf = ggml_backend_buft_alloc_buffer(host_buft, buffer_size);
             if (!buf) {
                 LLAMA_LOG_DEBUG("%s: failed to allocate host buffer for async uploads for device %s\n", func,
-                                                    ggml_backend_dev_name(dev));
+                                ggml_backend_dev_name(dev));
                 return nullptr;
             }
 
             host_buffers.emplace_back(buf);
             host_ptrs.emplace_back(ggml_backend_buffer_get_base(buf));
 
-            auto * event = ggml_backend_event_new(dev);
-            if (!event) {
-                LLAMA_LOG_DEBUG("%s: failed to create event for async uploads for device %s\n", func,
-                                                    ggml_backend_dev_name(dev));
-                return nullptr;
-            }
+            if (use_async_upload) {
+                auto * event = ggml_backend_event_new(dev);
+                if (!event) {
+                    LLAMA_LOG_DEBUG("%s: failed to create event for async uploads for device %s\n", func,
+                                    ggml_backend_dev_name(dev));
+                    return nullptr;
+                }
 
-            events.emplace_back(event);
+                events.emplace_back(event);
+            }
         }
 
         ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
         if (!backend) {
             LLAMA_LOG_DEBUG("%s: failed to initialize backend for device %s for async uploads\n", func,
-                                                ggml_backend_dev_name(dev));
+                            ggml_backend_dev_name(dev));
             return nullptr;
         }
 
@@ -1095,11 +1112,18 @@ bool llama_model_loader::load_all_data(struct ggml_context * ctx, const struct l
                     while (bytes_read < n_size) {
                         size_t read_iteration = std::min<size_t>(buffer_size, n_size - bytes_read);
 
-                        ggml_backend_event_synchronize(events[buffer_idx]);
+                        if (use_async_upload) {
+                            ggml_backend_event_synchronize(events[buffer_idx]);
+                        }
                         file->read_raw(host_ptrs[buffer_idx], read_iteration);
-                        ggml_backend_tensor_set_async(upload_backend, cur, host_ptrs[buffer_idx], bytes_read,
-                                                      read_iteration);
-                        ggml_backend_event_record(events[buffer_idx], upload_backend);
+
+                        if (use_async_upload) {
+                            ggml_backend_tensor_set_async(upload_backend, cur, host_ptrs[buffer_idx], bytes_read,
+                                                          read_iteration);
+                            ggml_backend_event_record(events[buffer_idx], upload_backend);
+                        } else {
+                            ggml_backend_tensor_set(cur, host_ptrs[buffer_idx], bytes_read, read_iteration);
+                        }
 
                         bytes_read += read_iteration;
                         ++buffer_idx;
@@ -1184,8 +1208,11 @@ bool llama_model_loader::load_all_data_mpi(struct ggml_context * ctx, const stru
     std::vector<ggml_backend_buffer_t> host_buffers;
     std::vector<ggml_backend_event_t>  events;
     std::vector<void *>                host_ptrs;
-    size_t                             buffer_idx     = 0;  // buffer to use for async loads
-    ggml_backend_t                     upload_backend = [&](const char * func) -> ggml_backend_t {
+    size_t                             buffer_idx = 0;  // buffer to use for async loads
+
+    bool use_async_upload = false;
+
+    ggml_backend_t upload_backend = [&](const char * func) -> ggml_backend_t {
         // if (use_mmap || check_tensors) {
         //     return nullptr;
         // }
@@ -1201,22 +1228,25 @@ bool llama_model_loader::load_all_data_mpi(struct ggml_context * ctx, const stru
         auto * dev  = ggml_backend_buft_get_device(buft);
         if (!dev) {
             LLAMA_LOG_DEBUG("%s: no device found for buffer type %s for async uploads\n", func,
-                                                ggml_backend_buft_name(buft));
+                            ggml_backend_buft_name(buft));
             return nullptr;
         }
 
         if (buft != ggml_backend_dev_buffer_type(dev)) {
             LLAMA_LOG_DEBUG("%s: buffer type %s is not the default buffer type for device %s for async uploads\n", func,
-                                                ggml_backend_buft_name(buft), ggml_backend_dev_name(dev));
+                            ggml_backend_buft_name(buft), ggml_backend_dev_name(dev));
             return nullptr;
         }
 
         ggml_backend_dev_props props;
         ggml_backend_dev_get_props(dev, &props);
-        if (!props.caps.async || !props.caps.host_buffer || !props.caps.events) {
-            LLAMA_LOG_DEBUG("%s: device %s does not support async, host buffers or events\n", func,
-                                                ggml_backend_dev_name(dev));
+        if (!props.caps.host_buffer) {
+            LLAMA_LOG_DEBUG("%s: device %s does not support host buffers\n", func, ggml_backend_dev_name(dev));
             return nullptr;
+        }
+
+        if (props.caps.async && props.caps.events) {
+            use_async_upload = true;
         }
 
         auto * host_buft = ggml_backend_dev_host_buffer_type(dev);
@@ -1230,27 +1260,29 @@ bool llama_model_loader::load_all_data_mpi(struct ggml_context * ctx, const stru
             auto * buf = ggml_backend_buft_alloc_buffer(host_buft, buffer_size);
             if (!buf) {
                 LLAMA_LOG_DEBUG("%s: failed to allocate host buffer for async uploads for device %s\n", func,
-                                                    ggml_backend_dev_name(dev));
+                                ggml_backend_dev_name(dev));
                 return nullptr;
             }
 
             host_buffers.emplace_back(buf);
             host_ptrs.emplace_back(ggml_backend_buffer_get_base(buf));
 
-            auto * event = ggml_backend_event_new(dev);
-            if (!event) {
-                LLAMA_LOG_DEBUG("%s: failed to create event for async uploads for device %s\n", func,
-                                                    ggml_backend_dev_name(dev));
-                return nullptr;
-            }
+            if (use_async_upload) {
+                auto * event = ggml_backend_event_new(dev);
+                if (!event) {
+                    LLAMA_LOG_DEBUG("%s: failed to create event for async uploads for device %s\n", func,
+                                    ggml_backend_dev_name(dev));
+                    return nullptr;
+                }
 
-            events.emplace_back(event);
+                events.emplace_back(event);
+            }
         }
 
         ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
         if (!backend) {
             LLAMA_LOG_DEBUG("%s: failed to initialize backend for device %s for async uploads\n", func,
-                                                ggml_backend_dev_name(dev));
+                            ggml_backend_dev_name(dev));
             return nullptr;
         }
 
@@ -1307,6 +1339,30 @@ bool llama_model_loader::load_all_data_mpi(struct ggml_context * ctx, const stru
                 ggml_backend_tensor_set(cur, data, 0, n_size);
             }
             size_done += n_size;
+        } else if (spliter->mode == LLAMA_QKV_SPLIT) {
+            GGML_ASSERT(spliter->post_process == NULL);
+            const int64_t element_size = ggml_element_size(cur);
+            int64_t       q_size       = spliter->qkv_param.q_size * element_size;
+            int64_t       k_size       = spliter->qkv_param.k_size * element_size;
+            int64_t       v_size       = spliter->qkv_param.v_size * element_size;
+            int64_t       q_offset_dst = spliter->qkv_param.q_offset_dst * element_size;
+            int64_t       k_offset_dst = spliter->qkv_param.k_offset_dst * element_size;
+            int64_t       v_offset_dst = spliter->qkv_param.v_offset_dst * element_size;
+            int64_t       q_offset_src = spliter->qkv_param.q_offset_src * element_size;
+            int64_t       k_offset_src = spliter->qkv_param.k_offset_src * element_size;
+            int64_t       v_offset_src = spliter->qkv_param.v_offset_src * element_size;
+            int64_t       src_size     = spliter->qkv_param.tot_size_src * element_size;
+
+            // printf("mlj: reach load qkv!");
+            // printf("mlj: tp_id = %d, q_offset = %lld, k_offset = %lld, v_offset = %lld\n",spliter->tp_id, q_offset_src, k_offset_src, v_offset_src);
+
+            ggml_backend_tensor_set(cur, data + q_offset_src, q_offset_dst, q_size);
+            ggml_backend_tensor_set(cur, data + k_offset_src, k_offset_dst, k_size);
+            ggml_backend_tensor_set(cur, data + v_offset_src, v_offset_dst, v_size);
+
+            // printf("mlj: successfully load qkv!");
+
+            size_done += src_size;
         } else {
             GGML_ASSERT(ggml_blck_size(cur->type) == 1);
             const int64_t element_size     = ggml_element_size(cur);
@@ -1357,16 +1413,25 @@ bool llama_model_loader::load_all_data_mpi(struct ggml_context * ctx, const stru
                     const size_t buffer_read           = now_blocks_per_buffer * target_cont_size;
                     const size_t pre_read              = block_id * target_cont_size;
                     const size_t source_off            = source_offset_start + source_cont_size * block_id;
+
                     // sync before read
-                    ggml_backend_event_synchronize(events[buffer_idx]);
+                    if (use_async_upload) {
+                        ggml_backend_event_synchronize(events[buffer_idx]);
+                    }
+
                     // read from file to buffer
                     for (size_t buf_off_id = 0; buf_off_id < now_blocks_per_buffer; buf_off_id++) {
                         memcpy((uint8_t *) host_ptrs[buffer_idx] + buf_off_id * target_cont_size,
                                data + source_off + buf_off_id * source_cont_size, (size_t) target_cont_size);
                     }
                     // transfer buffer to device
-                    ggml_backend_tensor_set_async(upload_backend, cur, host_ptrs[buffer_idx], pre_read, buffer_read);
-                    ggml_backend_event_record(events[buffer_idx], upload_backend);
+                    if (use_async_upload) {
+                        ggml_backend_tensor_set_async(upload_backend, cur, host_ptrs[buffer_idx], pre_read,
+                                                      buffer_read);
+                        ggml_backend_event_record(events[buffer_idx], upload_backend);
+                    } else {
+                        ggml_backend_tensor_set(cur, host_ptrs[buffer_idx], pre_read, buffer_read);
+                    }
                     ++buffer_idx;
                     buffer_idx %= n_buffers;
                 }

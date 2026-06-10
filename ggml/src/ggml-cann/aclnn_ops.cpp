@@ -5565,7 +5565,10 @@ void ggml_cann_flash_attn_prompt(ggml_backend_cann_context& ctx,
     int64_t sequence_lenth_kv = params.sequence_lenth_kv;
     float scaleValue = params.scaleValue;
 
-    int64_t numKeyValueHeads = num_heads;
+    // 最稳妥：从 key 张量形状推断 KV 头数，避免上游误传
+    ggml_tensor* key_tensor_src = dst->src[1];
+    int64_t numKeyValueHeads =
+        key_tensor_src ? key_tensor_src->ne[1] : key_num_heads;
     std::string sLayerOut = "BSND";
     char layerOut[sLayerOut.length()];
     strcpy(layerOut, sLayerOut.c_str());
@@ -5654,7 +5657,10 @@ void ggml_cann_flash_attn_jittor_v1(ggml_backend_cann_context& ctx,
     int64_t sequence_lenth_kv = params.sequence_lenth_kv;
     float scaleValue = params.scaleValue;
 
-    int64_t numKeyValueHeads = num_heads;
+    // 最稳妥：从 key 张量形状推断 KV 头数，避免上游误传
+    ggml_tensor* key_tensor_src = dst->src[1];
+    int64_t numKeyValueHeads =
+        key_tensor_src ? key_tensor_src->ne[1] : key_num_heads;
     std::string sLayerOut = "BNSD";
     char layerOut[sLayerOut.length()];
     strcpy(layerOut, sLayerOut.c_str());
@@ -5822,7 +5828,8 @@ int ggml_cann_prompt_flash_attention(
     std::vector<float>& output_host, int64_t batch_size, int64_t num_heads,
     int64_t head_dim_kq, int64_t head_dim_v, int64_t key_num_heads,
     int64_t sequence_lenth_q, int64_t sequence_lenth_kv, float32_t scaleValue) {
-    int64_t numKeyValueHeads = num_heads;
+    // 修正：使用 key_num_heads 以匹配 GQA 的 KV 头数
+    int64_t numKeyValueHeads = key_num_heads;
     std::string sLayerOut = "BSND";
     char layerOut[sLayerOut.length()];
     strcpy(layerOut, sLayerOut.c_str());

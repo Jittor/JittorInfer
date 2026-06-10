@@ -1,0 +1,39 @@
+{
+    "graph_id": 1,
+    "op": [
+        {
+            "error_type": "infer_shape_error",
+            "input0": {
+                "data_type": "DT_FLOAT16",
+                "layout": "ND",
+                "shape": [
+                    1,
+                    1,
+                    1,
+                    6144
+                ]
+            },
+            "input1": {
+                "data_type": "DT_INT64",
+                "layout": "ND",
+                "shape": [
+                    4
+                ]
+            },
+            "name": "reshape_5",
+            "output0": {
+                "data_type": "DT_FLOAT16",
+                "layout": "ND",
+                "shape": [
+                    1,
+                    1,
+                    32,
+                    128
+                ]
+            },
+            "reason": "InferShapeFailed!",
+            "type": "Reshape"
+        }
+    ],
+    "session_id": 0
+}

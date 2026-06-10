@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -43,6 +44,14 @@ struct llama_context * llama_init_from_model(struct llama_model * model, struct 
 
     // build cparams by hparams and params.
     build_cparams_by_params_and_hparams(cparams, params, hparams);
+
+    // 将模型架构与名称暴露为环境变量，供后端（如 GE 图构建）进行策略选择
+    {
+        const std::string arch_name  = model->arch_name();
+        const std::string model_name = model->name;
+        setenv("LLAMA_MODEL_ARCH", arch_name.c_str(), 1);
+        setenv("LLAMA_MODEL_NAME", model_name.c_str(), 1);
+    }
 
     ctx->logits_all = params.logits_all;
 
@@ -165,6 +174,10 @@ struct llama_context * llama_init_from_model(struct llama_model * model, struct 
                     llama_graph_builder::llama_build_graph(*ctx, ctx->buf_compute_meta_decode, ubatch_pp, true);
                 ggml_graph_set_flags(ctx->graph_decode, 3);
                 ggml_backend_sched_alloc_graph(ctx->sched_decode.get(), ctx->graph_decode);
+                ggml_backend_tensor_memset(ctx->inp_pos, 0, 0,
+                                           n_tokens * ctx->n_pos_per_token * ggml_element_size(ctx->inp_pos));
+                ggml_backend_tensor_memset(ctx->inp_out_ids, 0, 0, n_tokens * ggml_element_size(ctx->inp_out_ids));
+
                 LLAMA_LOG_INFO("Runing Compute to warmup, please wait...\n");
                 float time = ggml_time_us();
                 llama_graph_builder::llama_graph_compute(*ctx, ctx->graph_decode, ctx->sched_decode.get(),

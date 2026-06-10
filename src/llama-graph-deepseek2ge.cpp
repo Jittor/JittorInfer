@@ -46,9 +46,13 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     const uint32_t kv_lora_rank        = hparams.n_lora_kv;
 
     // params changed in parallel
+    const int64_t n_head_act      = (hparams.enable_tensor_parallel & !hparams.enable_data_parallel) ?
+                                        n_head / lctx.model.params.num_parallel :
+                                        n_head;
     const int64_t expert_group_id = hparams.enable_expert_parallel ? lctx.model.params.tp_id : 0;
     const int64_t n_expert_groups = hparams.enable_expert_parallel ? lctx.model.params.num_parallel : 1;
     const bool    run_mlp_only    = lctx.enable_dp_gather && lctx.self_token_size == 0;
+    const bool    enable_fp16     = is_lite;
 
     struct ggml_tensor * cur;
     struct ggml_tensor * inpL;
@@ -58,11 +62,11 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
     struct ggml_tensor * length_kv;
 
     GGML_ASSERT(!run_mlp_only);
-    GGML_ASSERT(!hparams.enable_tensor_parallel);
+    // GGML_ASSERT(!hparams.enable_tensor_parallel);
     GGML_ASSERT(!hparams.enable_data_parallel);
     GGML_ASSERT(!hparams.enable_expert_parallel);
 
-    inpL = llm_build_inp_embd(ctx0, lctx, hparams, ubatch, model.tok_embd, cb, true);
+    inpL = llm_build_inp_embd(ctx0, lctx, hparams, ubatch, model.tok_embd, cb, enable_fp16);
 
     // cast inpL to fp16
     // inpL = ggml_cast(ctx0, inpL, GGML_TYPE_F16);
@@ -90,21 +94,33 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             struct ggml_tensor * q = NULL;
             if (!is_lite) {
                 // {n_embd, q_lora_rank} * {n_embd, n_tokens} -> {q_lora_rank, n_tokens}
-                q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq_a, cur);
+                if (enable_fp16) {
+                    q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq_a, cur);
+                } else {
+                    q = ggml_mul_mat(ctx0, model.layers[il].wq_a, cur);
+                }
                 cb(q, "q", il);
 
                 q = llm_build_norm(ctx0, q, hparams, model.layers[il].attn_q_a_norm, NULL, LLM_NORM_RMS, cb, il, true);
                 cb(q, "q", il);
 
                 // {q_lora_rank, n_head * hparams.n_embd_head_k} * {q_lora_rank, n_tokens} -> {n_head * hparams.n_embd_head_k, n_tokens}
-                q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq_b, q);
+                if (enable_fp16) {
+                    q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq_b, q);
+                } else {
+                    q = ggml_mul_mat(ctx0, model.layers[il].wq_b, q);
+                }
                 cb(q, "q", il);
             } else {
-                q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
+                if (enable_fp16) {
+                    q = ggml_mul_mat_fp16(ctx0, model.layers[il].wq, cur);
+                } else {
+                    q = ggml_mul_mat(ctx0, model.layers[il].wq, cur);
+                }
                 cb(q, "q", il);
             }
 
-            q = ggml_reshape_3d(ctx0, q, n_embd_head_k, n_head, n_tokens);
+            q = ggml_reshape_3d(ctx0, q, n_embd_head_k, n_head_act, n_tokens);
             GGML_ASSERT(n_embd_head_k == n_embd_head_qk_nope + n_embd_head_qk_rope);
 
             // q_nope = q[:, :, :n_embd_head_qk_nope]
@@ -116,7 +132,12 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
             ggml_set_name(q_pe, "q_pe");
 
             // {n_embd, kv_lora_rank + n_embd_head_qk_rope} * {n_embd, n_tokens} -> {kv_lora_rank + n_embd_head_qk_rope, n_tokens}
-            struct ggml_tensor * kv_pe_compresseed = ggml_mul_mat_fp16(ctx0, model.layers[il].wkv_a_mqa, cur);
+            struct ggml_tensor * kv_pe_compresseed = nullptr;
+            if (enable_fp16) {
+                kv_pe_compresseed = ggml_mul_mat_fp16(ctx0, model.layers[il].wkv_a_mqa, cur);
+            } else {
+                kv_pe_compresseed = ggml_mul_mat(ctx0, model.layers[il].wkv_a_mqa, cur);
+            }
             cb(kv_pe_compresseed, "kv_pe_compresseed", il);
 
             // kv_compressed = kv_pe_compresseed[:, :kv_lora_rank]
@@ -137,8 +158,13 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 GGML_ABORT("mla not supported now.");
             } else {
                 // {kv_lora_rank, n_head * (n_embd_head_qk_nope + n_embd_head_v)} * {kv_lora_rank, n_tokens} -> {n_head * (n_embd_head_qk_nope + n_embd_head_v), n_tokens}
-                struct ggml_tensor * kv = ggml_mul_mat_fp16(ctx0, model.layers[il].wkv_b, kv_compressed);
-                kv = ggml_reshape_3d(ctx0, kv, n_embd_head_qk_nope + n_embd_head_v, n_head, n_tokens);
+                struct ggml_tensor * kv = nullptr;
+                if (enable_fp16) {
+                    kv = ggml_mul_mat_fp16(ctx0, model.layers[il].wkv_b, kv_compressed);
+                } else {
+                    kv = ggml_mul_mat(ctx0, model.layers[il].wkv_b, kv_compressed);
+                }
+                kv = ggml_reshape_3d(ctx0, kv, n_embd_head_qk_nope + n_embd_head_v, n_head_act, n_tokens);
                 cb(kv, "kv", il);
 
                 // k_nope = kv[:, :, :n_embd_head_qk_nope]
@@ -148,7 +174,7 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 // v_states = kv[:, :, n_embd_head_qk_nope:]
                 struct ggml_tensor * v_states =
                     ggml_get_slice(ctx0, kv, n_embd_head_qk_nope, n_embd_head_qk_nope + n_embd_head_v, 0);
-                v_states = ggml_reshape_2d(ctx0, v_states, n_embd_head_v * n_head, n_tokens);
+                v_states = ggml_reshape_2d(ctx0, v_states, n_embd_head_v * n_head_act, n_tokens);
                 ggml_set_name(v_states, "v_states");
 
                 // cast q_pe to fp32
@@ -174,11 +200,21 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 struct ggml_tensor * k_states = ggml_concat(ctx0, k_nope, ggml_repeat(ctx0, k_pe, q_pe), 0);
                 cb(k_states, "k_states", il);
 
+                if (v_states->type != GGML_TYPE_F16) {
+                    v_states = ggml_cast(ctx0, v_states, GGML_TYPE_F16);
+                }
+                if (k_states->type != GGML_TYPE_F16) {
+                    k_states = ggml_cast(ctx0, k_states, GGML_TYPE_F16);
+                }
+
                 cur = llm_build_kv_ge(ctx0, lctx, kv_self, gf, model.layers[il].wo, NULL, k_states, v_states, q_states,
-                                      indices, length_q, length_kv, n_tokens, n_kv, kq_scale, cb, il, true);
+                                      indices, length_q, length_kv, n_tokens, n_kv, kq_scale, cb, il, enable_fp16);
             }
         }
 
+        if (!enable_fp16) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+        }
         if (lctx.model.params.enable_tensor_parallel && !lctx.enable_dp_gather) {
             cur = ggml_all_reduce_sum(ctx0, cur);
             cb(cur, "all_reduce_sum_aft_attn", il);
@@ -214,6 +250,9 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                 hparams.expert_weights_norm, true, hparams.expert_weights_scale,
                 (enum llama_expert_gating_func_type) hparams.expert_gating_func, cb, il, false);
             cb(moe_out, "ffn_moe_out", il);
+            if (!enable_fp16) {
+                moe_out = ggml_cast(ctx0, moe_out, GGML_TYPE_F32);
+            }
             // moe_out = ggml_cast(ctx0, moe_out, GGML_TYPE_F16);
             // cb(moe_out, "ffn_moe_out_cast", il);
 
@@ -223,19 +262,24 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
                     ctx0, lctx, cur, model.layers[il].ffn_up_shexp, NULL, NULL, model.layers[il].ffn_gate_shexp, NULL,
                     NULL, model.layers[il].ffn_down_shexp, NULL, NULL, NULL, LLM_FFN_SILU, LLM_FFN_PAR, cb, il, false);
                 cb(ffn_shexp, "ffn_shexp", il);
-                // cur = ggml_cast(ctx0, moe_out, GGML_TYPE_F32);
+                if (!enable_fp16) {
+                    ffn_shexp = ggml_cast(ctx0, ffn_shexp, GGML_TYPE_F32);
+                }
                 cur = ggml_add(ctx0, moe_out, ffn_shexp);
                 cb(cur, "ffn_out", il);
             }
         }
 
+        if (!enable_fp16) {
+            cur = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+        }
         if (lctx.model.hparams.enable_tensor_parallel) {
             cur = ggml_all_reduce_sum(ctx0, cur);
             cb(cur, "all_reduce_sum_aft_mlp", il);
         }
         ggml_build_forward_expand(gf, cur);
         // cast cur to fp16
-        if (cur->type != GGML_TYPE_F16) {
+        if (cur->type != GGML_TYPE_F16 && enable_fp16) {
             cur = ggml_cast(ctx0, cur, GGML_TYPE_F16);
         }
 
@@ -244,6 +288,16 @@ struct ggml_cgraph * llm_deepseek2_context_ge::build_deepseek2_ge() {
         if (lctx.enable_dp_gather && lctx.self_token_size > 0) {
             GGML_ABORT("dp is not implemented.");
         }
+
+        // if (il == n_layer - 1 && !is_lite) {
+        //     ggml_build_forward_expand(gf, build_inp_out_ids());
+
+        //     ggml_tensor * cur_f32 = ggml_cast(ctx0, cur, GGML_TYPE_F32);
+        //     cb(cur_f32, "result_output", -1);
+
+        //     ggml_build_forward_expand(gf, cur_f32);
+        //     return gf;
+        // }
 
         cur = lctx.cvec.apply_to(cur);
         cb(cur, "l_out", il);

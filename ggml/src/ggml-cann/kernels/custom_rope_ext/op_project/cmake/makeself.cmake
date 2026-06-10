@@ -1,6 +1,7 @@
 execute_process(COMMAND bash ${CMAKE_CURRENT_LIST_DIR}/util/makeself/makeself.sh
                         --header ${CMAKE_CURRENT_LIST_DIR}/util/makeself/makeself-header.sh
                         --help-header ./help.info
+                        --tar-format gnu
                         --gzip --complevel 4 --nomd5 --sha256
                         ./ ${CPACK_PACKAGE_FILE_NAME} "version:1.0" ./install.sh
                 WORKING_DIRECTORY ${CPACK_TEMPORARY_DIRECTORY}

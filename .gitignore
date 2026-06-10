@@ -157,3 +157,10 @@ perf.data
 perf.data.old
 kernel_meta/
 results/*
+
+dump_log/
+work_path/
+msprof*
+test_speed/
+
+configs-local

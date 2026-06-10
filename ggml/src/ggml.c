@@ -3337,8 +3337,6 @@ static struct ggml_tensor * ggml_rope_impl(struct ggml_context * ctx, struct ggm
                                            struct ggml_tensor * c, int n_dims, int mode, int n_ctx_orig,
                                            float freq_base, float freq_scale, float ext_factor, float attn_factor,
                                            float beta_fast, float beta_slow, bool inplace) {
-    GGML_ASSERT((mode & 1) == 0 && "mode & 1 == 1 is no longer supported");
-
     GGML_ASSERT(ggml_is_vector(b));
     GGML_ASSERT(b->type == GGML_TYPE_I32);
     GGML_ASSERT(a->ne[2] == b->ne[0]);

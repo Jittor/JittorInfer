@@ -21,12 +21,12 @@
 #include <vector>
 
 #include "all_ops.h"
-#include "ge_api.h"
-#include "ge_api_types.h"
-#include "ge_error_codes.h"
-#include "graph.h"
-#include "tensor.h"
-#include "types.h"
+#include "ge/ge_api.h"
+#include "ge/ge_api_types.h"
+#include "ge/ge_error_codes.h"
+#include "graph/graph.h"
+#include "graph/tensor.h"
+#include "graph/types.h"
 
 //  #include "ggml-common.h"
 //  #include "ggml-cann.h"

@@ -329,6 +329,77 @@ ge::Operator handle_mul_op(
 }
 
 /**
+ * @brief 处理DIV（除法）操作的函数
+ *
+ * 在计算图中创建一个除法操作，计算 x1/x2
+ * 支持形状不同时的广播处理
+ *
+ * @param graph 计算图引用
+ * @param node 表示DIV操作的张量节点
+ * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的DIV算子
+ */
+ge::Operator handle_div_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    ggml_tensor *src0 = node->src[0];
+    ggml_tensor *src1 = node->src[1];
+
+    ge::Operator op_x1, op_x2;
+    // 处理src0 - 获取现有算子
+    if (gmml_tensor_to_ge_op_map.find(src0) != gmml_tensor_to_ge_op_map.end()) {
+        op_x1 = gmml_tensor_to_ge_op_map[src0];
+    } else {
+        assert(false);
+    }
+
+    // 处理src1 - 获取现有算子
+    if (gmml_tensor_to_ge_op_map.find(src1) != gmml_tensor_to_ge_op_map.end()) {
+        op_x2 = gmml_tensor_to_ge_op_map[src1];
+    } else {
+        assert(false);
+    }
+
+    // 处理广播情况
+    int64_t out_ne[GGML_MAX_DIMS], nb0[GGML_MAX_DIMS], nb1[GGML_MAX_DIMS];
+    bool need_tile0[GGML_MAX_DIMS], need_tile1[GGML_MAX_DIMS];
+    bcast_shape(src0, src1, out_ne, nb0, nb1, need_tile0, need_tile1);
+
+    // 处理需要平铺的情况
+    if (std::any_of(need_tile0, need_tile0 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        op_x1 =
+            handle_repeat_op(graph, node, gmml_tensor_to_ge_op_map, op_index);
+    }
+    if (std::any_of(need_tile1, need_tile1 + GGML_MAX_DIMS,
+                    [](bool x) { return x; })) {
+        ggml_tensor *saved = node->src[0];
+        node->src[0] = node->src[1];
+        op_x2 =
+            handle_repeat_op(graph, node, gmml_tensor_to_ge_op_map, op_index);
+        node->src[0] = saved;
+    }
+
+    // 创建除法算子
+    std::string div_name = "div_" + std::to_string(op_index);
+    ge::op::Div div_op(div_name);
+    div_op.set_input_x1(op_x1);
+    div_op.set_input_x2(op_x2);
+
+    // 设置输出形状和数据类型
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dataType = get_data_type(node->type);
+    ge::TensorDesc desc(ge::Shape(output_shape), ge::FORMAT_ND, dataType);
+    div_op.update_output_desc_y(desc);
+
+    // 将算子添加到图中
+    graph.AddOp(div_op);
+    return div_op;
+}
+
+/**
  * @brief 处理矩阵乘法(MATMUL)操作的函数
  *
  * 在计算图中创建一个矩阵乘法操作
@@ -1098,7 +1169,6 @@ ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
     ge::op::Const const_op(name);
     ge::TensorDesc desc(ge::Shape({(int64_t)values.size()}), ge::FORMAT_ND,
                         type);
-    ge::Tensor tensor(desc);
 
     if (type == ge::DT_INT32) {
         std::vector<int32_t> int32_values;
@@ -1106,15 +1176,18 @@ ge::Operator create_const_1d_op(ge::Graph &graph, const std::string &name,
         for (int64_t val : values) {
             int32_values.push_back(static_cast<int32_t>(val));
         }
-        tensor.SetData(reinterpret_cast<uint8_t *>(int32_values.data()),
-                       int32_values.size() * sizeof(int32_t));
+        // 使用构造函数直接创建 Tensor，确保数据被立即拷贝
+        ge::Tensor tensor(desc,
+                          reinterpret_cast<uint8_t *>(int32_values.data()),
+                          int32_values.size() * sizeof(int32_t));
+        const_op.set_attr_value(tensor);
     } else {  // Default to INT64
-        // Create a mutable copy for SetData
-        std::vector<int64_t> mutable_values = values;
-        tensor.SetData(reinterpret_cast<uint8_t *>(mutable_values.data()),
-                       mutable_values.size() * sizeof(int64_t));
+        // 直接使用 values 的 const 引用，使用构造函数确保数据被立即拷贝
+        ge::Tensor tensor(desc,
+                          reinterpret_cast<const uint8_t *>(values.data()),
+                          values.size() * sizeof(int64_t));
+        const_op.set_attr_value(tensor);
     }
-    const_op.set_attr_value(tensor);
     graph.AddOp(const_op);
     return const_op;
 }
@@ -1549,6 +1622,252 @@ ge::Operator handle_rope_op(
     float freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow;
     // const int n_past     = ((int32_t *) dst->op_params)[0]; // 过去的序列长度
     const int n_dims = ((int32_t *)node->op_params)[1];  // 特征维度数量
+    const int mode_param = ((int32_t *)node->op_params)[2];  // RoPE模式(原始)
+    // const int mode = (mode_param == 1) ? 1 : 0;                 //
+    // 归一化为0/1 const int n_ctx      = ((int32_t *) dst->op_params)[3]; //
+    // 上下文长度
+    const int n_ctx_orig = ((int32_t *)node->op_params)[4];  // 原始上下文长度
+
+    // 复制浮点参数
+    memcpy(&freq_base, (int32_t *)dst->op_params + 5,
+           sizeof(float));  // 频率基数
+    memcpy(&freq_scale, (int32_t *)dst->op_params + 6,
+           sizeof(float));  // 频率缩放
+    memcpy(&ext_factor, (int32_t *)dst->op_params + 7,
+           sizeof(float));  // 扩展因子
+    memcpy(&attn_factor, (int32_t *)dst->op_params + 8,
+           sizeof(float));  // 注意力因子
+    memcpy(&beta_fast, (int32_t *)dst->op_params + 9,
+           sizeof(float));  // Beta快速
+    memcpy(&beta_slow, (int32_t *)dst->op_params + 10,
+           sizeof(float));  // Beta慢速
+
+    // 确认维度条件
+    GGML_ASSERT(n_dims == ne0);
+    GGML_ASSERT(n_dims % 2 == 0);  // 特征维度必须是偶数
+
+    // 计算RoPE参数
+    const float theta_scale = powf(freq_base, -2.0f / n_dims);  // 频率衰减因子
+    const size_t s01 = src0->nb[1] / ggml_type_size(src0->type);  // 步长1
+    const size_t s02 = src0->nb[2] / ggml_type_size(src0->type);  // 步长2
+
+    // 计算维度校正因子
+    float corr_dims[2];
+    const int64_t nr = ggml_nrows(src0);  // 行数
+    const int64_t pos_len = src0->ne[2];  // 位置长度
+    ggml_rope_yarn_corr_dims(n_dims, n_ctx_orig, freq_base, beta_fast,
+                             beta_slow, corr_dims);
+
+    const float logf_1_freq_scale = logf(1.0f / freq_scale);
+
+    /* 使用内置 RotaryPositionEmbedding：保持 x 为 4D (B,S,N,D)，不再做 5D 变形
+     */
+
+    // 第三步：执行RoPE操作
+    // TODO: 在同一个模型中多个RoPE也可能共享一个sin、cos缓存
+    std::string curr_suffix = "_" + std::to_string(op_index);
+    RopeCache rope_cache(cann_ctx, dst);
+    ge::Operator rope_sin_cache =
+        rope_cache.GetSinOp(graph, "rope_sin_tensor" + curr_suffix);
+    ge::Operator rope_cos_cache =
+        rope_cache.GetCosOp(graph, "rope_cos_tensor" + curr_suffix);
+
+    ge::Operator op_x1_squeeze = create_squeeze_op(
+        graph, "rope_squeeze_x1_", curr_suffix, op_x1, {0, 1, 2});
+
+    ge::Operator gather_sin_cache =
+        create_gather_op(graph, "rope_gather_sin_cache_", curr_suffix,
+                         rope_sin_cache, op_x1_squeeze, 1);
+    ge::Operator gather_cos_cache =
+        create_gather_op(graph, "rope_gather_cos_cache_", curr_suffix,
+                         rope_cos_cache, op_x1_squeeze, 1);
+
+    // 将 cos/sin 在最后一维 Tile 一次，使 D 与 x 的 D 一致（从 dim//2 扩展到
+    // dim） 构造 multiples 常量 [1, 1, 1, 2]
+    std::vector<int32_t> multiples_vec = {1, 1, 1, 2};
+    ge::op::Const cos_multiples_const_op(
+        ("rope_cos_tile_multiples" + curr_suffix).c_str());
+    {
+        ge::TensorDesc desc(ge::Shape({4}), ge::FORMAT_ND, ge::DT_INT32);
+        ge::Tensor tens(desc, reinterpret_cast<uint8_t *>(multiples_vec.data()),
+                        multiples_vec.size() * sizeof(int32_t));
+        cos_multiples_const_op.set_attr_value(tens);
+        graph.AddOp(cos_multiples_const_op);
+    }
+
+    ge::op::Const sin_multiples_const_op(
+        ("rope_sin_tile_multiples" + curr_suffix).c_str());
+    {
+        ge::TensorDesc desc(ge::Shape({4}), ge::FORMAT_ND, ge::DT_INT32);
+        ge::Tensor tens(desc, reinterpret_cast<uint8_t *>(multiples_vec.data()),
+                        multiples_vec.size() * sizeof(int32_t));
+        sin_multiples_const_op.set_attr_value(tens);
+        graph.AddOp(sin_multiples_const_op);
+    }
+
+    // Tile cos/sin 到 4D [B, S, N, D]
+    ge::op::Tile cos_tile_op(("rope_cos_tile" + curr_suffix).c_str());
+    cos_tile_op.set_input_x(gather_cos_cache);
+    cos_tile_op.set_input_multiples(cos_multiples_const_op);
+    {
+        std::vector<int64_t> cos_out_shape = {src0->ne[3], src0->ne[2], 1,
+                                              src0->ne[0]};
+        ge::TensorDesc out_desc(ge::Shape(cos_out_shape), ge::FORMAT_ND,
+                                get_data_type(node->type));
+        cos_tile_op.update_output_desc_y(out_desc);
+    }
+    graph.AddOp(cos_tile_op);
+
+    ge::op::Tile sin_tile_op(("rope_sin_tile" + curr_suffix).c_str());
+    sin_tile_op.set_input_x(gather_sin_cache);
+    sin_tile_op.set_input_multiples(sin_multiples_const_op);
+    {
+        std::vector<int64_t> sin_out_shape = {src0->ne[3], src0->ne[2], 1,
+                                              src0->ne[0]};
+        ge::TensorDesc out_desc(ge::Shape(sin_out_shape), ge::FORMAT_ND,
+                                get_data_type(node->type));
+        sin_tile_op.update_output_desc_y(out_desc);
+    }
+    graph.AddOp(sin_tile_op);
+    // 判断RoPE类型：NEOX(half布局) vs NORM(interleaved布局)
+    // 现有Ascend rope mode=0(half) + cos/sin concat-tile [c,c]
+    // 仅适配NEOX。 对于NORM(LLaMA-2等interleaved)，需要在rope前后包夹一个
+    // "去交错/排回"的reshape+permute，使其数据布局与half模式匹配，
+    // 数学等价且对attention/KV cache透明。
+    const bool is_neox = (mode_param & GGML_ROPE_TYPE_NEOX) != 0;
+
+    // x为4D: [B,S,N,D] = [ne3, ne2, ne1, ne0]，D在最后一维(轴3)
+    const int64_t rope_B = src0->ne[3];
+    const int64_t rope_S = src0->ne[2];
+    const int64_t rope_N = src0->ne[1];
+    const int64_t rope_D = src0->ne[0];
+    const int64_t rope_Dh = rope_D / 2;
+
+    ge::Operator rope_input = op_x0;
+    if (!is_neox) {
+        // 去交错: [B,S,N,D] -> [B,S,N,D/2,2] -> permute{0,1,2,4,3} ->
+        // [B,S,N,2,D/2] -> [B,S,N,D]
+        // 效果: [x0,x1,x2,x3,...] -> [x0,x2,x4,...,x1,x3,x5,...]
+        ge::Operator deint_reshape0 =
+            create_reshape_op(graph, "rope_deint_r0_", curr_suffix, op_x0,
+                              {rope_B, rope_S, rope_N, rope_Dh, 2});
+        ge::Operator deint_permute =
+            create_permute_op(graph, "rope_deint_p_", curr_suffix,
+                              deint_reshape0, {0, 1, 2, 4, 3});
+        rope_input =
+            create_reshape_op(graph, "rope_deint_r1_", curr_suffix,
+                              deint_permute, {rope_B, rope_S, rope_N, rope_D});
+    }
+
+    std::string name_rope = "rope_rope" + curr_suffix;
+    // ge::op::RopeExtCustomV2 rope_op(name_rope.c_str());
+    ge::op::RotaryPositionEmbedding rope_op(name_rope.c_str());
+
+    // // 设置RoPE操作的输入（全部为4D：B,S,N,D）
+    rope_op.set_input_x(rope_input);
+    rope_op.set_input_cos(cos_tile_op);
+    rope_op.set_input_sin(sin_tile_op);
+
+    // 设置RoPE模式
+    rope_op.set_attr_mode(0);
+    // 设置RoPE操作的输出描述（与 x 相同形状 4D）
+    {
+        std::vector<int64_t> output_shape = build_output_shape(node);
+        ge::TensorDesc desc_out_rope(ge::Shape(output_shape), ge::FORMAT_ND,
+                                     get_data_type(node->type));
+        rope_op.update_output_desc_y(desc_out_rope);
+    }
+
+    // 只设置3个属性
+    // rope_op.set_attr_ne0(ne0);
+    // rope_op.set_attr_ne1(ne1);
+    // rope_op.set_attr_pos_len(src0->ne[2]);
+
+    // std::string name_rope = "rope_rope_" + std::to_string(op_index);
+    // ge::op::RopeExtCustom rope_op(name_rope);
+
+    // // 设置RoPE操作的输入
+    // rope_op.set_input_x(perm_x_op);  // 转置后的输入
+    // rope_op.set_input_pos(op_x1);    // 位置索引
+
+    // // 设置RoPE操作的输出描述
+    // ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
+    //                              get_data_type(node->type));
+    // rope_op.update_output_desc_dst(desc_out_rope);
+
+    // // 设置RoPE操作的各种属性参数
+    // rope_op.set_attr_ne0(ne0);
+    // rope_op.set_attr_ne1(ne1);
+    // rope_op.set_attr_s1(s01);
+    // rope_op.set_attr_s2(s02);
+    // rope_op.set_attr_n_dims(n_dims);
+    // rope_op.set_attr_freq_scale(freq_scale);
+    // rope_op.set_attr_theta_scale(theta_scale);
+    // rope_op.set_attr_ext_factor(ext_factor);
+    // rope_op.set_attr_attn_factor(attn_factor);
+    // rope_op.set_attr_corr_dims_v_0(corr_dims[0]);
+    // rope_op.set_attr_corr_dims_v_1(corr_dims[1]);
+    // rope_op.set_attr_logf_1_freq_scale(logf_1_freq_scale);
+    // rope_op.set_attr_pos_len(pos_len);
+
+    // 添加RoPE操作到图中
+    graph.AddOp(rope_op);
+
+    if (!is_neox) {
+        // 排回(去交错的逆操作): [B,S,N,D] -> [B,S,N,2,D/2] ->
+        // permute{0,1,2,4,3} -> [B,S,N,D/2,2] -> [B,S,N,D]
+        // 恢复交错布局，使rope输出的Q/K维度顺序与输入一致
+        ge::Operator reint_reshape0 =
+            create_reshape_op(graph, "rope_reint_r0_", curr_suffix, rope_op,
+                              {rope_B, rope_S, rope_N, 2, rope_Dh});
+        ge::Operator reint_permute =
+            create_permute_op(graph, "rope_reint_p_", curr_suffix,
+                              reint_reshape0, {0, 1, 2, 4, 3});
+        ge::Operator reint_reshape1 =
+            create_reshape_op(graph, "rope_reint_r1_", curr_suffix,
+                              reint_permute, {rope_B, rope_S, rope_N, rope_D});
+        return reint_reshape1;
+    }
+
+    return rope_op;
+}
+
+ge::Operator handle_rope_op_for_deepseek(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index, ggml_backend_cann_context &cann_ctx) {
+    // 获取源张量
+    struct ggml_tensor *src0 = node->src[0];  // 输入张量
+    struct ggml_tensor *src1 = node->src[1];  // 位置索引张量
+
+    (void)cann_ctx;
+    auto dst = node;
+    GGML_TENSOR_UNARY_OP_LOCALS  // 使用GGML宏获取输入张量的维度
+
+        // 检查算子映射中是否存在输入
+        ge::Operator op_x0;
+    ge::Operator op_x1;
+
+    // 获取src0（主输入）操作符
+    if (gmml_tensor_to_ge_op_map.find(src0) != gmml_tensor_to_ge_op_map.end()) {
+        op_x0 = gmml_tensor_to_ge_op_map[src0];
+    } else {
+        printf("src0 not found in gmml_tensor_to_ge_op_map\n");
+        assert(false);
+    }
+
+    // 获取src1（位置索引）操作符
+    if (gmml_tensor_to_ge_op_map.find(src1) != gmml_tensor_to_ge_op_map.end()) {
+        op_x1 = gmml_tensor_to_ge_op_map[src1];
+    } else {
+        printf("src1 not found in gmml_tensor_to_ge_op_map\n");
+        assert(false);
+    }
+
+    // 从操作参数中获取RoPE配置参数
+    float freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow;
+    // const int n_past     = ((int32_t *) dst->op_params)[0]; // 过去的序列长度
+    const int n_dims = ((int32_t *)node->op_params)[1];  // 特征维度数量
     const int mode = ((int32_t *)node->op_params)[2];    // RoPE模式
     // const int n_ctx      = ((int32_t *) dst->op_params)[3]; // 上下文长度
     const int n_ctx_orig = ((int32_t *)node->op_params)[4];  // 原始上下文长度
@@ -1684,67 +2003,32 @@ ge::Operator handle_rope_op(
     graph.AddOp(perm_x_op);
 
     // 第三步：执行RoPE操作
-    // TODO: 在同一个模型中多个RoPE也可能共享一个sin、cos缓存
-    std::string curr_suffix = "_" + std::to_string(op_index);
-    RopeCache rope_cache(cann_ctx, dst);
-    ge::Operator rope_sin_cache =
-        rope_cache.GetSinOp(graph, "rope_sin_tensor" + curr_suffix);
-    ge::Operator rope_cos_cache =
-        rope_cache.GetCosOp(graph, "rope_cos_tensor" + curr_suffix);
+    std::string name_rope = "rope_rope_" + std::to_string(op_index);
+    ge::op::RopeExtCustom rope_op(name_rope);
 
-    ge::Operator op_x1_squeeze = create_squeeze_op(
-        graph, "rope_squeeze_x1_", curr_suffix, op_x1, {0, 1, 2});
-
-    ge::Operator gather_sin_cache =
-        create_gather_op(graph, "rope_gather_sin_cache_", curr_suffix,
-                         rope_sin_cache, op_x1_squeeze, 1);
-    ge::Operator gather_cos_cache =
-        create_gather_op(graph, "rope_gather_cos_cache_", curr_suffix,
-                         rope_cos_cache, op_x1_squeeze, 1);
-    std::string name_rope = "rope_rope" + curr_suffix;
-    ge::op::RopeExtCustomV2 rope_op(name_rope.c_str());
-
-    // // 设置RoPE操作的输入
-    rope_op.set_input_x(perm_x_op);           // 主输入
-    rope_op.set_input_cos(gather_cos_cache);  // 预先计算好的cos输入
-    rope_op.set_input_sin(gather_sin_cache);  // 预先计算好的sin输入
+    // 设置RoPE操作的输入
+    rope_op.set_input_x(perm_x_op);  // 转置后的输入
+    rope_op.set_input_pos(op_x1);    // 位置索引
 
     // 设置RoPE操作的输出描述
     ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
                                  get_data_type(node->type));
     rope_op.update_output_desc_dst(desc_out_rope);
 
-    // 只设置3个属性
+    // 设置RoPE操作的各种属性参数
     rope_op.set_attr_ne0(ne0);
     rope_op.set_attr_ne1(ne1);
-    rope_op.set_attr_pos_len(src0->ne[2]);
-
-    // std::string name_rope = "rope_rope_" + std::to_string(op_index);
-    // ge::op::RopeExtCustom rope_op(name_rope);
-
-    // // 设置RoPE操作的输入
-    // rope_op.set_input_x(perm_x_op);  // 转置后的输入
-    // rope_op.set_input_pos(op_x1);    // 位置索引
-
-    // // 设置RoPE操作的输出描述
-    // ge::TensorDesc desc_out_rope(ge::Shape(out_shape_perm_x), ge::FORMAT_ND,
-    //                              get_data_type(node->type));
-    // rope_op.update_output_desc_dst(desc_out_rope);
-
-    // // 设置RoPE操作的各种属性参数
-    // rope_op.set_attr_ne0(ne0);
-    // rope_op.set_attr_ne1(ne1);
-    // rope_op.set_attr_s1(s01);
-    // rope_op.set_attr_s2(s02);
-    // rope_op.set_attr_n_dims(n_dims);
-    // rope_op.set_attr_freq_scale(freq_scale);
-    // rope_op.set_attr_theta_scale(theta_scale);
-    // rope_op.set_attr_ext_factor(ext_factor);
-    // rope_op.set_attr_attn_factor(attn_factor);
-    // rope_op.set_attr_corr_dims_v_0(corr_dims[0]);
-    // rope_op.set_attr_corr_dims_v_1(corr_dims[1]);
-    // rope_op.set_attr_logf_1_freq_scale(logf_1_freq_scale);
-    // rope_op.set_attr_pos_len(pos_len);
+    rope_op.set_attr_s1(s01);
+    rope_op.set_attr_s2(s02);
+    rope_op.set_attr_n_dims(n_dims);
+    rope_op.set_attr_freq_scale(freq_scale);
+    rope_op.set_attr_theta_scale(theta_scale);
+    rope_op.set_attr_ext_factor(ext_factor);
+    rope_op.set_attr_attn_factor(attn_factor);
+    rope_op.set_attr_corr_dims_v_0(corr_dims[0]);
+    rope_op.set_attr_corr_dims_v_1(corr_dims[1]);
+    rope_op.set_attr_logf_1_freq_scale(logf_1_freq_scale);
+    rope_op.set_attr_pos_len(pos_len);
 
     // 添加RoPE操作到图中
     graph.AddOp(rope_op);
@@ -2245,15 +2529,24 @@ ge::Operator handle_moe_fused_op(
     finalize_op.set_input_expert_idx(expert_idx_squeeze_op,
                                      0);  // 使用第3个输出 expanded_expert_idx
 
-    // 设置最终输出描述
+    // 设置 MoeFinalizeRouting 的输出描述 (2D)
     // 参考 ggml_cann_moe_fused: f_dst_ne[2] = {hidden_dim, seq_len}
-    std::vector<int64_t> final_shape = {hidden_dim, seq_len};
-    ge::TensorDesc final_desc(ge::Shape(final_shape), ge::FORMAT_ND,
-                              get_data_type(node->type));
-    finalize_op.update_output_desc_y(final_desc);
+    std::vector<int64_t> finalize_shape = {hidden_dim, seq_len};
+    ge::TensorDesc finalize_desc(ge::Shape(finalize_shape), ge::FORMAT_ND,
+                                 get_data_type(node->type));
+    finalize_op.update_output_desc_y(finalize_desc);
     graph.AddOp(finalize_op);
 
-    return finalize_op;
+    // 将 2D 输出 reshape 回 4D，以匹配 GGML 定义的输出形状
+    // ggml_moe_fused_fp16 定义输出为 4D: [n_embd, n_tokens, 1, 1]
+    // 在 GE 中维度是反转的，所以是 [1, 1, n_tokens, n_embd]
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    std::string reshape_name = "moe_output_reshape" + op_suffix;
+    ge::Operator output_reshape_op =
+        create_reshape_op(graph, finalize_op, output_shape, reshape_name,
+                          get_data_type(node->type));
+
+    return output_reshape_op;
 }
 
 /**
@@ -2641,7 +2934,10 @@ ge::Operator handle_flash_attn_prompt_op(
     float scale_value = params->scaleValue;
 
     // 设置属性值，匹配 PromptFlashAttention 算子的规范
-    int64_t num_key_value_heads = num_heads;
+    // 最稳妥：直接依据 key 张量形状推断 KV 头数，避免上游误传
+    ggml_tensor *key_tensor_src = node->src[1];
+    int64_t num_key_value_heads =
+        key_tensor_src ? key_tensor_src->ne[1] : key_num_heads;
     std::string input_layout = "BSND";  // 默认输入布局
     int64_t pre_tokens = 2147483647;  // 匹配默认值 214748647 -> 2147483647
     int64_t next_tokens = 0;
@@ -2844,4 +3140,112 @@ ge::Operator handle_get_rows_op(
         get_data_type(node->type));
     op_cast_result.UpdateOutputDesc((uint32_t)0, result_desc);
     return op_cast_result;
+}
+
+/**
+ * @brief 处理SUM_ROWS操作的函数
+ *
+ * 实现沿最后一个维度（dim=3）对张量进行求和的操作
+ * 对应 GGML_OP_SUM_ROWS
+ *
+ * @param graph 计算图引用
+ * @param node 表示SUM_ROWS操作的张量节点
+ * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的ReduceSum算子
+ */
+ge::Operator handle_sum_rows_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    struct ggml_tensor *src = node->src[0];
+    ge::Operator op_x;
+
+    // 获取输入算子
+    if (gmml_tensor_to_ge_op_map.count(src)) {
+        op_x = gmml_tensor_to_ge_op_map[src];
+    } else {
+        assert(false && "SUM_ROWS: missing src in gmml_tensor_to_ge_op_map");
+    }
+
+    std::string op_suffix = std::to_string(op_index);
+
+    // 创建ReduceSum算子
+    std::string reduce_sum_name = "sum_rows_" + op_suffix;
+    ge::op::ReduceSum reduce_sum_op(reduce_sum_name);
+
+    // 创建reduction维度常量 - 沿最后一个维度求和
+    // GGML的ggml_sum_rows沿dim=0求和，GE中维度是反转的，所以对应GE的最后一个维度
+    // 计算输入张量的实际维度数，然后使用最后一个维度的正索引
+    std::vector<int64_t> input_shape = build_output_shape(src);
+    int32_t last_dim_idx = static_cast<int32_t>(input_shape.size() - 1);
+
+    std::string reduce_axes_const_name = "sum_rows_axes_const_" + op_suffix;
+    ge::op::Const reduce_axes_const_op(reduce_axes_const_name);
+    std::vector<int32_t> reduce_axes = {
+        last_dim_idx};  // 动态计算最后一个维度的索引
+    ge::TensorDesc reduce_axes_desc(ge::Shape({1}), ge::FORMAT_ND,
+                                    ge::DT_INT32);
+    ge::Tensor reduce_axes_tensor(
+        reduce_axes_desc, reinterpret_cast<uint8_t *>(reduce_axes.data()),
+        reduce_axes.size() * sizeof(int32_t));
+    reduce_axes_const_op.set_attr_value(reduce_axes_tensor);
+    graph.AddOp(reduce_axes_const_op);
+
+    // 设置ReduceSum的输入和属性
+    reduce_sum_op.set_input_x(op_x);
+    reduce_sum_op.set_input_axes(reduce_axes_const_op);
+    reduce_sum_op.set_attr_keep_dims(true);  // 保持维度，输出ne[0]=1
+
+    // 设置输出描述
+    std::vector<int64_t> output_shape = build_output_shape(node);
+    ge::DataType dt = get_data_type(node->type);
+    ge::TensorDesc output_desc(ge::Shape(output_shape), ge::FORMAT_ND, dt);
+    reduce_sum_op.update_output_desc_y(output_desc);
+
+    graph.AddOp(reduce_sum_op);
+
+    return reduce_sum_op;
+}
+/*
+ * @brief 处理AllReduce操作的函数
+ *
+ *
+ * @param graph 计算图引用
+ * @param node 表示AllReduce操作的张量节点
+ * @param gmml_tensor_to_ge_op_map 张量到对应算子的映射
+ * @param op_index 用于生成唯一算子名称的索引
+ * @return 创建的hcom_AllReduce算子
+ */
+ge::Operator handle_allreduce_sum_op(
+    ge::Graph &graph, struct ggml_tensor *node,
+    std::map<struct ggml_tensor *, ge::Operator> &gmml_tensor_to_ge_op_map,
+    int op_index) {
+    std::string op_suffix = "_" + std::to_string(op_index);
+    struct ggml_tensor *src = node->src[0];
+
+    ge::Operator op_src;
+    if (gmml_tensor_to_ge_op_map.find(src) != gmml_tensor_to_ge_op_map.end()) {
+        op_src = gmml_tensor_to_ge_op_map[src];
+    } else {
+        assert(false && "get_rows: input tensor not found in map");
+    }
+
+    std::string op_name = "allreduce_sum_" + op_suffix;
+    std::string group_name = "hccl_world_group";
+    auto har_op = ge::op::HcomAllReduce(op_name.c_str());
+
+    har_op.set_input_x(op_src);
+    har_op.set_attr_reduction("sum");
+    har_op.set_attr_group(group_name.c_str());
+    har_op.set_attr_fusion(0);
+
+    // 设置输出描述
+    auto output_shape = build_output_shape(node);
+    ge::DataType data_type = get_data_type(node->type);
+    ge::TensorDesc desc_out(ge::Shape(output_shape), ge::FORMAT_ND, data_type);
+    har_op.update_output_desc_y(desc_out);
+
+    graph.AddOp(har_op);
+    return har_op;
 }

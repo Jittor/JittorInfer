@@ -6,6 +6,7 @@
 #include <cfloat>
 #include <cstring>
 #include <forward_list>
+#include <map>
 #include <queue>
 #include <set>
 #include <unordered_map>
@@ -17,6 +18,9 @@
 //
 // tokenizers
 //
+
+static void llama_escape_whitespace(std::string & text);
+static void llama_unescape_whitespace(std::string & word);
 
 struct llm_tokenizer {
     llm_tokenizer() {}
@@ -87,6 +91,18 @@ struct llm_tokenizer_bpe : llm_tokenizer {
                     "\\s+$",
                     "[一-龥ࠀ-一가-퟿]+",
                     "\\p{N}+",
+                };
+                break;
+            case LLAMA_VOCAB_PRE_TYPE_QWEN2:
+                regex_exprs = {
+                    "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| "
+                    "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
+                };
+                break;
+            case LLAMA_VOCAB_PRE_TYPE_QWEN3:
+                regex_exprs = {
+                    "(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\\r\\n\\p{L}\\p{N}]?\\p{L}+|\\p{N}| "
+                    "?[^\\s\\p{L}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+",
                 };
                 break;
             default:
@@ -280,6 +296,170 @@ struct llm_tokenizer_bpe_session {
 };
 
 //
+// SPM tokenizer
+// original implementation:
+// https://github.com/ggerganov/llama.cpp/commit/074bea2eb1f1349a0118239c4152914aecaa1be4
+//
+
+struct llm_bigram_spm {
+    struct comparator {
+        bool operator()(llm_bigram_spm & l, llm_bigram_spm & r) {
+            return (l.score < r.score) || (l.score == r.score && l.left > r.left);
+        }
+    };
+
+    using queue_storage = std::vector<llm_bigram_spm>;
+    using queue         = std::priority_queue<llm_bigram_spm, queue_storage, comparator>;
+    llm_symbol::index left;
+    llm_symbol::index right;
+    float             score;
+    size_t            size;
+};
+
+struct llm_tokenizer_spm : llm_tokenizer {
+    llm_tokenizer_spm(const llama_vocab & /*vocab*/) {}
+};
+
+struct llm_tokenizer_spm_session {
+    llm_tokenizer_spm_session(const llama_vocab & vocab) : vocab(vocab) {}
+
+    void tokenize(const std::string & text, std::vector<llama_token> & output) {
+        // split string into utf8 chars
+        int    index = 0;
+        size_t offs  = 0;
+        while (offs < text.size()) {
+            llm_symbol sym;
+            size_t     len = unicode_len_utf8(text[offs]);
+            sym.text       = text.c_str() + offs;
+            sym.n          = std::min(len, text.size() - offs);
+            offs += sym.n;
+            sym.prev = index - 1;
+            sym.next = offs == text.size() ? -1 : index + 1;
+            index++;
+            symbols.emplace_back(sym);
+        }
+
+        // seed the work queue with all possible 2-character tokens.
+        for (int i = 1; i < (int) symbols.size(); ++i) {
+            try_add_bigram(i - 1, i);
+        }
+
+        // keep substituting the highest frequency pairs for as long as we can.
+        while (!work_queue.empty()) {
+            auto bigram = work_queue.top();
+            work_queue.pop();
+
+            auto & left_sym  = symbols[bigram.left];
+            auto & right_sym = symbols[bigram.right];
+
+            // if one of the symbols already got merged, skip it.
+            if (left_sym.n == 0 || right_sym.n == 0 || left_sym.n + right_sym.n != bigram.size) {
+                continue;
+            }
+
+            // merge the right sym into the left one
+            left_sym.n += right_sym.n;
+            right_sym.n = 0;
+
+            // remove the right sym from the chain
+            left_sym.next = right_sym.next;
+            if (right_sym.next >= 0) {
+                symbols[right_sym.next].prev = bigram.left;
+            }
+
+            // find more substitutions
+            try_add_bigram(left_sym.prev, bigram.left);
+            try_add_bigram(bigram.left, left_sym.next);
+        }
+
+        for (int i = 0; i != -1; i = symbols[i].next) {
+            auto & symbol = symbols[i];
+            resegment(symbol, output);
+        }
+    }
+
+  private:
+    void resegment(llm_symbol & symbol, std::vector<llama_token> & output) {
+        auto text  = std::string(symbol.text, symbol.n);
+        auto token = vocab.text_to_token(text);
+
+        // Do we need to support is_unused?
+        if (token != LLAMA_TOKEN_NULL) {
+            output.push_back(token);
+            return;
+        }
+
+        const auto p = rev_merge.find(text);
+
+        if (p == rev_merge.end()) {
+            // output any symbols that did not form tokens as bytes.
+            output.reserve(output.size() + symbol.n);
+            for (int j = 0; j < (int) symbol.n; ++j) {
+                llama_token id = byte_to_token(vocab, symbol.text[j]);
+                output.push_back(id);
+            }
+            return;
+        }
+
+        resegment(symbols[p->second.first], output);
+        resegment(symbols[p->second.second], output);
+    }
+
+    void try_add_bigram(int left, int right) {
+        if (left == -1 || right == -1) {
+            return;
+        }
+        const std::string text  = std::string(symbols[left].text, symbols[left].n + symbols[right].n);
+        auto              token = vocab.text_to_token(text);
+
+        if (token == LLAMA_TOKEN_NULL) {
+            return;
+        }
+
+        if (static_cast<uint32_t>(token) >= vocab.n_tokens()) {
+            return;
+        }
+
+        const auto & tok_data = vocab.get_token_data(token);
+
+        llm_bigram_spm bigram;
+        bigram.left  = left;
+        bigram.right = right;
+        bigram.score = tok_data.score;
+        bigram.size  = text.size();
+
+        work_queue.push(bigram);
+
+        // Do we need to support is_unused?
+        rev_merge[text] = std::make_pair(left, right);
+    }
+
+    static llama_token byte_to_token(const llama_vocab & vocab, uint8_t ch) {
+        char buf[7];
+        int  result = snprintf(buf, sizeof(buf), "<0x%02X>", ch);
+        GGML_ASSERT(0 <= result && result < 7);
+        llama_token tok = vocab.text_to_token(buf);
+        if (tok != LLAMA_TOKEN_NULL) {
+            return tok;
+        }
+        // fall back to the single-byte token if present
+        std::string single(1, (char) ch);
+        llama_token tok2 = vocab.text_to_token(single);
+        if (tok2 != LLAMA_TOKEN_NULL) {
+            return tok2;
+        }
+        return vocab.token_unk();
+    }
+
+    const llama_vocab & vocab;
+
+    std::vector<llm_symbol> symbols;
+    llm_bigram_spm::queue   work_queue;
+
+    std::map<std::string, std::pair<int, int>> rev_merge;
+};
+
+//
 // impl
 //
 
@@ -437,9 +617,29 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
 
         ml.get_key(LLM_KV_TOKENIZER_TOKEN_TYPE_COUNT, n_token_types, false);
 
-        GGML_ASSERT(tokenizer_model == "gpt2");
+        GGML_ASSERT(tokenizer_model == "gpt2" || tokenizer_model == "llama");
 
-        {
+        if (tokenizer_model == "llama") {
+            // SentencePiece (LLaMA / DeepSeek-V2 style) tokenizer
+            type = LLAMA_VOCAB_TYPE_SPM;
+
+            // default special tokens
+            special_bos_id  = 1;
+            special_eos_id  = 2;
+            special_unk_id  = 0;
+            special_sep_id  = LLAMA_TOKEN_NULL;
+            special_pad_id  = LLAMA_TOKEN_NULL;
+            special_mask_id = LLAMA_TOKEN_NULL;
+
+            add_space_prefix           = true;
+            clean_spaces               = false;
+            escape_whitespaces         = true;
+            treat_whitespace_as_suffix = false;
+            remove_extra_whitespaces   = false;
+
+            ml.get_key(LLM_KV_TOKENIZER_ADD_PREFIX, add_space_prefix, false);
+            ml.get_key(LLM_KV_TOKENIZER_REMOVE_EXTRA_WS, remove_extra_whitespaces, false);
+        } else {
             type = LLAMA_VOCAB_TYPE_BPE;
 
             // read bpe merges and populate bpe ranks
@@ -473,22 +673,25 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
             special_sep_id  = LLAMA_TOKEN_NULL;
             special_pad_id  = LLAMA_TOKEN_NULL;
             special_mask_id = LLAMA_TOKEN_NULL;
-        }
 
-        // for now, only BPE models have pre-tokenizers
-        GGML_ASSERT(type == LLAMA_VOCAB_TYPE_BPE);
-        {
+            // for now, only BPE models have pre-tokenizers
             add_space_prefix = false;
             clean_spaces     = true;
-            GGML_ASSERT(tokenizer_pre == "deepseek-llm");
-            {
+            if (tokenizer_pre == "deepseek-llm") {
                 pre_type     = LLAMA_VOCAB_PRE_TYPE_DEEPSEEK_LLM;
                 clean_spaces = false;
+            } else if (tokenizer_pre == "qwen2" || tokenizer_pre == "qwen2.5" || tokenizer_pre == "qwen-2.5" ||
+                       tokenizer_pre == "deepseek-r1-qwen") {
+                pre_type     = LLAMA_VOCAB_PRE_TYPE_QWEN2;
+                clean_spaces = false;
+            } else if (tokenizer_pre == "qwen3") {
+                pre_type     = LLAMA_VOCAB_PRE_TYPE_QWEN3;
+                clean_spaces = false;
             }
-        }
 
-        ml.get_key(LLM_KV_TOKENIZER_ADD_PREFIX, add_space_prefix, false);
-        ml.get_key(LLM_KV_TOKENIZER_REMOVE_EXTRA_WS, remove_extra_whitespaces, false);
+            ml.get_key(LLM_KV_TOKENIZER_ADD_PREFIX, add_space_prefix, false);
+            ml.get_key(LLM_KV_TOKENIZER_REMOVE_EXTRA_WS, remove_extra_whitespaces, false);
+        }
     }
 
     const int token_idx = gguf_find_key(ctx, kv(LLM_KV_TOKENIZER_LIST).c_str());
@@ -557,8 +760,21 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
 
     init_tokenizer(type);
 
-    GGML_ASSERT(type == LLAMA_VOCAB_TYPE_BPE);
-    {
+    GGML_ASSERT(type == LLAMA_VOCAB_TYPE_BPE || type == LLAMA_VOCAB_TYPE_SPM);
+    if (type == LLAMA_VOCAB_TYPE_SPM) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "<0x%02X>", (uint8_t) '\n');
+        llama_token nl = vocab.text_to_token(buf);
+        if (nl == LLAMA_TOKEN_NULL) {
+            nl = vocab.text_to_token("\n");
+        }
+        if (nl == LLAMA_TOKEN_NULL) {
+            LLAMA_LOG_WARN("%s: SPM vocab missing newline token, using special_pad_id instead\n", __func__);
+            linefeed_id = special_pad_id;
+        } else {
+            linefeed_id = nl;
+        }
+    } else {
         const std::vector<int> ids = tokenize("\n", false);
 
         //GGML_ASSERT(!ids.empty() && "model vocab missing newline token");
@@ -858,7 +1074,6 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
 
         ml.get_key(LLM_KV_GENERAL_NAME, model_name, false);
         ml.get_key(LLM_KV_TOKENIZER_PRE, tokenizer_pre, false);
-        GGML_ASSERT(tokenizer_pre == "deepseek-llm");
 
         // model name to lowercase
         std::transform(model_name.begin(), model_name.end(), model_name.begin(),
@@ -939,6 +1154,9 @@ void llama_vocab::impl::init_tokenizer(enum llama_vocab_type type) {
     LLAMA_LOG_DEBUG("%s: initializing tokenizer for type %d\n", __func__, type);
 
     switch (type) {
+        case LLAMA_VOCAB_TYPE_SPM:
+            tokenizer = std::make_unique<llm_tokenizer_spm>(vocab);
+            break;
         case LLAMA_VOCAB_TYPE_BPE:
             tokenizer = std::make_unique<llm_tokenizer_bpe>(vocab);
             break;
@@ -1142,6 +1360,50 @@ std::vector<llama_token> llama_vocab::impl::tokenize(const std::string & raw_tex
     }
 
     switch (get_type()) {
+        case LLAMA_VOCAB_TYPE_SPM:
+            {
+                // OG tokenizer behavior:
+                //
+                // tokenizer.encode('', add_special_tokens=True)  returns [1]
+                // tokenizer.encode('', add_special_tokens=False) returns []
+
+                bool is_prev_special = true;  // prefix with space if first token
+
+                if (add_special && add_bos) {
+                    GGML_ASSERT(special_bos_id != LLAMA_TOKEN_NULL);
+                    output.push_back(special_bos_id);
+                    is_prev_special = true;
+                }
+
+                for (const auto & fragment : fragment_buffer) {
+                    if (fragment.type == FRAGMENT_BUFFER_VARIANT_TYPE_RAW_TEXT) {
+                        std::string text = fragment.raw_text.substr(fragment.offset, fragment.length);
+
+                        // prefix with space if previous is special
+                        if (add_space_prefix && is_prev_special) {
+                            text = ' ' + text;
+                        }
+
+#ifdef PRETOKENIZERDEBUG
+                        LLAMA_LOG_WARN("TT: (%ld %ld %ld) '%s'\n", text.length(), fragment.offset, fragment.length,
+                                       text.c_str());
+#endif
+                        llama_escape_whitespace(text);
+                        llm_tokenizer_spm_session session(vocab);
+                        session.tokenize(text, output);
+                        is_prev_special = false;
+                    } else {  // if (fragment.type == FRAGMENT_BUFFER_VARIANT_TYPE_TOKEN)
+                        output.push_back(fragment.token);
+                        is_prev_special = true;
+                    }
+                }
+
+                if (add_special && add_eos) {
+                    GGML_ASSERT(special_eos_id != LLAMA_TOKEN_NULL);
+                    output.push_back(special_eos_id);
+                }
+            }
+            break;
         case LLAMA_VOCAB_TYPE_BPE:
             {
                 llm_tokenizer_bpe_session session(vocab, *static_cast<const llm_tokenizer_bpe *>(tokenizer.get()));
@@ -1213,6 +1475,27 @@ int32_t llama_vocab::impl::token_to_piece(llama_token token, char * buf, int32_t
     if (0 <= token && token < (int32_t) id_to_token.size()) {
         const std::string & token_text = id_to_token[token].text;
         switch (get_type()) {
+            case LLAMA_VOCAB_TYPE_SPM:
+                {
+                    // NOTE: we accept all unsupported token types,
+                    // suppressing them like CONTROL tokens.
+                    if (attr & (attr_special | LLAMA_TOKEN_ATTR_USER_DEFINED)) {
+                        return _try_copy(token_text.data(), token_text.size());
+                    }
+                    if (attr & LLAMA_TOKEN_ATTR_NORMAL) {
+                        std::string result = token_text;
+                        llama_unescape_whitespace(result);
+                        return _try_copy(result.data(), result.size());
+                    }
+                    if (attr & LLAMA_TOKEN_ATTR_BYTE) {
+                        // token_text is of the form "<0xXX>"
+                        GGML_ASSERT(token_text.length() == 6 && token_text.substr(0, 3) == "<0x" &&
+                                    token_text.back() == '>');
+                        char c = (char) strtol(token_text.substr(3, 2).c_str(), nullptr, 16);
+                        return _try_copy(&c, 1);
+                    }
+                    break;
+                }
             case LLAMA_VOCAB_TYPE_BPE:
                 {
                     // NOTE: we accept all unsupported token types,

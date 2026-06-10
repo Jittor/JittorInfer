@@ -52,6 +52,10 @@ option(LLAMA_FATAL_WARNINGS "llama: enable -Werror flag" OFF)
 # MPI
 option(LLAMA_MPI "llama: enable MPI support" ON)
 
+# backends: default to CANN (Ascend NPU) on, CUDA off
+option(GGML_CUDA "ggml: enable CUDA backend" OFF)
+option(GGML_CANN "ggml: enable CANN (Ascend NPU) backend" ON)
+
 # JITTOR OPS
 option(LLAMA_USE_JITTOR_OPS "llama: enable jittor ops" OFF)
 

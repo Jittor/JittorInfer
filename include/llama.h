@@ -87,6 +87,7 @@ enum llama_vocab_pre_type {
     LLAMA_VOCAB_PRE_TYPE_CHAMELEON      = 26,
     LLAMA_VOCAB_PRE_TYPE_MINERVA        = 27,
     LLAMA_VOCAB_PRE_TYPE_DEEPSEEK3_LLM  = 28,
+    LLAMA_VOCAB_PRE_TYPE_QWEN3          = 29,
 };
 
 // model file types

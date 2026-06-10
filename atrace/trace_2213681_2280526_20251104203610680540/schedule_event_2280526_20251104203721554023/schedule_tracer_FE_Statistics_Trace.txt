@@ -1,0 +1,2 @@
+2025-11-04 20:37:20.734.022 Disk cache statistics:match times:988|reused times:988|reuse fail times:28|cache not existed times:28
+2025-11-04 20:37:20.734.031 Binary reuse statistics:match times:28|reused times:28

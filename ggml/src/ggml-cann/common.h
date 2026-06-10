@@ -43,10 +43,10 @@
 #include "../include/ggml-cann.h"
 #include "../include/ggml.h"
 // #include "ascend_graph.h"
-#include "ge_api.h"
-#include "ge_api_types.h"
-#include "ge_error_codes.h"
-#include "graph.h"
+#include "ge/ge_api.h"
+#include "ge/ge_api_types.h"
+#include "ge/ge_error_codes.h"
+#include "graph/graph.h"
 
 #define MATRIX_ROW_PADDING 512
 #define GGML_CANN_MAX_STREAMS 8
@@ -283,6 +283,7 @@ struct ggml_backend_cann_context {
         nullptr}; /**< Array of streams for the device. */
 #ifdef GGML_USE_HCCL
     bool initialized = false;
+    int hccl_rank = 0;
     HcclComm hccl_comm;
 
     void init_comm(const HcclRootInfo& rootinfo, int num_devices, int rank) {
@@ -294,6 +295,7 @@ struct ggml_backend_cann_context {
         initialized = true;
         fprintf(stderr, "Initialized HCCL comm for rank %d of %d. done.\n",
                 rank, num_devices);
+        hccl_rank = rank;
     }
 #endif
     std::unique_ptr<ggml_ascend_graph> ascend_graph =

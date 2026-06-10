@@ -21,11 +21,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
+#include <string>
 #include <vector>
 
 #include "ggml-cann/ascend_graph_ops.h"
@@ -240,7 +243,7 @@ void process_input_tensors(
     Graph* graph = nullptr,
     std::map<ggml_tensor*, Operator>* ggml_tensor_to_ge_op_map = nullptr,
     std::vector<Operator>* graph_inputs = nullptr) {
-    auto create_data = [&](ggml_tensor* node) {
+    auto create_data = [&](ggml_tensor* node, int index) {
         if (ggml_tensor_to_ge_op_map->find(node) !=
             ggml_tensor_to_ge_op_map->end()) {
             return;
@@ -251,7 +254,11 @@ void process_input_tensors(
             ge::TensorDesc desc = create_tensor_desc_for_node(node);
 
             // 为此输入创建数据算子
-            std::string name = name_prefix + std::string(node->name);
+            std::string name = name_prefix + std::string(node->name) + "_" +
+                               std::to_string(index);
+
+            // std::cout << "create_data: " << name << std::endl;
+
             op::Data data_op(name.c_str());
             data_op.update_output_desc_y(desc);
 
@@ -275,12 +282,12 @@ void process_input_tensors(
                 src->op != GGML_OP_NONE) {
                 continue;
             }
-            create_data(src);
+            create_data(src, i * 100000 + j);
         }
         if (ggml_is_empty(node) || node->op != GGML_OP_NONE) {
             continue;
         }
-        create_data(node);
+        create_data(node, i * 100000);
     }
 }
 
@@ -314,6 +321,7 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                           "leaf_", 0, &graph, &ggml_tensor_to_ge_op_map,
                           &graph_inputs);
 
+    // printf("graph_inputs size: %d\n", cgraph->n_leafs);
     // 第二部分：处理GGML_OP_NONE节点（输入张量）
     // --------------------------------------------------------------
     process_input_tensors(cgraph->nodes, cgraph->n_nodes, input_init, true,
@@ -370,6 +378,19 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
                 break;
             }
 
+            case GGML_OP_DIV: {
+                // 处理除法操作
+                Operator div_op =
+                    handle_div_op(graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = div_op;
+
+                // 如果这是最后一个操作，将其添加到输出中
+                if (node == last_op_node) {
+                    graph_outputs.push_back(div_op);
+                }
+                break;
+            }
+
             case GGML_OP_MUL_MAT: {
                 // 处理矩阵乘法操作
                 ge::Operator matmul_op =
@@ -402,6 +423,18 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
 
                 if (node == last_op_node) {
                     graph_outputs.push_back(softmax_op);
+                }
+                break;
+            }
+
+            case GGML_OP_SUM_ROWS: {
+                // 处理SUM_ROWS操作（沿最后一个维度求和）
+                Operator sum_rows_op = handle_sum_rows_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = sum_rows_op;
+
+                if (node == last_op_node) {
+                    graph_outputs.push_back(sum_rows_op);
                 }
                 break;
             }
@@ -553,8 +586,26 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
 
             case GGML_OP_ROPE: {
                 // 处理旋转位置编码(RoPE)操作
-                Operator rope_op = handle_rope_op(
-                    graph, node, ggml_tensor_to_ge_op_map, i, cann_ctx);
+                // 根据模型名称/架构选择不同的 RoPE 实现（默认使用通用版本）
+                const char* arch_env = std::getenv("LLAMA_MODEL_ARCH");
+                const char* name_env = std::getenv("LLAMA_MODEL_NAME");
+                std::string model_tag =
+                    arch_env
+                        ? std::string(arch_env)
+                        : (name_env ? std::string(name_env) : std::string());
+                std::transform(model_tag.begin(), model_tag.end(),
+                               model_tag.begin(), ::tolower);
+                const bool use_deepseek_rope =
+                    (model_tag.find("deepseek") != std::string::npos);
+
+                Operator rope_op =
+                    use_deepseek_rope
+                        ? handle_rope_op_for_deepseek(graph, node,
+                                                      ggml_tensor_to_ge_op_map,
+                                                      i, cann_ctx)
+                        : handle_rope_op(graph, node, ggml_tensor_to_ge_op_map,
+                                         i, cann_ctx);
+
                 ggml_tensor_to_ge_op_map[node] = rope_op;
                 if (node == last_op_node) {
                     graph_outputs.push_back(rope_op);
@@ -631,6 +682,16 @@ ge::Graph build_ascend_graph(ggml_cgraph* cgraph,
 
                 if (node == last_op_node) {
                     graph_outputs.push_back(get_rows_op);
+                }
+                break;
+            }
+            case GGML_OP_ALL_REDUCE_SUM: {
+                Operator all_reduce_op = handle_allreduce_sum_op(
+                    graph, node, ggml_tensor_to_ge_op_map, i);
+                ggml_tensor_to_ge_op_map[node] = all_reduce_op;
+
+                if (node == last_op_node) {
+                    graph_outputs.push_back(all_reduce_op);
                 }
                 break;
             }

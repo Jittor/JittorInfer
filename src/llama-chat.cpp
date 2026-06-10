@@ -35,6 +35,8 @@ enum llm_chat_template {
     LLM_CHAT_TEMPLATE_DEEPSEEK,
     LLM_CHAT_TEMPLATE_DEEPSEEK_2,
     LLM_CHAT_TEMPLATE_DEEPSEEK_3,
+    LLM_CHAT_TEMPLATE_QWEN2,
+    LLM_CHAT_TEMPLATE_QWEN3,
     LLM_CHAT_TEMPLATE_COMMAND_R,
     LLM_CHAT_TEMPLATE_LLAMA_3,
     LLM_CHAT_TEMPLATE_CHATGML_3,
@@ -72,6 +74,9 @@ static const std::map<std::string, llm_chat_template> LLM_CHAT_TEMPLATES = {
     { "deepseek",          LLM_CHAT_TEMPLATE_DEEPSEEK          },
     { "deepseek2",         LLM_CHAT_TEMPLATE_DEEPSEEK_2        },
     { "deepseek3",         LLM_CHAT_TEMPLATE_DEEPSEEK_3        },
+    { "qwen2",             LLM_CHAT_TEMPLATE_QWEN2             },
+    { "qwen3",             LLM_CHAT_TEMPLATE_QWEN3             },
+    { "qwen3moe",          LLM_CHAT_TEMPLATE_QWEN3             },
     { "command-r",         LLM_CHAT_TEMPLATE_COMMAND_R         },
     { "llama3",            LLM_CHAT_TEMPLATE_LLAMA_3           },
     { "chatglm3",          LLM_CHAT_TEMPLATE_CHATGML_3         },
@@ -100,6 +105,14 @@ static llm_chat_template llm_chat_detect_template(const std::string & tmpl) {
     if (tmpl_contains("'Assistant: ' + message['content'] + eos_token")) {
         return LLM_CHAT_TEMPLATE_DEEPSEEK_2;
     }
+    if (tmpl_contains("<|im_start|>") && tmpl_contains("<|im_end|>")) {
+        // 识别到 ChatML/Jinja 风格，使用 ChatML 模板，Qwen2.5 和 Qwen3 都使用这个模板
+        return LLM_CHAT_TEMPLATE_CHATML;
+    }
+    if (tmpl_contains("Assistant:") && tmpl_contains("User:")) {
+        // 简单启发式：若传入的是类似 DeepSeek/Qwen2 的纯文本模板，则回落到 QWEN2 格式
+        return LLM_CHAT_TEMPLATE_QWEN2;
+    }
     { GGML_ABORT("Unknown template"); }
 }
 
@@ -123,6 +136,28 @@ static int32_t llm_chat_apply_template(llm_chat_template tmpl, const std::vector
         }
         if (add_ass) {
             ss << "Assistant:";
+        }
+    } else if (tmpl == LLM_CHAT_TEMPLATE_QWEN2) {
+        // Qwen2：按简单的“User/Assistant”文本格式拼接（不引入 DeepSeek 的特殊结束 token）
+        for (const auto * message : chat) {
+            std::string role(message->role);
+            if (role == "system") {
+                ss << message->content << "\n\n";
+            } else if (role == "user") {
+                ss << "User: " << message->content << "\n\n";
+            } else if (role == "assistant") {
+                ss << "Assistant: " << message->content;
+            }
+        }
+        if (add_ass) {
+            ss << "Assistant:";
+        }
+    } else if (tmpl == LLM_CHAT_TEMPLATE_CHATML) {
+        for (const auto * message : chat) {
+            ss << "<|im_start|>" << message->role << "\n" << message->content << "<|im_end|>\n";
+        }
+        if (add_ass) {
+            ss << "<|im_start|>assistant\n";
         }
     } else {
         // template not supported

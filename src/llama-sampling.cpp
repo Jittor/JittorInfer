@@ -7,6 +7,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 #include "ggml.h"
 #include "llama-impl.h"
