@@ -1,0 +1,30 @@
+{
+  "model": "/beegfs/model/Qwen/Qwen3.8-27B",
+  "model_options": {
+    "gdn_param_dtype": "bf16"
+  },
+  "engine": {
+    "n_context": 1048576,
+    "max_num_request": 1,
+    "max_num_batched_tokens": 1,
+    "logits_topk": 128,
+    "optimization": {
+      "ge_precision_mode": "auto_bf16",
+      "fuse_rope": true,
+      "fuse_attention": true
+    },
+    "tensor_parallel_size": 8
+  },
+  "generation": {
+    "max_new_tokens": 1024,
+    "temperature": 1.0,
+    "top_p": 0.9,
+    "top_k": 50,
+    "seed": 42
+  },
+  "server": {
+    "served_model_name": "qwen3.8-27b",
+    "port": 8000,
+    "engine_ready_timeout_secs": 3600
+  }
+}

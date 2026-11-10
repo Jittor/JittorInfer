@@ -1,0 +1,14 @@
+**/build
+logs
+local*
+*.local.*
+compile_commands.json  
+
+.cache
+.vscode
+__pycache__
+
+kernel_meta/
+
+fusion_result.json
+ge_check_op.json

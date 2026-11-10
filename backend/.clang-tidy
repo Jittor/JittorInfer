@@ -1,0 +1,20 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  portability-*,
+  misc-*,
+  -modernize-use-trailing-return-type,
+  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner,
+  -readability-identifier-length,
+  -bugprone-easily-swappable-parameters,  
+  -readability-magic-numbers,
+  -modernize-use-nodiscard,
+  -readability-else-after-return,
+  -misc-no-recursion,
+
+HeaderFilterRegex: '^(src|include)/'

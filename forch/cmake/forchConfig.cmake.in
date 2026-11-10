@@ -1,0 +1,105 @@
+@PACKAGE_INIT@
+
+# 总是导入核心 targets。forchTargets.cmake 同时定义 forch::forch 与
+# forch::forch-ge：后者的 INTERFACE_LINK_LIBRARIES 包含字符串
+# "forch::forch-ge-cann"，CMake 仅在消费者实际链接 forch::forch-ge 时才
+# 解析该名字。因此只用 forch::forch 的消费者无需 CANN 也能成功配置。
+include("${CMAKE_CURRENT_LIST_DIR}/forchTargets.cmake")
+
+# Ascend depends only on ACL; it can be installed and consumed without GE.
+macro(_forch_define_ascend_cann_target)
+  set(forch_Ascend_FOUND FALSE)
+  if(NOT TARGET forch::forch-ascend)
+    set(forch_Ascend_NOT_FOUND_MESSAGE "Forch was built without Ascend support")
+  elseif(NOT DEFINED ENV{ASCEND_HOME_PATH})
+    set(forch_Ascend_NOT_FOUND_MESSAGE "ASCEND_HOME_PATH is not set; source CANN's set_env.sh")
+  else()
+    find_library(_FORCH_ACL_RT NAMES ascendcl aclrt HINTS "$ENV{ASCEND_HOME_PATH}/lib64")
+    if(_FORCH_ACL_RT)
+      if(NOT TARGET forch::forch-ascend-cann)
+        add_library(forch::forch-ascend-cann INTERFACE IMPORTED)
+        set_target_properties(forch::forch-ascend-cann PROPERTIES
+          INTERFACE_LINK_LIBRARIES "${_FORCH_ACL_RT}")
+      endif()
+      set(forch_Ascend_FOUND TRUE)
+    else()
+      set(forch_Ascend_NOT_FOUND_MESSAGE "Could not locate the CANN ACL runtime")
+    endif()
+  endif()
+endmacro()
+
+# forch::forch-ge 在 install tree 上把 CANN 依赖放进 INTERFACE_LINK_LIBRARIES，
+# 引用一个名为 forch::forch-ge-cann 的 IMPORTED target——它是消费者侧动态创建
+# 的，根据消费者本机的 $ENV{ASCEND_HOME_PATH} 解析 CANN include 路径与库。
+# 仅在消费者通过 find_package(forch COMPONENTS GE) 显式请求 GE 组件时才创建。
+macro(_forch_define_ge_cann_target)
+  if(NOT TARGET forch::forch-ge-cann)
+    if(NOT DEFINED ENV{ASCEND_HOME_PATH})
+      set(forch_GE_FOUND FALSE)
+      set(forch_GE_NOT_FOUND_MESSAGE
+        "ASCEND_HOME_PATH environment variable is not set; cannot resolve "
+        "CANN paths required by forch::forch-ge. Please source CANN's set_env.sh.")
+      return()
+    endif()
+    set(_forch_ascend_path "$ENV{ASCEND_HOME_PATH}")
+    set(_forch_ascend_lib_dir "${_forch_ascend_path}/lib64")
+    set(_forch_ascend_inc_dir "${_forch_ascend_path}/include")
+
+    find_library(_FORCH_GE_GRAPH       NAMES graph        HINTS ${_forch_ascend_lib_dir})
+    find_library(_FORCH_GE_GRAPH_BASE  NAMES graph_base   HINTS ${_forch_ascend_lib_dir})
+    find_library(_FORCH_GE_C_SEC       NAMES c_sec        HINTS ${_forch_ascend_lib_dir})
+    find_library(_FORCH_GE_RUNNER_V2   NAMES ge_runner_v2 HINTS ${_forch_ascend_lib_dir})
+
+    # libes_all.so 安装在 forch 的 lib/ 下。
+    get_filename_component(_forch_install_prefix
+      "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+    find_library(_FORCH_ES_ALL NAMES es_all
+      HINTS "${_forch_install_prefix}/lib")
+
+    foreach(_forch_ge_lib
+        _FORCH_GE_GRAPH _FORCH_GE_GRAPH_BASE _FORCH_GE_C_SEC
+        _FORCH_GE_RUNNER_V2 _FORCH_ES_ALL)
+      if(NOT ${_forch_ge_lib})
+        set(forch_GE_FOUND FALSE)
+        set(forch_GE_NOT_FOUND_MESSAGE
+          "Could not locate CANN library required by forch::forch-ge "
+          "(${_forch_ge_lib}) under ${_forch_ascend_lib_dir} or "
+          "${_forch_install_prefix}/lib.")
+        return()
+      endif()
+    endforeach()
+
+    add_library(forch::forch-ge-cann INTERFACE IMPORTED)
+    set_target_properties(forch::forch-ge-cann PROPERTIES
+      # 顺序很关键：libes_all.so 必须先于 libeager_style_graph_builder_base.so
+      # 进入 DT_NEEDED，否则 EsAdd 等弱符号会落到占位实现。这里我们只显式引
+      # libes_all 与几个独立库，eager_style_graph_builder_base 由 libes_all
+      # 自身的 DT_NEEDED 自动带入，从而保证顺序。
+      # 注意：不暴露 CANN include 目录——forch-ge 的公开 API 不依赖 CANN 头文件。
+      INTERFACE_LINK_LIBRARIES
+        "${_FORCH_ES_ALL};${_FORCH_GE_GRAPH};${_FORCH_GE_GRAPH_BASE};${_FORCH_GE_C_SEC};${_FORCH_GE_RUNNER_V2}"
+    )
+  endif()
+  set(forch_GE_FOUND TRUE)
+endmacro()
+
+foreach(_forch_comp IN LISTS forch_FIND_COMPONENTS)
+  if(_forch_comp STREQUAL "Ascend")
+    _forch_define_ascend_cann_target()
+  elseif(_forch_comp STREQUAL "GE")
+    _forch_define_ascend_cann_target()
+    if(NOT TARGET forch::forch-ge)
+      set(forch_GE_FOUND FALSE)
+      set(forch_GE_NOT_FOUND_MESSAGE "Forch was built without GE support")
+    elseif(NOT forch_Ascend_FOUND)
+      set(forch_GE_FOUND FALSE)
+      set(forch_GE_NOT_FOUND_MESSAGE "${forch_Ascend_NOT_FOUND_MESSAGE}")
+    else()
+      _forch_define_ge_cann_target()
+    endif()
+  else()
+    set(forch_${_forch_comp}_FOUND FALSE)
+  endif()
+endforeach()
+
+check_required_components(forch)

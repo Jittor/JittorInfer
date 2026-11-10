@@ -1,0 +1,74 @@
+# JittorInfer build environment — Atlas A2 series (910B), CANN 9.1.0.beta3, aarch64 Linux.
+#
+#   micromamba env create -f docs/env/910b.yaml
+#   micromamba activate forch
+#   source $CONDA_PREFIX/Ascend/cann/set_env.sh
+#
+# This file is hardware-specific: only the ops package below is tied to the
+# chip. Per the CANN install guide, swap `cann-910b-ops` for your product and
+# copy this file to docs/env/<name>.yaml:
+#
+#   Atlas A2 series (910B) ...... cann-910b-ops   <- this file
+#   Atlas A3 series ............. cann-a3-ops
+#   Atlas 350 ................... cann-950-ops
+#   Atlas training series ....... cann-910-ops
+#   Atlas inference series ...... cann-310p-ops
+#   Atlas 200I/500 A2 ........... cann-310b-ops
+#
+# Two things this environment deliberately does NOT provide:
+#
+#   * A C/C++ compiler. The build uses the system GCC (10.3.1 on the current
+#     machine), which handles the project's C++20 fine. Installing conda
+#     compilers here is untested and risks ABI mismatches with CANN, which
+#     builds parts of itself with _GLIBCXX_USE_CXX11_ABI=0.
+#   * Rust. The frontend pins its toolchain via rust-frontend/rust-toolchain.toml,
+#     so install rustup separately and let it resolve the pin.
+
+name: forch
+
+channels:
+  - ascend
+  - https://repo.huaweicloud.com/ascend/repos/conda
+  - conda-forge
+
+dependencies:
+  # --- Ascend toolchain -------------------------------------------------
+  # The cann-* metapackages pull the matching ascend-cann-* payloads
+  # (~3.5 GB) from the Huawei mirror. cann-910b-ops is the chip-specific one.
+  - cann-toolkit=9.1.0.beta.3
+  - cann-910b-ops=9.1.0.beta.3
+
+  # Required by CANN's op-compilation (TBE) tooling.
+  - python=3.11
+
+  # --- C++ build --------------------------------------------------------
+  # CMake 4.x is expected: script/build-third-party.sh passes
+  # -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to keep libzmq configurable under it.
+  - cmake=4.3.2
+
+  # protoc + the well-known .proto files, needed by rust-frontend's build.rs
+  # (src/server compiles proto/vllm_grpc.proto). Export
+  # PROTOC_INCLUDE=$CONDA_PREFIX/include before `cargo build`.
+  - libprotobuf=7.34.1
+
+  # --- CANN Python runtime dependencies ---------------------------------
+  # Due to dependency conflicts, protobuf is left unpinned instead of using
+  # CANN's officially required protobuf==3.20. If compatibility issues arise,
+  # consider this version difference; see docs/env/protobuf.md.
+  # Install Python protobuf only through pip to avoid overlapping ownership
+  # with conda's Python package. libprotobuf above supplies protoc separately.
+  - pip
+  - pip:
+      - attrs
+      - cython
+      - numpy
+      - decorator
+      - sympy
+      - cffi
+      - pyyaml
+      - pathlib2
+      - psutil
+      - protobuf
+      - scipy
+      - requests
+      - absl-py

@@ -1,0 +1,29 @@
+Third-party licenses and attribution
+
+1) magic_enum
+- Path: third_party/magic_enum.hpp
+- Upstream: https://github.com/Neargye/magic_enum
+- Version: v0.9.7
+- License: MIT License (SPDX: MIT)
+- Copyright: (c) 2019 - 2024 Daniil Goncharov <neargye@gmail.com>
+
+2) spdlog
+- Path: third_party/spdlog/
+- Upstream: https://github.com/gabime/spdlog
+- Version: v1.17.0
+- License: MIT License (SPDX: MIT)
+- Copyright: (c) 2015-present Gabi Melman & spdlog contributors
+ 
+3) nlohmann/json
+- Path: third_party/nlohmann
+- Upstream: https://github.com/nlohmann/json.git
+- Version: v3.12.0
+- License: MIT License (SPDX: MIT)
+- Copyright: (c) 2013-2025 Niels Lohmann
+
+4) bombela/backward-cpp
+- Path: third_party/backward.hpp
+- Upstream: https://github.com/bombela/backward-cpp.git
+- Version: v1.6
+- License: MIT License (SPDX: MIT)
+- Copyright: (c) 2013 Google Inc.

@@ -1,0 +1,27 @@
+{
+  "model": "/beegfs/model/meta/Llama-2-7b-chat-hf",
+  "engine": {
+    "n_context": 1024,
+    "max_num_request": 4,
+    "max_num_batched_tokens": 32,
+    "logits_topk": 128,
+    "optimization": {
+      "ge_precision_mode": "auto_fp16",
+      "fuse_rope": false,
+      "fuse_attention": false
+    },
+    "tensor_parallel_size": 2
+  },
+  "generation": {
+    "max_new_tokens": 1024,
+    "temperature": 1.0,
+    "top_p": 0.9,
+    "top_k": 50,
+    "seed": 42
+  },
+  "server": {
+    "served_model_name": "llama-2-7b-chat",
+    "port": 8000,
+    "engine_ready_timeout_secs": 1800
+  }
+}

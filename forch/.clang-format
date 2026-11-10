@@ -1,0 +1,13 @@
+Language: Cpp
+IndentWidth: 2
+ContinuationIndentWidth: 2
+ColumnLimit: 80
+AlignAfterOpenBracket: DontAlign
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignOperands: DontAlign
+AlignTrailingComments: true
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Empty
+AlwaysBreakTemplateDeclarations: true
+BreakBeforeBinaryOperators: NonAssignment

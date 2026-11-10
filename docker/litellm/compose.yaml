@@ -1,0 +1,73 @@
+name: finer-litellm
+
+services:
+  finer:
+    image: ${FINER_IMAGE:-ghcr.io/huawei-llm-inference-framework/finer:0.2.0-beta-2026.11.02}
+    platform: linux/arm64
+    working_dir: /opt/finer
+    command: ["bash", "script/run-server.sh", "/config/finer.json"]
+    shm_size: 1g
+    stop_grace_period: 150s
+    devices:
+      - ${DEVICE:-/dev/davinci0}
+      - /dev/davinci_manager:/dev/davinci_manager
+      - /dev/devmm_svm:/dev/devmm_svm
+      - /dev/hisi_hdc:/dev/hisi_hdc
+    volumes:
+      - /usr/local/dcmi:/usr/local/dcmi:ro
+      - /usr/local/bin/npu-smi:/usr/local/bin/npu-smi:ro
+      - /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64:ro
+      - /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info:ro
+      - /etc/ascend_install.info:/etc/ascend_install.info:ro
+      - type: bind
+        source: ${MODEL_DIR:?set MODEL_DIR in .env to the model directory}
+        target: /model
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${HOME}/.cache:/root/.cache
+      - type: bind
+        source: ./config/finer.json
+        target: /config/finer.json
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "curl", "--noproxy", "*", "-fsS", "--max-time", "5", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 6s
+      # The first start compiles the prefill and decode graphs.
+      start_period: 30m
+      retries: 6
+
+  litellm:
+    image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:latest}
+    ports:
+      - "${LITELLM_BIND:-127.0.0.1}:${LITELLM_PORT:-4000}:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?set LITELLM_SALT_KEY in .env}
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/litellm
+      STORE_MODEL_IN_DB: "True"
+    depends_on:
+      finer:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: litellm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

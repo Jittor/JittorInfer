@@ -1,0 +1,34 @@
+<svg width="900" height="300" xmlns="http://www.w3.org/2000/svg">
+ <defs>
+  <linearGradient y2="0.49991" x2="0.99993" y1="0.49991" x1="-0.0003" id="svg_5">
+   <stop stop-color="#54F396" offset="0"/>
+   <stop stop-color="#54F3C5" offset="0.53"/>
+   <stop stop-color="#00DFFF" offset="1"/>
+  </linearGradient>
+  <linearGradient y2="0.49965" x2="1.00018" y1="0.49965" x1="0.00013" id="svg_4">
+   <stop stop-color="#00DFFF" offset="0"/>
+   <stop stop-color="#3A87FF" offset="0.37"/>
+   <stop stop-color="#611EC1" offset="1"/>
+  </linearGradient>
+  <linearGradient y2="-Infinity" x2="Infinity" y1="-Infinity" x1="-Infinity" id="svg_3">
+   <stop stop-color="#00DFFF" offset="0"/>
+   <stop stop-color="#3A87FF" offset="0.37"/>
+   <stop stop-color="#611EC1" offset="1"/>
+  </linearGradient>
+  <linearGradient y2="-0.00021" x2="0.50013" y1="1.00021" x1="0.50013" id="svg_2">
+   <stop stop-color="#00DFFF" offset="0"/>
+   <stop stop-color="#3A87FF" offset="0.37"/>
+   <stop stop-color="#611EC1" offset="1"/>
+  </linearGradient>
+ </defs>
+ <g>
+  <title>Layer 1</title>
+  <g id="svg_1" stroke="null">
+   <polygon fill="url(#svg_5)" points="132.27198791503906,22.139989852905273 124.12088775634766,77.84786224365234 123.72132110595703,80.81774139404297 116.28943634033203,131.5758056640625 115.33048248291016,132.02576446533203 24.15003204345703,170.81431579589844 24.15003204345703,170.7242889404297 24.309858322143555,170.4542999267578 65.78457641601562,132.02576446533203 91.19683837890625,108.4466781616211 91.19683837890625,108.4466781616211 132.03224182128906,22.31999397277832 132.19207763671875,22.04998779296875 " class="st1" id="svg_12" stroke="null"/>
+   <polygon fill="url(#svg_4)" points="208.3489227294922,134.7256622314453 208.18911743164062,135.08567810058594 208.1092071533203,135.08567810058594 161.3602294921875,154.7049102783203 117.80778503417969,173.5142059326172 28.944795608520508,173.5142059326172 120.125244140625,134.7256622314453 208.3489227294922,134.7256622314453 208.3489227294922,134.7256622314453 " class="st2" id="svg_13" stroke="null"/>
+   <polygon fill="url(#svg_3)" points="189.348921057388,118.72565944195958 189.348921057388,118.72565944195958 189.348921057388,118.72565944195958 " class="st3" id="svg_14" stroke="null"/>
+   <polygon fill="url(#svg_2)" points="163.19822692871094,153.80491638183594 153.92832946777344,173.42417907714844 142.82046508789062,196.7333221435547 102.0649642944336,282.6800231933594 101.90513610839844,282.95001220703125 101.82523345947266,282.95001220703125 117.72786712646484,173.42417907714844 117.80778503417969,173.42417907714844 " class="st5" id="svg_18" stroke="null"/>
+  </g>
+  <text stroke-width="0" transform="matrix(2.88992 0 0 3.13654 -486.9 -218.912)" stroke="null" font-style="italic" font-weight="bold" xml:space="preserve" text-anchor="start" font-family="'Public Sans'" font-size="40" id="svg_7" y="132.99998" x="244.99997" fill="url(#svg_4)">JittorInfer</text>
+ </g>
+</svg>

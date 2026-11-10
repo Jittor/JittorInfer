@@ -1,0 +1,22 @@
+**/build
+logs
+local*
+
+.cache
+.vscode
+.pi
+__pycache__/
+*.pyc
+
+kernel_meta/
+fusion_result.json
+ge_check_op.json
+
+bench-results/
+eval-results/
+tmp/
+outputs/
+
+# Machine-local instructions and linked worktrees are not source artifacts.
+/AGENTS.local.md
+/.worktrees/

@@ -1,0 +1,28 @@
+{
+  "model": "/beegfs/model/Qwen/Qwen3-30B-A3B",
+  "engine": {
+    "n_context": 1024,
+    "max_num_request": 1,
+    "max_num_batched_tokens": 8,
+    "logits_topk": 128,
+    "optimization": {
+      "ge_precision_mode": "auto_bf16",
+      "fuse_rope": true,
+      "fuse_attention": true,
+      "fuse_moe": true
+    },
+    "tensor_parallel_size": 1
+  },
+  "generation": {
+    "max_new_tokens": 128,
+    "temperature": 0,
+    "top_p": 0.9,
+    "top_k": 50,
+    "seed": 42
+  },
+  "server": {
+    "served_model_name": "qwen3-30b-a3b",
+    "port": 8000,
+    "engine_ready_timeout_secs": 3600
+  }
+}
